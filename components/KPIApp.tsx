@@ -904,8 +904,27 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   async function saveEdit(id: string) {
     const emp = employees.find(e=>e.id===id)
     const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null}).eq('id',id)
-    if (error) showToast(error.message,'error')
-    else { await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Name/Designation',emp?.name||'',editName); setEditId(null); onChanged() }
+    if (error) { showToast(error.message,'error'); return }
+    // If email provided, upsert app_users so they can log in
+    if (editEmail && editEmail.trim()) {
+      const emailLower = editEmail.trim().toLowerCase()
+      // Check if user already exists
+      const {data: existingUser} = await supabase.from('app_users').select('id').eq('email', emailLower).single()
+      if (!existingUser) {
+        // Create new app_user with default password
+        await supabase.from('app_users').insert({
+          email: emailLower,
+          name: editName,
+          role: 'viewer',
+          password_hash: 'changeme123'
+        })
+        showToast(`Login created for ${emailLower} — default password: changeme123`, 'success')
+      } else {
+        showToast(`Email updated — login already exists for ${emailLower}`, 'success')
+      }
+    }
+    await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Name/Designation',emp?.name||'',editName)
+    setEditId(null); onChanged()
   }
 
   async function toggleActive(emp: Employee) {
@@ -1007,7 +1026,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                     ) : (
                       <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
                         <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                        <button onClick={()=>{setEditId(emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation)}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={()=>{setEditId(emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'')}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </div>
                     )}
