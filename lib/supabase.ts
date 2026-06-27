@@ -9,6 +9,7 @@ export type Employee = {
   id: string
   name: string
   designation: string
+  email: string | null
   active: boolean
   created_at: string
 }
