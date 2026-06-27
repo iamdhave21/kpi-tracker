@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KPI Tracker | AB Business Support Services",
+  title: "Performance Dashboard | AB Business Support Services",
   description: "Team performance tracking dashboard",
 };
 
