@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key } from 'lucide-react'
 
-type View = 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'settings'
+type View = 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tl-tools' | 'directory' | 'settings'
 type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type Toast = { msg: string; type: 'success' | 'error' }
 
@@ -163,39 +163,124 @@ export default function KPIApp() {
           {toast.msg}
         </div>
       )}
-      <header className="bg-blue-900 border-b border-blue-950 sticky top-0 z-40 shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src="/ab-logo.png" alt="AB BSS" className="h-8 w-8 object-contain" />
-            <span className="font-semibold text-white hidden sm:block tracking-wide">Performance Dashboard</span>
-          </div>
-          <nav className="hidden md:flex items-center gap-1">
-            {navItems.map(n => (
-              <button key={n.id} onClick={() => setView(n.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
-                {n.icon}{n.label}
-              </button>
-            ))}
-          </nav>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setView('settings')} className="flex items-center gap-2 hover:bg-white/10 rounded-lg px-2 py-1 transition">
-              <UserAvatar username={user || ''} size="sm" />
-              <span className="text-sm text-white hidden sm:block font-medium">{user}</span>
-            </button>
-            <button onClick={() => { localStorage.removeItem('kpi_user'); setUser(null) }} className="p-2 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><LogOut className="w-4 h-4" /></button>
-            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><Menu className="w-4 h-4" /></button>
-          </div>
+      {/* Top bar */}
+      <header className="bg-blue-900 shadow-lg sticky top-0 z-40 h-14 flex items-center px-4 justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><Menu className="w-4 h-4" /></button>
+          <img src="/ab-logo.png" alt="AB BSS" className="h-8 w-8 object-contain" />
+          <span className="font-semibold text-white tracking-wide hidden sm:block">AB BSS Operations Portal</span>
         </div>
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-blue-950 px-4 py-2 space-y-1 bg-blue-900">
-            {navItems.map(n => (
-              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setView('settings')} className="flex items-center gap-2 hover:bg-white/10 rounded-lg px-2 py-1 transition">
+            <UserAvatar username={user || ''} size="sm" />
+            <span className="text-sm text-white hidden sm:block font-medium">{user}</span>
+          </button>
+          <button onClick={() => { localStorage.removeItem('kpi_user'); setUser(null) }} className="p-2 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><LogOut className="w-4 h-4" /></button>
+        </div>
+      </header>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-30 w-56 bg-blue-900 flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-xl md:shadow-none`}>
+          <div className="flex-1 overflow-y-auto py-4 space-y-1">
+
+            {/* Performance */}
+            <div className="px-3 pt-2 pb-1">
+              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Performance</p>
+            </div>
+            {[
+              { id: 'dashboard-month' as View, label: 'Dashboard', icon: <BarChart2 className="w-4 h-4" /> },
+              { id: 'dashboard-employee' as View, label: 'Employee Trends', icon: <TrendingUp className="w-4 h-4" /> },
+              { id: 'dashboard-team' as View, label: 'Team View', icon: <Users className="w-4 h-4" /> },
+            ].map(n => (
+              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
+
+            {/* People */}
+            <div className="px-3 pt-4 pb-1">
+              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">People</p>
+            </div>
+            {[
+              { id: 'employees' as View, label: 'Employees', icon: <UserPlus className="w-4 h-4" /> },
+              { id: 'teams' as View, label: 'Teams', icon: <Award className="w-4 h-4" /> },
+              { id: 'org-chart' as View, label: 'Org Chart', icon: <Users className="w-4 h-4" /> },
+            ].map(n => (
+              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                {n.icon}{n.label}
+              </button>
+            ))}
+
+            {/* Operations */}
+            <div className="px-3 pt-4 pb-1">
+              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Operations</p>
+            </div>
+            {[
+              { id: 'tickets' as View, label: 'Tickets', icon: <FileText className="w-4 h-4" /> },
+              { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
+              { id: 'observations' as View, label: 'Observations', icon: <FileText className="w-4 h-4" /> },
+            ].map(n => (
+              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                {n.icon}{n.label}
+              </button>
+            ))}
+
+            {/* Team Lead Tools */}
+            <div className="px-3 pt-4 pb-1">
+              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Team Lead Tools</p>
+            </div>
+            {[
+              { id: 'tl-tools' as View, label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4" /> },
+            ].map(n => (
+              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                {n.icon}{n.label}
+              </button>
+            ))}
+
+            {/* Directory */}
+            <div className="px-3 pt-4 pb-1">
+              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Directory</p>
+            </div>
+            {[
+              { id: 'directory' as View, label: 'Links & Resources', icon: <TrendingUp className="w-4 h-4" /> },
+            ].map(n => (
+              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                {n.icon}{n.label}
+              </button>
+            ))}
+
+            {/* Settings */}
+            <div className="px-3 pt-4 pb-1">
+              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">System</p>
+            </div>
+            <button onClick={() => { setView('settings'); setMobileMenuOpen(false) }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === 'settings' ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+              <Shield className="w-4 h-4" />Settings
+            </button>
           </div>
-        )}
-      </header>
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
+
+          {/* User info at bottom of sidebar */}
+          <div className="border-t border-blue-800 p-3 flex items-center gap-3">
+            <UserAvatar username={user || ''} size="sm" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-white truncate">{user}</p>
+              <p className="text-xs text-blue-300 truncate capitalize">{userRole.replace('_',' ')}</p>
+            </div>
+          </div>
+        </aside>
+
+        {/* Mobile overlay */}
+        {mobileMenuOpen && <div className="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setMobileMenuOpen(false)} />}
+
+        {/* Main content */}
+        <main className="flex-1 overflow-y-auto">
+        <div className="max-w-6xl mx-auto px-6 py-6">
         {loading ? (
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
         ) : (
@@ -210,9 +295,15 @@ export default function KPIApp() {
             {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
             {view === 'observations' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Observations require Team Lead access or higher</p></div>}
             {view === 'settings' && <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} />}
+            {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
+            {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
+            {view === 'tl-tools' && <ComingSoon title="Team Lead Tools" description="Coaching logs, 1-on-1 trackers, and performance planning tools. Coming soon!" icon="🔧" />}
+            {view === 'directory' && <ComingSoon title="Directory & Links" description="Quick access to company resources, tools, and links. Coming soon!" icon="🔗" />}
           </>
         )}
-      </main>
+        </div>
+        </main>
+      </div>
     </div>
   )
 }
@@ -1121,6 +1212,19 @@ function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?
   )
 }
 
+
+
+// ── Coming Soon ─────────────────────────────────────────────────────────────
+function ComingSoon({ title, description, icon }: { title: string, description: string, icon: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 text-center">
+      <div className="text-6xl mb-4">{icon}</div>
+      <h2 className="text-2xl font-bold text-blue-900 mb-2">{title}</h2>
+      <p className="text-gray-500 max-w-md">{description}</p>
+      <div className="mt-6 px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">Coming in next session 🚀</div>
+    </div>
+  )
+}
 
 // ── Observations Panel ──────────────────────────────────────────────────────
 function ObservationsPanel({ employees, currentUser, showToast }:
