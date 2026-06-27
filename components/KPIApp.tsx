@@ -52,8 +52,8 @@ function LoginScreen({ onLogin }: { onLogin: (u: string) => void }) {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4"><BarChart2 className="w-8 h-8 text-white" /></div>
-          <h1 className="text-2xl font-bold text-gray-900">KPI Tracker</h1>
+          <img src="/ab-logo.png" alt="AB BSS" className="w-20 h-20 object-contain mb-2 mx-auto" />
+          <h1 className="text-2xl font-bold text-gray-900">Performance Dashboard</h1>
           <p className="text-gray-500 text-sm mt-1">AB Business Support Services</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-4">
@@ -84,7 +84,7 @@ export default function KPIApp() {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<Toast | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [selMonth, setSelMonth] = useState('June')
+  const [selMonth, setSelMonth] = useState('July')
   const [selYear, setSelYear] = useState('2025')
   const [selEmployee, setSelEmployee] = useState<string>('')
   const [searchQ, setSearchQ] = useState('')
@@ -136,8 +136,8 @@ export default function KPIApp() {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center"><BarChart2 className="w-4 h-4 text-white" /></div>
-            <span className="font-semibold text-gray-900 hidden sm:block">KPI Tracker</span>
+            <img src="/ab-logo.png" alt="AB BSS" className="h-8 w-8 object-contain" />
+            <span className="font-semibold text-gray-900 hidden sm:block">Performance Dashboard</span>
           </div>
           <nav className="hidden md:flex items-center gap-1">
             {navItems.map(n => (
@@ -184,7 +184,9 @@ function MonthlyDashboard({ records, selMonth, selYear, setSelMonth, setSelYear,
   { records: KpiRecord[], selMonth: string, selYear: string, setSelMonth: (v: string) => void, setSelYear: (v: string) => void, searchQ: string, setSearchQ: (v: string) => void }) {
   const filtered = records.filter(r => {
     const ml = (r.month_label || '').toLowerCase()
-    const match = ml.includes(selMonth.toLowerCase()) && ml.includes(selYear)
+    const monthMatch = ml.includes(selMonth.toLowerCase())
+    const yearMatch = ml.includes(selYear)
+    const match = monthMatch && yearMatch
     const q = searchQ.toLowerCase()
     return match && (!q || r.employee_name?.toLowerCase().includes(q) || r.designation?.toLowerCase().includes(q))
   })
