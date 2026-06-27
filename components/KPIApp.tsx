@@ -199,6 +199,8 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string
 export default function KPIApp() {
   const [user, setUser] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('viewer')
+  const [previewAs, setPreviewAs] = useState<'self'|'viewer'>('self')
+  const effectiveRole = previewAs === 'viewer' ? 'viewer' : userRole
   const [view, setView] = useState<View>('dashboard-month')
   const [perfView, setPerfView] = useState<PerfView>('monthly')
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -297,11 +299,24 @@ export default function KPIApp() {
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto px-6 py-6 animate-fadeIn">
+          {/* Preview mode banner */}
+          {(userRole === 'super_admin' || userRole === 'admin') && (
+            <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'viewer' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
+              <div className="flex items-center gap-2">
+                {previewAs === 'viewer' ? <AlertCircle className="w-4 h-4 text-amber-500"/> : <Shield className="w-4 h-4 text-blue-500"/>}
+                {previewAs === 'viewer' ? 'Previewing as Agent (Viewer) — notes and edits are hidden' : 'Viewing as Admin — full access'}
+              </div>
+              <button onClick={() => setPreviewAs(previewAs === 'viewer' ? 'self' : 'viewer')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${previewAs === 'viewer' ? 'bg-amber-200 hover:bg-amber-300 text-amber-900' : 'bg-blue-200 hover:bg-blue-300 text-blue-900'}`}>
+                {previewAs === 'viewer' ? '← Back to Admin View' : '👁 Preview as Agent'}
+              </button>
+            </div>
+          )}
         {loading ? (
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
         ) : (
           <>
-            {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} userRole={userRole} />}
+            {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} userRole={effectiveRole} />}
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} />}
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
@@ -448,22 +463,21 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
 
   useEffect(() => {
     supabase.from('teams').select('id, name').order('name').then(({data}) => setTeams(data||[]))
-    supabase.from('team_members').select('team_id, employee_id').then(({data}) => {
-      setMembers(data||[])
-      // For viewers: find which employees share a team with the current user
+    supabase.from('team_members').select('team_id, employee_id').then(({data: memberData}) => {
+      setMembers(memberData||[])
       if (userRole === 'viewer' && currentUser) {
-        supabase.from('employees').select('id').eq('name', currentUser).then(({data: empData}) => {
-          if (!empData || empData.length === 0) {
-            // Try matching by email prefix
-            const username = currentUser.split('@')[0]
-            // Just show all for now if no match — will be filtered by team below
-          }
-          // Find teams that have this user's employee record
-          const myEmpIds = new Set((empData||[]).map((e:any) => e.id))
-          const myTeams = new Set((data||[]).filter((m:any) => myEmpIds.has(m.employee_id)).map((m:any) => m.team_id))
-          const teammateIds = new Set((data||[]).filter((m:any) => myTeams.has(m.team_id)).map((m:any) => m.employee_id))
-          setMyTeamEmpIds(teammateIds.size > 0 ? teammateIds : null)
-        })
+        // Get linked employee_id from app_users
+        supabase.from('app_users').select('employee_id').eq('email', currentUser).single()
+          .then(({data: userData}) => {
+            const myEmpId = userData?.employee_id
+            if (!myEmpId) { setMyTeamEmpIds(null); return }
+            // Find my teams
+            const myTeams = new Set((memberData||[]).filter((m:any) => m.employee_id === myEmpId).map((m:any) => m.team_id))
+            if (myTeams.size === 0) { setMyTeamEmpIds(null); return }
+            // Find all teammates
+            const teammateIds = new Set((memberData||[]).filter((m:any) => myTeams.has(m.team_id)).map((m:any) => m.employee_id))
+            setMyTeamEmpIds(teammateIds)
+          })
       }
     })
   }, [userRole, currentUser])
@@ -1131,7 +1145,7 @@ function TeamManager({ employees, showToast }:
 
 
 // ── User Manager ────────────────────────────────────────────────────────────
-function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string }) {
+function UserManager({ showToast, currentUserRole, employees }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string, employees: Employee[] }) {
   const [appUsers, setAppUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newUser, setNewUser] = useState('')
@@ -1232,6 +1246,24 @@ function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?
                   {currentUserRole === 'super_admin' && (
                     <button onClick={() => deleteUser(u)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
                   )}
+                </div>
+                {/* Employee link */}
+                <div className="px-4 pb-2 flex items-center gap-2 bg-gray-50/50">
+                  <span className="text-xs text-gray-400 flex-shrink-0">Linked employee:</span>
+                  <select
+                    value={u.employee_id || ''}
+                    onChange={async e => {
+                      await supabase.from('app_users').update({ employee_id: e.target.value || null }).eq('id', u.id)
+                      loadUsers()
+                      showToast('Employee linked!')
+                    }}
+                    className="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-900 bg-white"
+                  >
+                    <option value="">— Not linked —</option>
+                    {employees.filter(e => e.active).map(e => (
+                      <option key={e.id} value={e.id}>{e.name} · {e.designation}</option>
+                    ))}
+                  </select>
                 </div>
                 {resetUserId === u.id && (
                   <div className="px-4 pb-3 flex gap-2 bg-orange-50 border-t border-orange-100">
@@ -1536,7 +1568,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>App User Management</h3>
-            <UserManager showToast={showToast} currentUserRole={userRole} />
+            <UserManager showToast={showToast} currentUserRole={userRole} employees={employees} />
           </div>
 
         </div>
