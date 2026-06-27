@@ -122,8 +122,12 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 to-blue-950 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background image with blur */}
+      <div className="absolute inset-0 z-0" style={{backgroundImage:"url('/login-bg.webp')",backgroundSize:'cover',backgroundPosition:'center',filter:'blur(3px) brightness(0.55)',transform:'scale(1.05)'}} />
+      {/* Dark overlay for readability */}
+      <div className="absolute inset-0 z-0 bg-blue-950/40" />
+      <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl w-full max-w-md p-8 relative z-10">
         <div className="text-center mb-8">
           <img src="/ab-logo.png" alt="AB BSS" className="w-20 h-20 object-contain mb-2 mx-auto" />
           <h1 className="text-2xl font-bold text-gray-900">Performance Dashboard</h1>
