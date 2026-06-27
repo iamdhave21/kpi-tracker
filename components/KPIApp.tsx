@@ -185,10 +185,11 @@ export default function KPIApp() {
           <div className="flex-1 overflow-y-auto py-4 space-y-1">
 
             {/* Performance */}
-            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-              <div className="h-px flex-1 bg-gray-200"/>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Performance</p>
-              <div className="h-px flex-1 bg-gray-200"/>
+            <div className="px-3 pt-5 pb-1">
+              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
+                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
+                <p className="text-xs font-black text-white uppercase tracking-widest">Performance</p>
+              </div>
             </div>
             {[
               { id: 'dashboard-month' as View, label: 'Dashboard', icon: <BarChart2 className="w-4 h-4" /> },
@@ -202,10 +203,11 @@ export default function KPIApp() {
             ))}
 
             {/* People */}
-            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-              <div className="h-px flex-1 bg-gray-200"/>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">People</p>
-              <div className="h-px flex-1 bg-gray-200"/>
+            <div className="px-3 pt-5 pb-1">
+              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
+                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
+                <p className="text-xs font-black text-white uppercase tracking-widest">People</p>
+              </div>
             </div>
             {[
               { id: 'employees' as View, label: 'Employees', icon: <UserPlus className="w-4 h-4" /> },
@@ -219,10 +221,11 @@ export default function KPIApp() {
             ))}
 
             {/* Operations */}
-            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-              <div className="h-px flex-1 bg-gray-200"/>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Operations</p>
-              <div className="h-px flex-1 bg-gray-200"/>
+            <div className="px-3 pt-5 pb-1">
+              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
+                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
+                <p className="text-xs font-black text-white uppercase tracking-widest">Operations</p>
+              </div>
             </div>
             {[
               { id: 'tickets' as View, label: 'Tickets', icon: <FileText className="w-4 h-4" /> },
@@ -234,10 +237,11 @@ export default function KPIApp() {
             ))}
 
             {/* Team Lead Tools */}
-            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-              <div className="h-px flex-1 bg-gray-200"/>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Team Lead Tools</p>
-              <div className="h-px flex-1 bg-gray-200"/>
+            <div className="px-3 pt-5 pb-1">
+              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
+                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
+                <p className="text-xs font-black text-white uppercase tracking-widest">Team Lead Tools</p>
+              </div>
             </div>
             {[
               { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
@@ -251,10 +255,11 @@ export default function KPIApp() {
             ))}
 
             {/* Directory */}
-            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-              <div className="h-px flex-1 bg-gray-200"/>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Directory</p>
-              <div className="h-px flex-1 bg-gray-200"/>
+            <div className="px-3 pt-5 pb-1">
+              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
+                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
+                <p className="text-xs font-black text-white uppercase tracking-widest">Directory</p>
+              </div>
             </div>
             {[
               { id: 'directory' as View, label: 'Links & Resources', icon: <TrendingUp className="w-4 h-4" /> },
@@ -266,10 +271,11 @@ export default function KPIApp() {
             ))}
 
             {/* Settings */}
-            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-              <div className="h-px flex-1 bg-gray-200"/>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">System</p>
-              <div className="h-px flex-1 bg-gray-200"/>
+            <div className="px-3 pt-5 pb-1">
+              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
+                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
+                <p className="text-xs font-black text-white uppercase tracking-widest">System</p>
+              </div>
             </div>
             <button onClick={() => { setView('settings'); setMobileMenuOpen(false) }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === 'settings' ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
