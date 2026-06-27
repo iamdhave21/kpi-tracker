@@ -60,6 +60,28 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [mode, setMode] = useState<'login'|'forgot'|'reset'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('reset') ? 'reset' : 'login'
+    }
+    return 'login'
+  })
+  const [resetToken] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('reset') || ''
+    }
+    return ''
+  })
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotSent, setForgotSent] = useState(false)
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotError, setForgotError] = useState('')
+  const [newPass, setNewPass] = useState('')
+  const [confirmPass, setConfirmPass] = useState('')
+  const [resetDone, setResetDone] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault(); setLoading(true); setError('')
@@ -73,6 +95,32 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
     finally { setLoading(false) }
   }
 
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault(); setForgotLoading(true); setForgotError('')
+    try {
+      const res = await fetch('/api/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: forgotEmail }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      setForgotSent(true)
+    } catch (err: unknown) { setForgotError(err instanceof Error ? err.message : 'Failed to send') }
+    finally { setForgotLoading(false) }
+  }
+
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault()
+    if (newPass !== confirmPass) { setResetError('Passwords do not match'); return }
+    if (newPass.length < 6) { setResetError('Password must be at least 6 characters'); return }
+    setResetLoading(true); setResetError('')
+    try {
+      const res = await fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: resetToken, newPassword: newPass }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      setResetDone(true)
+      window.history.replaceState({}, '', window.location.pathname)
+    } catch (err: unknown) { setResetError(err instanceof Error ? err.message : 'Failed to reset') }
+    finally { setResetLoading(false) }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 to-blue-950 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
@@ -81,23 +129,84 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
           <h1 className="text-2xl font-bold text-gray-900">Performance Dashboard</h1>
           <p className="text-gray-500 text-sm mt-1">AB Business Support Services</p>
         </div>
-        <form onSubmit={handleLogin} className="space-y-4">
+
+        {mode === 'login' && (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input type="email" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="you@ab-businesssupport.com" value={username} onChange={e => setUsername(e.target.value)} required autoFocus />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <input type="password" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" value={password} onChange={e => setPassword(e.target.value)} required />
+            </div>
+            {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+            <button type="submit" disabled={loading} className="w-full bg-blue-900 hover:bg-blue-950 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">{loading ? 'Signing in...' : 'Sign in'}</button>
+            <div className="text-center pt-1">
+              <button type="button" onClick={() => setMode('forgot')} className="text-sm text-blue-600 hover:text-blue-800 hover:underline transition">Forgot your password?</button>
+            </div>
+          </form>
+        )}
+
+        {mode === 'forgot' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input type="email" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="you@ab-businesssupport.com" value={username} onChange={e => setUsername(e.target.value)} required autoFocus />
+            {!forgotSent ? (
+              <form onSubmit={handleForgot} className="space-y-4">
+                <p className="text-sm text-gray-500 mb-2">Enter your email and we will send you a reset link. It expires in 1 hour.</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+                  <input type="email" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="you@ab-businesssupport.com" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required autoFocus />
+                </div>
+                {forgotError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{forgotError}</p>}
+                <button type="submit" disabled={forgotLoading} className="w-full bg-blue-900 hover:bg-blue-950 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">{forgotLoading ? 'Sending...' : 'Send reset link'}</button>
+                <div className="text-center">
+                  <button type="button" onClick={() => setMode('login')} className="text-sm text-gray-500 hover:text-gray-700 hover:underline">Back to login</button>
+                </div>
+              </form>
+            ) : (
+              <div className="text-center space-y-4">
+                <div className="text-5xl">📧</div>
+                <h3 className="font-semibold text-gray-900">Check your inbox</h3>
+                <p className="text-sm text-gray-500">If <strong>{forgotEmail}</strong> has an account, a reset link is on its way. Check your spam folder too.</p>
+                <button onClick={() => setMode('login')} className="text-sm text-blue-600 hover:underline">Back to login</button>
+              </div>
+            )}
           </div>
+        )}
+
+        {mode === 'reset' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input type="password" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" value={password} onChange={e => setPassword(e.target.value)} required />
+            {!resetDone ? (
+              <form onSubmit={handleReset} className="space-y-4">
+                <p className="text-sm text-gray-600 mb-2">Enter your new password below.</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
+                  <input type="password" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Min. 6 characters" value={newPass} onChange={e => setNewPass(e.target.value)} required autoFocus />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label>
+                  <input type="password" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Repeat password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} required />
+                </div>
+                {resetError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{resetError}</p>}
+                <button type="submit" disabled={resetLoading} className="w-full bg-blue-900 hover:bg-blue-950 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">{resetLoading ? 'Saving...' : 'Set new password'}</button>
+              </form>
+            ) : (
+              <div className="text-center space-y-4">
+                <div className="text-5xl">✅</div>
+                <h3 className="font-semibold text-gray-900">Password updated!</h3>
+                <p className="text-sm text-gray-500">Your password has been changed. You can now log in.</p>
+                <button onClick={() => setMode('login')} className="w-full bg-blue-900 hover:bg-blue-950 text-white font-medium py-2.5 rounded-lg transition">Go to login</button>
+              </div>
+            )}
           </div>
-          {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
-          <button type="submit" disabled={loading} className="w-full bg-blue-900 hover:bg-blue-950 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">{loading ? 'Signing in...' : 'Sign in'}</button>
-        </form>
-        <p className="text-center text-xs text-gray-400 mt-6">Use your @ab-businesssupport.com email</p>
+        )}
+
+        {mode === 'login' && <p className="text-center text-xs text-gray-400 mt-6">Use your @ab-businesssupport.com email</p>}
       </div>
     </div>
   )
 }
+
 
 
 // ── Collapsible Sidebar ─────────────────────────────────────────────────────
@@ -1640,3 +1749,4 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
     </div>
   )
 }
+
