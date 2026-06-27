@@ -15,33 +15,41 @@ export async function POST(req: NextRequest) {
     const { username, password } = await req.json()
     if (!username || !password) return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
 
-    const email = username.trim().toLowerCase()
-
-    // Validate domain
-    if (!email.endsWith(ALLOWED_DOMAIN)) {
-      return NextResponse.json({ error: `Only ${ALLOWED_DOMAIN} emails are allowed` }, { status: 401 })
-    }
-
+    const input = username.trim().toLowerCase()
     const supabase = getSupabase()
-
-    // Try login by email first, fallback to username for legacy accounts
     let user = null
-    const { data: byEmail } = await supabase
-      .from('app_users')
-      .select('*')
-      .eq('email', email)
-      .eq('active', true)
-      .single()
 
-    if (byEmail) {
-      user = byEmail
+    if (input.includes('@')) {
+      // Email login - validate domain
+      if (!input.endsWith(ALLOWED_DOMAIN)) {
+        return NextResponse.json({ error: `Only ${ALLOWED_DOMAIN} emails are allowed` }, { status: 401 })
+      }
+      // Try by email column first
+      const { data: byEmail } = await supabase
+        .from('app_users')
+        .select('*')
+        .eq('email', input)
+        .eq('active', true)
+        .single()
+      if (byEmail) {
+        user = byEmail
+      } else {
+        // Fallback: try username = part before @
+        const usernamePrefix = input.split('@')[0]
+        const { data: byPrefix } = await supabase
+          .from('app_users')
+          .select('*')
+          .eq('username', usernamePrefix)
+          .eq('active', true)
+          .single()
+        if (byPrefix) user = byPrefix
+      }
     } else {
-      // Legacy: try by username (email prefix before @)
-      const usernameOnly = email.split('@')[0]
+      // Plain username login (legacy)
       const { data: byUsername } = await supabase
         .from('app_users')
         .select('*')
-        .eq('username', usernameOnly)
+        .eq('username', input)
         .eq('active', true)
         .single()
       if (byUsername) user = byUsername
@@ -50,8 +58,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     if (user.password_hash !== password) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
 
-    // Store email in user session
-    return NextResponse.json({ user: { username: user.email || user.username, role: user.role } })
+    return NextResponse.json({ user: { username: user.email || user.username, role: user.role, display_name: user.display_name || user.username } })
   } catch {
     return NextResponse.json({ error: 'Login failed' }, { status: 500 })
   }
