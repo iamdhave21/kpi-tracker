@@ -823,60 +823,113 @@ function TeamManager({ employees, showToast }:
 }
 
 
-// ── Add User Form ───────────────────────────────────────────────────────────
-function AddUserForm({ showToast }: { showToast: (m: string, t?: 'success'|'error') => void }) {
+// ── User Manager ────────────────────────────────────────────────────────────
+function UserManager({ showToast }: { showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [appUsers, setAppUsers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [newUser, setNewUser] = useState('')
   const [newPass, setNewPass] = useState('')
+  const [newRole, setNewRole] = useState('viewer')
   const [saving, setSaving] = useState(false)
-  const [resetUser, setResetUser] = useState('')
+  const [resetUserId, setResetUserId] = useState<string|null>(null)
   const [resetPass, setResetPass] = useState('')
   const [resetting, setResetting] = useState(false)
+
+  async function loadUsers() {
+    setLoading(true)
+    const { data } = await supabase.from('app_users').select('id,username,role,active,created_at').order('created_at')
+    setAppUsers(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadUsers() }, [])
 
   async function addUser(e: React.FormEvent) {
     e.preventDefault()
     if (!newUser.trim() || !newPass.trim()) return
     setSaving(true)
     try {
-      const res = await fetch('/api/auth/add-user', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: newUser.trim(), password: newPass }) })
+      const res = await fetch('/api/auth/add-user', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: newUser.trim(), password: newPass, role: newRole }) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
-      showToast(`User "${newUser}" added! Redeploy Vercel for it to take effect.`)
-      setNewUser(''); setNewPass('')
+      showToast(`User "${newUser}" added successfully!`)
+      setNewUser(''); setNewPass(''); setNewRole('viewer')
+      loadUsers()
     } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
     setSaving(false)
   }
 
-  async function resetPassword(e: React.FormEvent) {
-    e.preventDefault()
-    if (!resetUser.trim() || !resetPass.trim()) return
+  async function resetPassword(userId: string, username: string) {
+    if (!resetPass.trim()) return
     setResetting(true)
     try {
-      const res = await fetch('/api/auth/change-password', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: resetUser.trim(), newPassword: resetPass, adminReset: true }) })
+      const res = await fetch('/api/auth/change-password', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username, newPassword: resetPass, adminReset: true }) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
-      showToast(`Password for "${resetUser}" updated! Redeploy Vercel for it to take effect.`)
-      setResetUser(''); setResetPass('')
+      showToast(`Password for "${username}" updated!`)
+      setResetUserId(null); setResetPass('')
     } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
     setResetting(false)
   }
 
+  async function toggleUserActive(u: any) {
+    await supabase.from('app_users').update({ active: !u.active }).eq('id', u.id)
+    loadUsers()
+  }
+
+  async function deleteUser(u: any) {
+    if (!confirm(`Delete user "${u.username}"?`)) return
+    await supabase.from('app_users').delete().eq('id', u.id)
+    showToast('User deleted'); loadUsers()
+  }
+
+  const roleColors: Record<string,string> = { admin: 'bg-blue-50 text-blue-700', viewer: 'bg-gray-100 text-gray-600' }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Add user form */}
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Add New User</p>
         <form onSubmit={addUser} className="flex flex-col sm:flex-row gap-3">
           <input value={newUser} onChange={e=>setNewUser(e.target.value)} placeholder="Username" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Password" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Password (min 6 chars)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <select value={newRole} onChange={e=>setNewRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="admin">Admin</option>
+            <option value="viewer">Viewer</option>
+          </select>
           <button type="submit" disabled={saving||!newUser.trim()||!newPass.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap flex items-center gap-2"><UserPlus className="w-4 h-4"/>Add User</button>
         </form>
       </div>
-      <div className="border-t border-gray-100 pt-4">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Reset Any User Password</p>
-        <form onSubmit={resetPassword} className="flex flex-col sm:flex-row gap-3">
-          <input value={resetUser} onChange={e=>setResetUser(e.target.value)} placeholder="Username to reset" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input type="password" value={resetPass} onChange={e=>setResetPass(e.target.value)} placeholder="New password" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <button type="submit" disabled={resetting||!resetUser.trim()||!resetPass.trim()} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap flex items-center gap-2"><Key className="w-4 h-4"/>Reset Password</button>
-        </form>
+
+      {/* Users list */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Current Users</p>
+        {loading ? <div className="text-center py-6 text-gray-400">Loading...</div> : (
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+            {appUsers.map((u, i) => (
+              <div key={u.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${u.active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>{u.username.charAt(0).toUpperCase()}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium ${u.active ? 'text-gray-900' : 'text-gray-400'}`}>{u.username}</p>
+                    <p className="text-xs text-gray-400">Added {new Date(u.created_at).toLocaleDateString()}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}>{u.role}</span>
+                  <button onClick={() => toggleUserActive(u)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${u.active ? 'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600' : 'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{u.active ? 'Active' : 'Inactive'}</button>
+                  <button onClick={() => { setResetUserId(resetUserId === u.id ? null : u.id); setResetPass('') }} className="text-gray-400 hover:text-orange-500 p-1 transition" title="Reset password"><Key className="w-4 h-4"/></button>
+                  <button onClick={() => deleteUser(u)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
+                </div>
+                {resetUserId === u.id && (
+                  <div className="px-4 pb-3 flex gap-2 bg-orange-50 border-t border-orange-100">
+                    <input type="password" value={resetPass} onChange={e=>setResetPass(e.target.value)} placeholder="New password" className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-400 mt-2" />
+                    <button onClick={() => resetPassword(u.id, u.username)} disabled={resetting||!resetPass.trim()} className="mt-2 bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap">Reset</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {appUsers.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No users found.</div>}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -927,15 +980,10 @@ function SettingsPanel({ currentUser, showToast }: { currentUser: string|null, s
       {activeTab==='users' && (
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 className="font-semibold text-gray-700 text-sm mb-3 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>Manage App Users</h3>
-            <p className="text-sm text-gray-500 mb-4">Add users directly below. Changes update your Vercel environment and take effect after redeployment.</p>
-            <AddUserForm showToast={showToast} />
+            <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>App User Management</h3>
+            <UserManager showToast={showToast} />
           </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-            <p className="font-medium mb-1">Current APP_USERS format in Vercel:</p>
-            <code className="text-xs bg-blue-100 px-2 py-1 rounded block mt-1">admin:yourpassword,dhave:pass2,teamlead:pass3</code>
-            <p className="text-xs mt-2 text-blue-600">Each user is separated by a comma. Format is username:password</p>
-          </div>
+
         </div>
       )}
       {activeTab==='activity' && (
