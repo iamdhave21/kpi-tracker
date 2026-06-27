@@ -83,8 +83,8 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
         </div>
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-            <input className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" value={username} onChange={e => setUsername(e.target.value)} required autoFocus />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input type="email" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="you@ab-businesssupport.com" value={username} onChange={e => setUsername(e.target.value)} required autoFocus />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
@@ -93,7 +93,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
           {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
           <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">{loading ? 'Signing in...' : 'Sign in'}</button>
         </form>
-        <p className="text-center text-xs text-gray-400 mt-6">Default: admin / admin123</p>
+        <p className="text-center text-xs text-gray-400 mt-6">Use your @ab-businesssupport.com email</p>
       </div>
     </div>
   )
@@ -1071,7 +1071,7 @@ function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?
       {(currentUserRole === 'super_admin' || currentUserRole === 'admin') && <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Add New User</p>
         <form onSubmit={addUser} className="flex flex-col sm:flex-row gap-3">
-          <input value={newUser} onChange={e=>setNewUser(e.target.value)} placeholder="Username" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input type="email" value={newUser} onChange={e=>setNewUser(e.target.value)} placeholder="email@ab-businesssupport.com" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
           <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Password (min 6 chars)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
           <select value={newRole} onChange={e=>setNewRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
             {currentUserRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
