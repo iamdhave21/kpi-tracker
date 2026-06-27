@@ -1513,7 +1513,7 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
 
 // ── Settings Panel ──────────────────────────────────────────────────────────
 function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>('users')
+  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>(userRole === 'viewer' ? 'password' : 'users')
   const [oldPassword, setOldPassword] = useState('')
   const [newPass, setNewPass] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
