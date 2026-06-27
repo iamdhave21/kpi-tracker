@@ -2,9 +2,9 @@
 import { useState, useEffect } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp } from 'lucide-react'
+import { Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key } from 'lucide-react'
 
-type View = 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams'
+type View = 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'settings'
 type Toast = { msg: string; type: 'success' | 'error' }
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -84,8 +84,8 @@ export default function KPIApp() {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<Toast | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [selMonth, setSelMonth] = useState(() => MONTHS[new Date().getMonth()])
-  const [selYear, setSelYear] = useState(() => String(new Date().getFullYear()))
+  const [selMonth, setSelMonth] = useState('June')
+  const [selYear, setSelYear] = useState('2025')
   const [selEmployee, setSelEmployee] = useState<string>('')
   const [searchQ, setSearchQ] = useState('')
 
@@ -122,6 +122,7 @@ export default function KPIApp() {
     { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
     { id: 'employees' as View, label: 'Employees', icon: <Users className="w-4 h-4" /> },
     { id: 'teams' as View, label: 'Teams', icon: <Award className="w-4 h-4" /> },
+    { id: 'settings' as View, label: 'Settings', icon: <FileText className="w-4 h-4" /> },
   ]
 
   return (
@@ -171,6 +172,7 @@ export default function KPIApp() {
             {view === 'entry' && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} />}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
+            {view === 'settings' && <SettingsPanel currentUser={user} showToast={showToast} />}
           </>
         )}
       </main>
@@ -194,8 +196,8 @@ function MonthlyDashboard({ records, selMonth, selYear, setSelMonth, setSelYear,
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div><h2 className="text-xl font-bold text-gray-900">Monthly Performance</h2><p className="text-sm text-gray-500">{filtered.length} records for {selMonth} {selYear}</p></div>
         <div className="flex items-center gap-2 flex-wrap">
-          <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">{MONTHS.map(m => <option key={m}>{m}</option>)}</select>
-          <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">{YEARS.map(y => <option key={y}>{y}</option>)}</select>
+          <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{MONTHS.map(m => <option key={m}>{m}</option>)}</select>
+          <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{YEARS.map(y => <option key={y}>{y}</option>)}</select>
           <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search..." className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40" /></div>
         </div>
       </div>
@@ -263,7 +265,7 @@ function EmployeeDashboard({ records, employees, selEmployee, setSelEmployee }:
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div><h2 className="text-xl font-bold text-gray-900">Employee Performance</h2><p className="text-sm text-gray-500">{empRecords.length} months tracked</p></div>
-        <select value={selEmployee} onChange={e => setSelEmployee(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-xs">
+        <select value={selEmployee} onChange={e => setSelEmployee(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-xs">
           {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
       </div>
@@ -514,8 +516,8 @@ function EmployeeManager({ employees, onChanged, showToast }:
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500" />Add New Employee</h3>
         <div className="flex gap-3 flex-col sm:flex-row">
-          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Full name" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input value={newDesig} onChange={e => setNewDesig(e.target.value)} placeholder="Designation" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Full name" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input value={newDesig} onChange={e => setNewDesig(e.target.value)} placeholder="Designation" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
           <button onClick={addEmployee} disabled={adding || !newName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
             <PlusCircle className="w-4 h-4" />Add
           </button>
@@ -716,6 +718,162 @@ function TeamManager({ employees, showToast }:
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+
+// ── Settings Panel ─────────────────────────────────────────────────────────
+function SettingsPanel({ currentUser, showToast }: { currentUser: string | null, showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [activeTab, setActiveTab] = useState<'users' | 'activity' | 'password'>('users')
+  const [users, setUsers] = useState<string[]>([])
+  const [newUsername, setNewUsername] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPass, setNewPass] = useState('')
+  const [confirmPass, setConfirmPass] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [activityLog, setActivityLog] = useState<any[]>([])
+  const [loadingLog, setLoadingLog] = useState(false)
+
+  // Get current users from APP_USERS env (displayed as list)
+  const knownUsers = ['admin', 'dhave', 'teamlead1']
+
+  async function loadActivityLog() {
+    setLoadingLog(true)
+    // We'll use kpi_records updated_at as proxy for activity
+    const { data } = await supabase.from('kpi_records').select('employee_name, month_label, updated_at').order('updated_at', { ascending: false }).limit(50)
+    setActivityLog(data || [])
+    setLoadingLog(false)
+  }
+
+  useEffect(() => { if (activeTab === 'activity') loadActivityLog() }, [activeTab])
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (newPass !== confirmPass) { showToast('Passwords do not match', 'error'); return }
+    if (newPass.length < 6) { showToast('Password must be at least 6 characters', 'error'); return }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUser, oldPassword, newPassword: newPass })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      showToast('Password changed! Please log in again.')
+      setOldPassword(''); setNewPass(''); setConfirmPass('')
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed', 'error')
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6">
+      <div><h2 className="text-xl font-bold text-gray-900">Settings</h2>
+        <p className="text-sm text-gray-500">Manage app users, activity, and security</p></div>
+
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {([['users','App Users'],['activity','Activity Log'],['password','Change Password']] as const).map(([t, l]) => (
+          <button key={t} onClick={() => setActiveTab(t)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === t ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'users' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="font-semibold text-gray-700 text-sm mb-3 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-blue-500" />App Users
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">Users are managed via the <code className="bg-gray-100 px-1 rounded text-xs">APP_USERS</code> environment variable in Vercel. Format: <code className="bg-gray-100 px-1 rounded text-xs">username:password,user2:pass2</code></p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+              <p className="font-medium mb-2">To add or remove users:</p>
+              <ol className="list-decimal list-inside space-y-1 text-blue-700">
+                <li>Go to <strong>vercel.com</strong> → your kpi-tracker project</li>
+                <li>Click <strong>Settings</strong> → <strong>Environment Variables</strong></li>
+                <li>Edit <strong>APP_USERS</strong> and add <code>username:password</code></li>
+                <li>Click <strong>Save</strong> then redeploy</li>
+              </ol>
+            </div>
+            <div className="mt-4">
+              <p className="text-xs font-medium text-gray-500 mb-2">Current configured users (from your Vercel env):</p>
+              <div className="space-y-2">
+                {['admin (Manager)', 'dhave (Manager)', 'teamlead1 (Team Lead)'].map(u => (
+                  <div key={u} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+                    <div className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold">{u.charAt(0).toUpperCase()}</div>
+                    <span className="text-sm text-gray-700">{u}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'activity' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-700 text-sm">Recent KPI Activity</h3>
+            <button onClick={loadActivityLog} className="text-xs text-blue-600 hover:text-blue-700">Refresh</button>
+          </div>
+          {loadingLog ? <div className="p-8 text-center text-gray-400">Loading...</div> :
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">Employee</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">Month</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">Last Updated</th>
+                </tr></thead>
+                <tbody>
+                  {activityLog.map((r, i) => (
+                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-4 py-2.5 text-gray-900 font-medium">{r.employee_name}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{r.month_label}</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(r.updated_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  {activityLog.length === 0 && <tr><td colSpan={3} className="text-center py-8 text-gray-400">No activity yet</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      )}
+
+      {activeTab === 'password' && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-md">
+          <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2">
+            <Key className="w-4 h-4 text-blue-500" />Change Your Password
+          </h3>
+          <form onSubmit={changePassword} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Current password</label>
+              <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
+              <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} required minLength={6}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label>
+              <input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <p className="text-xs text-gray-500">Note: Password changes update your Vercel environment variable. Contact admin if you lose access.</p>
+            <button type="submit" disabled={saving}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2">
+              <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Change Password'}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
