@@ -279,106 +279,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200`}>
-          <div className="flex-1 overflow-y-auto py-4 space-y-1">
-
-            {/* Performance */}
-            <div className="px-3 pt-5 pb-1">
-              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
-                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
-                <p className="text-xs font-black text-white uppercase tracking-widest">Performance</p>
-              </div>
-            </div>
-            {[
-              { id: 'dashboard-month' as View, label: 'Dashboard', icon: <BarChart2 className="w-4 h-4" /> },
-              { id: 'dashboard-employee' as View, label: 'Employee Trends', icon: <TrendingUp className="w-4 h-4" /> },
-              { id: 'dashboard-team' as View, label: 'Team View', icon: <Users className="w-4 h-4" /> },
-            ].map(n => (
-              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
-                {n.icon}{n.label}
-              </button>
-            ))}
-
-            {/* People */}
-            <div className="px-3 pt-5 pb-1">
-              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
-                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
-                <p className="text-xs font-black text-white uppercase tracking-widest">People</p>
-              </div>
-            </div>
-            {[
-              { id: 'employees' as View, label: 'Employees', icon: <UserPlus className="w-4 h-4" /> },
-              { id: 'teams' as View, label: 'Teams', icon: <Award className="w-4 h-4" /> },
-              { id: 'org-chart' as View, label: 'Org Chart', icon: <Users className="w-4 h-4" /> },
-            ].map(n => (
-              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
-                {n.icon}{n.label}
-              </button>
-            ))}
-
-            {/* Operations */}
-            <div className="px-3 pt-5 pb-1">
-              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
-                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
-                <p className="text-xs font-black text-white uppercase tracking-widest">Operations</p>
-              </div>
-            </div>
-            {[
-              { id: 'tickets' as View, label: 'Tickets', icon: <FileText className="w-4 h-4" /> },
-            ].map(n => (
-              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
-                {n.icon}{n.label}
-              </button>
-            ))}
-
-            {/* Team Lead Tools */}
-            <div className="px-3 pt-5 pb-1">
-              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
-                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
-                <p className="text-xs font-black text-white uppercase tracking-widest">Team Lead Tools</p>
-              </div>
-            </div>
-            {[
-              { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
-              { id: 'observations' as View, label: 'Observations', icon: <FileText className="w-4 h-4" /> },
-              { id: 'tl-tools' as View, label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4" /> },
-            ].map(n => (
-              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
-                {n.icon}{n.label}
-              </button>
-            ))}
-
-            {/* Directory */}
-            <div className="px-3 pt-5 pb-1">
-              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
-                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
-                <p className="text-xs font-black text-white uppercase tracking-widest">Directory</p>
-              </div>
-            </div>
-            {[
-              { id: 'directory' as View, label: 'Links & Resources', icon: <TrendingUp className="w-4 h-4" /> },
-            ].map(n => (
-              <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
-                {n.icon}{n.label}
-              </button>
-            ))}
-
-            {/* Settings */}
-            <div className="px-3 pt-5 pb-1">
-              <div className="flex items-center gap-2 bg-blue-900 rounded-lg px-3 py-1.5">
-                <div className="w-1 h-4 bg-white rounded-full opacity-60"/>
-                <p className="text-xs font-black text-white uppercase tracking-widest">System</p>
-              </div>
-            </div>
-            <button onClick={() => { setView('settings'); setMobileMenuOpen(false) }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === 'settings' ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
-              <Shield className="w-4 h-4" />Settings
-            </button>
-          </div>
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} />          </div>
 
           {/* User info at bottom of sidebar */}
           <div className="border-t border-gray-200 p-3 flex items-center gap-3 bg-white">
@@ -413,7 +314,7 @@ export default function KPIApp() {
             {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
             {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
             {view === 'tl-tools' && <ComingSoon title="Team Lead Tools" description="Coaching logs, 1-on-1 trackers, and performance planning tools. Coming soon!" icon="🔧" />}
-            {view === 'directory' && <ComingSoon title="Directory & Links" description="Quick access to company resources, tools, and links. Coming soon!" icon="🔗" />}
+            {view === 'directory' && <DirectoryLinks />}
           </>
         )}
         </div>
@@ -1328,6 +1229,37 @@ function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?
 }
 
 
+
+
+// ── Directory Links ─────────────────────────────────────────────────────────
+function DirectoryLinks() {
+  const links = [
+    { name: 'ClockSmart', url: 'https://eportal.clocksmart.ph/', description: 'Employee time tracking portal', icon: '🕐', color: 'border-blue-400' },
+  ]
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-blue-900">Directory & Links</h2>
+        <p className="text-sm text-gray-500">Quick access to company tools and resources</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {links.map(link => (
+          <a key={link.name} href={link.url} target="_blank" rel="noopener noreferrer"
+            className={`bg-white rounded-xl border-l-4 ${link.color} border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all hover:-translate-y-1 group`}>
+            <div className="flex items-start gap-4">
+              <span className="text-3xl">{link.icon}</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{link.name}</p>
+                <p className="text-xs text-gray-500 mt-1">{link.description}</p>
+                <p className="text-xs text-blue-500 mt-2 truncate">{link.url}</p>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ── Coming Soon ─────────────────────────────────────────────────────────────
 function ComingSoon({ title, description, icon }: { title: string, description: string, icon: string }) {
