@@ -9,7 +9,7 @@ type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type Toast = { msg: string; type: 'success' | 'error' }
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-const YEARS = ['2024','2025','2026']
+const YEARS = ['2024','2025','2026','2027','2028','2029','2030']
 const QUARTERS = ['Q1 (Jan-Mar)','Q2 (Apr-Jun)','Q3 (Jul-Sep)','Q4 (Oct-Dec)']
 
 function scoreColor(s: number | null) {
@@ -606,7 +606,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
 
   function calcOverall() { const a=parseFloat(attendance)/100,b=parseFloat(accuracy)/100,c=parseFloat(efficiency)/100,d=parseFloat(feedback)/100; if([a,b,c,d].some(isNaN))return null; return a*0.2+b*0.3+c*0.3+d*0.2 }
   const overall = calcOverall()
-  const allMonths = [...MONTHS.map(m=>`${m} 2024`),...MONTHS.map(m=>`${m} 2025`),...MONTHS.map(m=>`${m} 2026`)]
+  const allMonths = ['2024','2025','2026','2027','2028','2029','2030'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
