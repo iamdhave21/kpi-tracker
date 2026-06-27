@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key } from 'lucide-react'
 
 type View = 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'settings'
@@ -295,10 +295,19 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
   { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, perfView: PerfView, setPerfView: (v: PerfView) => void, selMonth: string, selYear: string, selQuarter: number, setSelMonth: (v: string) => void, setSelYear: (v: string) => void, setSelQuarter: (v: number) => void, searchQ: string, setSearchQ: (v: string) => void, onEditRecord: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
 
   const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
+  const [teams, setTeams] = useState<any[]>([])
+  const [members, setMembers] = useState<any[]>([])
+  const [selTeam, setSelTeam] = useState<string>('all')
+
+  useEffect(() => {
+    supabase.from('teams').select('id, name').order('name').then(({data}) => setTeams(data||[]))
+    supabase.from('team_members').select('team_id, employee_id').then(({data}) => setMembers(data||[]))
+  }, [])
 
   function getFilteredByView(): KpiRecord[] {
     const q = searchQ.toLowerCase()
-    let base = records.filter(r => activeEmpIds.has(r.employee_id))
+    const teamEmpIds = selTeam === 'all' ? null : new Set(members.filter(m => m.team_id === selTeam).map(m => m.employee_id))
+    let base = records.filter(r => activeEmpIds.has(r.employee_id) && (teamEmpIds === null || teamEmpIds.has(r.employee_id)))
     if (perfView === 'monthly' || perfView === 'weekly') {
       base = base.filter(r => (r.month_label||'').toLowerCase().includes(selMonth.toLowerCase()) && (r.month_label||'').includes(selYear))
     } else if (perfView === 'quarterly') {
@@ -369,6 +378,36 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
           </div>
         ))}
       </div>
+
+      {ranked.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h4 className="font-semibold text-gray-700 text-sm mb-1">Overall Score — {viewLabel}</h4>
+          <p className="text-xs text-gray-400 mb-4">Sorted by overall score · 97% threshold line</p>
+          <ResponsiveContainer width="100%" height={Math.max(180, ranked.length * 28)}>
+            <BarChart data={ranked.map(r => ({ name: r.employee_name?.split(',')[0] || '', overall: r.overall_score ? parseFloat((r.overall_score*100).toFixed(2)) : 0, full: r.employee_name }))} layout="vertical" margin={{top:0,right:40,left:80,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0"/>
+              <XAxis type="number" domain={[0,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
+              <YAxis type="category" dataKey="name" tick={{fontSize:10}} width={75}/>
+              <Tooltip formatter={(v:unknown) => typeof v==='number' ? v.toFixed(2)+'%' : String(v)} labelFormatter={(label:unknown, payload:any[]) => payload?.[0]?.payload?.full || String(label)}/>
+              <ReferenceLine x={97} stroke="#fbbf24" strokeDasharray="4 4"/>
+              <Bar dataKey="overall" radius={[0,4,4,0]}>
+                {ranked.map((r) => (
+                  <Cell key={r.id} fill={
+                    (r.overall_score||0) >= 0.9999 ? '#10b981' :
+                    (r.overall_score||0) >= 0.97 ? '#3b82f6' :
+                    (r.overall_score||0) >= 0.94 ? '#f59e0b' : '#ef4444'
+                  }/>
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="flex gap-5 mt-3 text-xs text-gray-500 flex-wrap">
+            {[['#10b981','100%'],['#3b82f6','97-99%'],['#f59e0b','94-96%'],['#ef4444','<94%']].map(([c,l])=>(
+              <span key={l} className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm inline-block" style={{background:c}}/>{l}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
