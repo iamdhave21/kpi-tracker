@@ -191,6 +191,24 @@ export default function KPIApp() {
   )
 }
 
+
+// ── Expandable Note ─────────────────────────────────────────────────────────
+function ExpandableNote({ note }: { note: string | null }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!note) return <span className="text-gray-400">N/A</span>
+  const short = note.length > 60
+  return (
+    <div>
+      <span>{expanded ? note : note.substring(0, 60)}{!expanded && short ? '...' : ''}</span>
+      {short && (
+        <button onClick={() => setExpanded(!expanded)} className="ml-1 text-blue-500 hover:text-blue-700 font-medium whitespace-nowrap">
+          {expanded ? 'less' : 'more'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Edit Score Modal ────────────────────────────────────────────────────────
 function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { record: KpiRecord, currentUser: string, onSaved: () => void, onClose: () => void, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [att, setAtt] = useState(record.attendance !== null ? (record.attendance * 100).toFixed(2) : '')
@@ -253,7 +271,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
             <div key={f.label}>
               <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
               <div className="relative">
-                <input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e => f.set(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100" />
+                <input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e => f.set(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
               </div>
             </div>
@@ -261,7 +279,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={5} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
@@ -372,7 +390,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.efficiency)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.feedback)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{r.notes?r.notes.substring(0,50)+(r.notes.length>50?'...':''):'N/A'}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
                   <td className="px-4 py-3">
                     {(perfView==='monthly'||perfView==='weekly') && <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>}
                   </td>
@@ -614,7 +632,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Designation</label><input value={designation} onChange={e=>setDesignation(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. FSCM, AR B2B"/></div>
         <div className="grid grid-cols-2 gap-4">
           {[{label:'Attendance',weight:'20%',val:attendance,set:setAttendance},{label:'Accuracy',weight:'30%',val:accuracy,set:setAccuracy},{label:'Efficiency',weight:'30%',val:efficiency,set:setEfficiency},{label:'Ext/Int Feedback',weight:'20%',val:feedback,set:setFeedback}].map(f=>(
-            <div key={f.label}><label className="block text-sm font-medium text-gray-700 mb-1">{f.label} <span className="text-gray-400 font-normal text-xs">({f.weight})</span></label><div className="relative"><input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e=>f.set(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span></div></div>
+            <div key={f.label}><label className="block text-sm font-medium text-gray-700 mb-1">{f.label} <span className="text-gray-400 font-normal text-xs">({f.weight})</span></label><div className="relative"><input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e=>f.set(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span></div></div>
           ))}
         </div>
         {overall!==null && <div className={`rounded-xl px-4 py-3 text-center ${scoreBg(overall)}`}><p className="text-xs font-medium opacity-70">Calculated Overall Score</p><p className="text-2xl font-bold">{pct(overall)}</p></div>}
@@ -804,6 +822,66 @@ function TeamManager({ employees, showToast }:
   )
 }
 
+
+// ── Add User Form ───────────────────────────────────────────────────────────
+function AddUserForm({ showToast }: { showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [newUser, setNewUser] = useState('')
+  const [newPass, setNewPass] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [resetUser, setResetUser] = useState('')
+  const [resetPass, setResetPass] = useState('')
+  const [resetting, setResetting] = useState(false)
+
+  async function addUser(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newUser.trim() || !newPass.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/auth/add-user', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: newUser.trim(), password: newPass }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      showToast(`User "${newUser}" added! Redeploy Vercel for it to take effect.`)
+      setNewUser(''); setNewPass('')
+    } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
+    setSaving(false)
+  }
+
+  async function resetPassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (!resetUser.trim() || !resetPass.trim()) return
+    setResetting(true)
+    try {
+      const res = await fetch('/api/auth/change-password', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: resetUser.trim(), newPassword: resetPass, adminReset: true }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      showToast(`Password for "${resetUser}" updated! Redeploy Vercel for it to take effect.`)
+      setResetUser(''); setResetPass('')
+    } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
+    setResetting(false)
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Add New User</p>
+        <form onSubmit={addUser} className="flex flex-col sm:flex-row gap-3">
+          <input value={newUser} onChange={e=>setNewUser(e.target.value)} placeholder="Username" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Password" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <button type="submit" disabled={saving||!newUser.trim()||!newPass.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap flex items-center gap-2"><UserPlus className="w-4 h-4"/>Add User</button>
+        </form>
+      </div>
+      <div className="border-t border-gray-100 pt-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Reset Any User Password</p>
+        <form onSubmit={resetPassword} className="flex flex-col sm:flex-row gap-3">
+          <input value={resetUser} onChange={e=>setResetUser(e.target.value)} placeholder="Username to reset" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input type="password" value={resetPass} onChange={e=>setResetPass(e.target.value)} placeholder="New password" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <button type="submit" disabled={resetting||!resetUser.trim()||!resetPass.trim()} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap flex items-center gap-2"><Key className="w-4 h-4"/>Reset Password</button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Settings Panel ──────────────────────────────────────────────────────────
 function SettingsPanel({ currentUser, showToast }: { currentUser: string|null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>('users')
@@ -847,12 +925,16 @@ function SettingsPanel({ currentUser, showToast }: { currentUser: string|null, s
         ))}
       </div>
       {activeTab==='users' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="font-semibold text-gray-700 text-sm mb-3 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>App Users</h3>
-          <p className="text-sm text-gray-500 mb-4">Users are managed via the <code className="bg-gray-100 px-1 rounded text-xs">APP_USERS</code> environment variable in Vercel.</p>
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="font-semibold text-gray-700 text-sm mb-3 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>Manage App Users</h3>
+            <p className="text-sm text-gray-500 mb-4">Add users directly below. Changes update your Vercel environment and take effect after redeployment.</p>
+            <AddUserForm showToast={showToast} />
+          </div>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-            <p className="font-medium mb-2">To add or remove users:</p>
-            <ol className="list-decimal list-inside space-y-1 text-blue-700"><li>Go to vercel.com → your kpi-tracker project</li><li>Click Settings → Environment Variables</li><li>Edit APP_USERS: format is username:password,user2:pass2</li><li>Save then redeploy</li></ol>
+            <p className="font-medium mb-1">Current APP_USERS format in Vercel:</p>
+            <code className="text-xs bg-blue-100 px-2 py-1 rounded block mt-1">admin:yourpassword,dhave:pass2,teamlead:pass3</code>
+            <p className="text-xs mt-2 text-blue-600">Each user is separated by a comma. Format is username:password</p>
           </div>
         </div>
       )}
