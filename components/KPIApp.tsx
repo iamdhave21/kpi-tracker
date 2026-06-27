@@ -102,97 +102,96 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
 
 // ── Collapsible Sidebar ─────────────────────────────────────────────────────
 function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void }) {
-  const [collapsed, setCollapsed] = useState<Record<string,boolean>>({})
+  const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
+    perf: false, people: false, ops: false, tltools: false, dir: false, sys: false
+  })
 
-  function toggleSection(section: string) {
-    setCollapsed(prev => ({ ...prev, [section]: !prev[section] }))
+  function toggle(key: string) {
+    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const navStyle = (id: string) => `w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-all rounded-lg mx-1 ${view === id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900'}`
+  const itemStyle = (id: string) =>
+    `w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-all rounded-lg ${
+      view === id
+        ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md'
+        : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900'
+    }`
 
-  const sections = [
-    {
-      id: 'performance', label: 'Performance',
-      items: [
-        { id: 'dashboard-month', label: 'Dashboard', icon: <BarChart2 className="w-4 h-4 flex-shrink-0" /> },
-        { id: 'dashboard-employee', label: 'Employee Trends', icon: <TrendingUp className="w-4 h-4 flex-shrink-0" /> },
-        { id: 'dashboard-team', label: 'Team View', icon: <Users className="w-4 h-4 flex-shrink-0" /> },
-      ]
-    },
-    {
-      id: 'people', label: 'People',
-      items: [
-        { id: 'employees', label: 'Employees', icon: <UserPlus className="w-4 h-4 flex-shrink-0" /> },
-        { id: 'teams', label: 'Teams', icon: <Award className="w-4 h-4 flex-shrink-0" /> },
-        { id: 'org-chart', label: 'Org Chart', icon: <Users className="w-4 h-4 flex-shrink-0" /> },
-      ]
-    },
-    {
-      id: 'operations', label: 'Operations',
-      items: [
-        { id: 'tickets', label: 'Tickets', icon: <FileText className="w-4 h-4 flex-shrink-0" /> },
-      ]
-    },
-    {
-      id: 'tl-tools', label: 'Team Lead Tools',
-      items: [
-        { id: 'entry', label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4 flex-shrink-0" /> },
-        { id: 'observations', label: 'Observations', icon: <FileText className="w-4 h-4 flex-shrink-0" /> },
-        { id: 'tl-tools-view', label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4 flex-shrink-0" /> },
-      ]
-    },
-    {
-      id: 'directory', label: 'Directory',
-      items: [
-        { id: 'directory', label: 'Links & Resources', icon: <TrendingUp className="w-4 h-4 flex-shrink-0" /> },
-      ]
-    },
-    {
-      id: 'system', label: 'System',
-      items: [
-        { id: 'settings', label: 'Settings', icon: <Shield className="w-4 h-4 flex-shrink-0" /> },
-      ]
-    },
-  ]
+  const SectionHeader = ({ sectionKey, label, hasActive }: { sectionKey: string, label: string, hasActive: boolean }) => (
+    <button onClick={() => toggle(sectionKey)} className="w-full px-3 pt-3 pb-1">
+      <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 transition-all ${hasActive ? 'bg-blue-900' : 'bg-blue-900/80 hover:bg-blue-900'}`}>
+        <div className="w-1 h-4 bg-white rounded-full opacity-60 flex-shrink-0"/>
+        <p className="text-xs font-black text-white uppercase tracking-widest flex-1 text-left">{label}</p>
+        <span className={`text-white/70 text-xs font-bold transition-transform duration-200 inline-block ${collapsed[sectionKey] ? '-rotate-90' : 'rotate-0'}`}>▾</span>
+      </div>
+    </button>
+  )
+
+  const NavItem = ({ id, label, icon }: { id: string, label: string, icon: React.ReactNode }) => (
+    <button onClick={() => { setView(id); setMobileMenuOpen(false) }} className={itemStyle(id)}>
+      {icon}
+      <span className="truncate">{label}</span>
+      {view === id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/>}
+    </button>
+  )
 
   return (
-    <div className="flex-1 overflow-y-auto py-3 space-y-0.5">
-      {sections.map(section => {
-        const isOpen = !collapsed[section.id]
-        const hasActive = section.items.some(i => i.id === view)
-        return (
-          <div key={section.id}>
-            {/* Section header - clickable to collapse */}
-            <button
-              onClick={() => toggleSection(section.id)}
-              className="w-full px-3 pt-3 pb-1 group"
-            >
-              <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 transition-all ${hasActive ? 'bg-blue-900' : 'bg-blue-900/80 hover:bg-blue-900'}`}>
-                <div className="w-1 h-4 bg-white rounded-full opacity-60 flex-shrink-0"/>
-                <p className="text-xs font-black text-white uppercase tracking-widest flex-1 text-left">{section.label}</p>
-                <span className={`text-white/60 transition-transform duration-200 text-xs ${isOpen ? 'rotate-0' : '-rotate-90'}`}>▾</span>
-              </div>
-            </button>
+    <div className="flex-1 overflow-y-auto py-3">
 
-            {/* Section items - collapsible */}
-            {isOpen && (
-              <div className="pb-1 space-y-0.5 px-2">
-                {section.items.map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => { setView(item.id as any); setMobileMenuOpen(false) }}
-                    className={navStyle(item.id)}
-                  >
-                    {item.icon}
-                    <span className="truncate">{item.label}</span>
-                    {view === item.id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      })}
+      {/* PERFORMANCE */}
+      <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee','dashboard-team'].includes(view)} />
+      {!collapsed.perf && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="dashboard-team" label="Team View" icon={<Users className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* PEOPLE */}
+      <SectionHeader sectionKey="people" label="People" hasActive={['employees','teams','org-chart'].includes(view)} />
+      {!collapsed.people && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="employees" label="Employees" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="teams" label="Teams" icon={<Award className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="org-chart" label="Org Chart" icon={<Users className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* OPERATIONS */}
+      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets'].includes(view)} />
+      {!collapsed.ops && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* TEAM LEAD TOOLS */}
+      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['entry','observations','tl-tools'].includes(view)} />
+      {!collapsed.tltools && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* DIRECTORY */}
+      <SectionHeader sectionKey="dir" label="Directory" hasActive={['directory'].includes(view)} />
+      {!collapsed.dir && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="directory" label="Links & Resources" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* SYSTEM */}
+      <SectionHeader sectionKey="sys" label="System" hasActive={['settings'].includes(view)} />
+      {!collapsed.sys && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="settings" label="Settings" icon={<Shield className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
     </div>
   )
 }
