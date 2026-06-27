@@ -12,6 +12,24 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 const YEARS = ['2024','2025','2026','2027','2028','2029','2030']
 const QUARTERS = ['Q1 (Jan-Mar)','Q2 (Apr-Jun)','Q3 (Jul-Sep)','Q4 (Oct-Dec)']
 
+
+const AVATAR_COLORS = [
+  'bg-blue-500', 'bg-indigo-500', 'bg-violet-500', 'bg-purple-500',
+  'bg-pink-500', 'bg-rose-500', 'bg-orange-500', 'bg-teal-500',
+  'bg-cyan-500', 'bg-emerald-500'
+]
+function avatarColor(name: string) {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+function Avatar({ name, avatarUrl, size = 'md' }: { name: string, avatarUrl?: string | null, size?: 'sm'|'md'|'lg' }) {
+  const sizes = { sm: 'w-7 h-7 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-14 h-14 text-xl' }
+  const initial = name?.charAt(0)?.toUpperCase() || '?'
+  if (avatarUrl) return <img src={avatarUrl} alt={name} className={`${sizes[size]} rounded-full object-cover ring-2 ring-white`} />
+  return <div className={`${sizes[size]} ${avatarColor(name)} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}>{initial}</div>
+}
+
 function scoreColor(s: number | null) {
   if (s === null) return 'text-gray-400'
   if (s >= 0.9999) return 'text-emerald-600'
@@ -158,7 +176,10 @@ export default function KPIApp() {
             ))}
           </nav>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500 hidden sm:block">{user}</span>
+            <button onClick={() => setView('settings')} className="flex items-center gap-2 hover:bg-gray-100 rounded-lg px-2 py-1 transition">
+              <UserAvatar username={user || ''} size="sm" />
+              <span className="text-sm text-gray-700 hidden sm:block font-medium">{user}</span>
+            </button>
             <button onClick={() => { localStorage.removeItem('kpi_user'); setUser(null) }} className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"><LogOut className="w-4 h-4" /></button>
             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 text-gray-500 rounded-lg hover:bg-gray-100"><Menu className="w-4 h-4" /></button>
           </div>
@@ -193,6 +214,18 @@ export default function KPIApp() {
   )
 }
 
+
+
+// ── User Avatar (loads from DB) ─────────────────────────────────────────────
+function UserAvatar({ username, size = 'md' }: { username: string, size?: 'sm'|'md'|'lg' }) {
+  const [avatarUrl, setAvatarUrl] = useState<string|null>(null)
+  useEffect(() => {
+    if (!username) return
+    supabase.from('app_users').select('avatar_url').eq('username', username).single()
+      .then(({data}) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url) })
+  }, [username])
+  return <Avatar name={username} avatarUrl={avatarUrl} size={size} />
+}
 
 // ── Expandable Note ─────────────────────────────────────────────────────────
 function ExpandableNote({ note }: { note: string | null }) {
@@ -803,7 +836,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
             <div key={name} className={gi > 0 ? 'border-t border-gray-200' : ''}>
               {/* Group header row */}
               <div className={`flex items-center gap-3 px-4 py-3 ${isMulti ? 'cursor-pointer hover:bg-gray-50' : 'hover:bg-gray-50'}`} onClick={() => isMulti && toggleExpand(name)}>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${someActive ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>{initial}</div>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 text-white ${someActive ? avatarColor(name) : 'bg-gray-200'}`}>{initial}</div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${someActive ? 'text-gray-900' : 'text-gray-400'}`}>{name}</p>
                   {!isExpanded && isMulti && (
@@ -1052,7 +1085,7 @@ function UserManager({ showToast }: { showToast: (m: string, t?: 'success'|'erro
             {appUsers.map((u, i) => (
               <div key={u.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
                 <div className="flex items-center gap-3 px-4 py-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${u.active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>{u.username.charAt(0).toUpperCase()}</div>
+                  <UserAvatar username={u.username} size="sm" />
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium ${u.active ? 'text-gray-900' : 'text-gray-400'}`}>{u.username}</p>
                     <p className="text-xs text-gray-400">Added {new Date(u.created_at).toLocaleDateString()}</p>
@@ -1213,6 +1246,68 @@ function ObservationsPanel({ employees, currentUser, showToast }:
   )
 }
 
+
+// ── Profile Picture Upload ──────────────────────────────────────────────────
+function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [avatarUrl, setAvatarUrl] = useState<string|null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    if (!currentUser) return
+    supabase.from('app_users').select('avatar_url').eq('username', currentUser).single()
+      .then(({data}) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url) })
+  }, [currentUser])
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !currentUser) return
+    if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB', 'error'); return }
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${currentUser}/avatar.${ext}`
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      const publicUrl = urlData.publicUrl + '?t=' + Date.now()
+      await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', currentUser)
+      setAvatarUrl(publicUrl)
+      showToast('Profile picture updated!')
+    } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Upload failed', 'error') }
+    setUploading(false)
+  }
+
+  async function removeAvatar() {
+    if (!currentUser) return
+    await supabase.from('app_users').update({ avatar_url: null }).eq('username', currentUser)
+    setAvatarUrl(null)
+    showToast('Profile picture removed')
+  }
+
+  return (
+    <div className="flex items-center gap-5">
+      <div className="flex-shrink-0">
+        {avatarUrl
+          ? <img src={avatarUrl} alt="avatar" className="w-20 h-20 rounded-full object-cover ring-4 ring-blue-100"/>
+          : <div className={`w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold ring-4 ring-blue-100 ${avatarColor(currentUser||'')}`}>{currentUser?.charAt(0).toUpperCase()}</div>
+        }
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-gray-700">{currentUser}</p>
+        <label className={`cursor-pointer inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+          <PlusCircle className="w-4 h-4"/>
+          {uploading ? 'Uploading...' : avatarUrl ? 'Change Photo' : 'Upload Photo'}
+          <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading}/>
+        </label>
+        {avatarUrl && (
+          <button onClick={removeAvatar} className="block text-xs text-red-500 hover:text-red-700">Remove photo</button>
+        )}
+        <p className="text-xs text-gray-400">JPG, PNG or GIF · Max 2MB</p>
+      </div>
+    </div>
+  )
+}
+
 // ── Settings Panel ──────────────────────────────────────────────────────────
 function SettingsPanel({ currentUser, showToast }: { currentUser: string|null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>('users')
@@ -1302,14 +1397,22 @@ function SettingsPanel({ currentUser, showToast }: { currentUser: string|null, s
         </div>
       )}
       {activeTab==='password' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-md">
-          <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Key className="w-4 h-4 text-blue-500"/>Change Your Password</h3>
-          <form onSubmit={changePassword} className="space-y-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Current password</label><input type="password" value={oldPassword} onChange={e=>setOldPassword(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">New password</label><input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} required minLength={6} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label><input type="password" value={confirmPass} onChange={e=>setConfirmPass(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
-            <button type="submit" disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"><Save className="w-4 h-4"/>{saving?'Saving...':'Change Password'}</button>
-          </form>
+        <div className="space-y-6 max-w-md">
+          {/* Profile picture */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500"/>Profile Picture</h3>
+            <ProfilePictureUpload currentUser={currentUser} showToast={showToast} />
+          </div>
+          {/* Change password */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Key className="w-4 h-4 text-blue-500"/>Change Your Password</h3>
+            <form onSubmit={changePassword} className="space-y-4">
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Current password</label><input type="password" value={oldPassword} onChange={e=>setOldPassword(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">New password</label><input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} required minLength={6} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label><input type="password" value={confirmPass} onChange={e=>setConfirmPass(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+              <button type="submit" disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"><Save className="w-4 h-4"/>{saving?'Saving...':'Change Password'}</button>
+            </form>
+          </div>
         </div>
       )}
     </div>
