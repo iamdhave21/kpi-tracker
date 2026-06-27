@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp } from 'lucide-react'
 
-type View = 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees'
+type View = 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams'
 type Toast = { msg: string; type: 'success' | 'error' }
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -59,11 +59,11 @@ function LoginScreen({ onLogin }: { onLogin: (u: string) => void }) {
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-            <input className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={username} onChange={e => setUsername(e.target.value)} required autoFocus />
+            <input className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" value={username} onChange={e => setUsername(e.target.value)} required autoFocus />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input type="password" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} required />
+            <input type="password" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} required />
           </div>
           {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
           <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">
@@ -121,6 +121,7 @@ export default function KPIApp() {
     { id: 'dashboard-employee' as View, label: 'Employee', icon: <TrendingUp className="w-4 h-4" /> },
     { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
     { id: 'employees' as View, label: 'Employees', icon: <Users className="w-4 h-4" /> },
+    { id: 'teams' as View, label: 'Teams', icon: <Award className="w-4 h-4" /> },
   ]
 
   return (
@@ -169,6 +170,7 @@ export default function KPIApp() {
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} selEmployee={selEmployee} setSelEmployee={setSelEmployee} />}
             {view === 'entry' && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} />}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} />}
+            {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
           </>
         )}
       </main>
@@ -415,20 +417,20 @@ function KPIEntry({ employees, records, onSaved, showToast }:
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Employee</label>
-            <select value={empId} onChange={e => setEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select value={empId} onChange={e => setEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
               {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
-            <select value={monthLabel} onChange={e => setMonthLabel(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select value={monthLabel} onChange={e => setMonthLabel(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
               {allMonths.map(m => <option key={m}>{m}</option>)}
             </select>
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
-          <input value={designation} onChange={e => setDesignation(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. FSCM, AR B2B, AP - COGS" />
+          <input value={designation} onChange={e => setDesignation(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. FSCM, AR B2B, AP - COGS" />
         </div>
         <div className="grid grid-cols-2 gap-4">
           {[
@@ -454,7 +456,7 @@ function KPIEntry({ employees, records, onSaved, showToast }:
         )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Client Feedback</label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Client feedback, coaching notes, highlights, lowlights..." />
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Client feedback, coaching notes, highlights, lowlights..." />
         </div>
         <div className="flex items-center gap-2">
           <input type="checkbox" id="coached" checked={coached} onChange={e => setCoached(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600" />
@@ -543,6 +545,176 @@ function EmployeeManager({ employees, onChanged, showToast }:
           </div>
         ))}
         {filtered.length === 0 && <div className="text-center py-12 text-gray-400 text-sm">No employees found.</div>}
+      </div>
+    </div>
+  )
+}
+
+
+// ── Team Manager ───────────────────────────────────────────────────────────
+function TeamManager({ employees, showToast }:
+  { employees: Employee[], showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [teams, setTeams] = useState<any[]>([])
+  const [members, setMembers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newTeamName, setNewTeamName] = useState('')
+  const [newDept, setNewDept] = useState('')
+  const [newLeadId, setNewLeadId] = useState('')
+  const [selTeam, setSelTeam] = useState<string | null>(null)
+  const [addMemberId, setAddMemberId] = useState('')
+
+  async function loadTeams() {
+    setLoading(true)
+    const [{ data: t }, { data: m }] = await Promise.all([
+      supabase.from('teams').select('*, team_lead:employees(name)').order('name'),
+      supabase.from('team_members').select('*, employee:employees(name, designation)')
+    ])
+    setTeams(t || [])
+    setMembers(m || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadTeams() }, [])
+
+  async function createTeam() {
+    if (!newTeamName.trim()) return
+    const { error } = await supabase.from('teams').insert({
+      name: newTeamName.trim(), department: newDept.trim(),
+      team_lead_id: newLeadId || null, active: true
+    })
+    if (error) showToast(error.message, 'error')
+    else { setNewTeamName(''); setNewDept(''); setNewLeadId(''); loadTeams(); showToast('Team created!') }
+  }
+
+  async function deleteTeam(id: string) {
+    if (!confirm('Delete this team?')) return
+    await supabase.from('teams').delete().eq('id', id)
+    setSelTeam(null); loadTeams(); showToast('Team deleted')
+  }
+
+  async function addMember() {
+    if (!selTeam || !addMemberId) return
+    const { error } = await supabase.from('team_members').insert({ team_id: selTeam, employee_id: addMemberId })
+    if (error) showToast('Member already in team', 'error')
+    else { setAddMemberId(''); loadTeams(); showToast('Member added!') }
+  }
+
+  async function removeMember(id: string) {
+    await supabase.from('team_members').delete().eq('id', id)
+    loadTeams()
+  }
+
+  async function updateLead(teamId: string, leadId: string) {
+    await supabase.from('teams').update({ team_lead_id: leadId || null }).eq('id', teamId)
+    loadTeams()
+  }
+
+  const teamMembers = members.filter(m => m.team_id === selTeam)
+  const teamMemberIds = teamMembers.map(m => m.employee_id)
+  const availableToAdd = employees.filter(e => e.active && !teamMemberIds.includes(e.id))
+  const selectedTeam = teams.find(t => t.id === selTeam)
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div><h2 className="text-xl font-bold text-gray-900">Team Management</h2>
+        <p className="text-sm text-gray-500">{teams.length} teams configured</p></div>
+
+      {/* Create team */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2">
+          <PlusCircle className="w-4 h-4 text-blue-500" />Create New Team
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <input value={newTeamName} onChange={e => setNewTeamName(e.target.value)}
+            placeholder="Team name (e.g. AR Team)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input value={newDept} onChange={e => setNewDept(e.target.value)}
+            placeholder="Department (e.g. AR, AP, APAC)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <select value={newLeadId} onChange={e => setNewLeadId(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Select team lead...</option>
+            {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+          <button onClick={createTeam} disabled={!newTeamName.trim()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2">
+            <PlusCircle className="w-4 h-4" />Create
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {/* Teams list */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <h3 className="font-semibold text-gray-700 text-sm">All Teams</h3>
+          </div>
+          {loading ? <div className="p-8 text-center text-gray-400">Loading...</div> :
+            teams.length === 0 ? <div className="p-8 text-center text-gray-400 text-sm">No teams yet. Create one above.</div> :
+            teams.map((team, i) => (
+              <div key={team.id} onClick={() => setSelTeam(team.id)}
+                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition ${i > 0 ? 'border-t border-gray-100' : ''} ${selTeam === team.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900 text-sm">{team.name}</p>
+                  <p className="text-xs text-gray-500">{team.department} {team.team_lead?.name ? `· Lead: ${team.team_lead.name.split(',')[0]}` : '· No lead assigned'}</p>
+                  <p className="text-xs text-gray-400">{members.filter(m => m.team_id === team.id).length} members</p>
+                </div>
+                <button onClick={e => { e.stopPropagation(); deleteTeam(team.id) }}
+                  className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            ))
+          }
+        </div>
+
+        {/* Team detail */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {!selTeam ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Select a team to manage members</div>
+          ) : (
+            <>
+              <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-semibold text-gray-700 text-sm">{selectedTeam?.name} — Members</h3>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Team Lead:</span>
+                  <select value={selectedTeam?.team_lead_id || ''} onChange={e => updateLead(selTeam, e.target.value)}
+                    className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs text-gray-900">
+                    <option value="">No lead assigned</option>
+                    {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name.split(',')[0]}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="p-4 border-b border-gray-100">
+                <div className="flex gap-2">
+                  <select value={addMemberId} onChange={e => setAddMemberId(e.target.value)}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Add member...</option>
+                    {availableToAdd.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                  <button onClick={addMember} disabled={!addMemberId}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+                    Add
+                  </button>
+                </div>
+              </div>
+              <div>
+                {teamMembers.length === 0 ? <div className="p-6 text-center text-gray-400 text-sm">No members yet</div> :
+                  teamMembers.map((m, i) => (
+                    <div key={m.id} className={`flex items-center gap-3 px-4 py-2.5 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                      <div className="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                        {m.employee?.name?.split(',')[0]?.charAt(0) || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{m.employee?.name}</p>
+                        <p className="text-xs text-gray-500">{m.employee?.designation}</p>
+                      </div>
+                      <button onClick={() => removeMember(m.id)} className="text-gray-400 hover:text-red-600 p-1 transition">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))
+                }
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
