@@ -352,7 +352,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
           {perfView === 'quarterly' && <select value={selQuarter} onChange={e => setSelQuarter(parseInt(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{QUARTERS.map((q,i) => <option key={q} value={i}>{q}</option>)}</select>}
           {(perfView === 'monthly' || perfView === 'weekly') && <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{MONTHS.map(m => <option key={m}>{m}</option>)}</select>}
           {perfView !== 'weekly' && <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{YEARS.map(y => <option key={y}>{y}</option>)}</select>}
-          <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search..." className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-36" /></div>
+          <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search..." className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 w-36" /></div>
         </div>
       </div>
 
@@ -540,7 +540,7 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[{label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A'},{label:'Months Tracked',value:empRecords.length},{label:'Best Score',value:best?pct(best.overall_score):'N/A'},{label:'Perfect Months',value:empRecords.filter(r=>(r.overall_score||0)>=0.9999).length}].map(c => <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-500">{c.label}</p><p className="text-xl font-bold text-gray-900 mt-1">{c.value}</p></div>)}
         </div>
-        {chartData.length > 1 && (
+        {chartData.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h4 className="font-semibold text-gray-700 mb-1 text-sm">Performance Trend</h4>
             <p className="text-xs text-gray-400 mb-4">Attendance · Accuracy · Efficiency · Overall Score</p>
@@ -548,7 +548,7 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
               <LineChart data={chartData} margin={{top:5,right:10,left:-20,bottom:5}}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
                 <XAxis dataKey="month" tick={{fontSize:10}}/>
-                <YAxis domain={[80,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
+                <YAxis domain={[0,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
                 <Tooltip formatter={(v:unknown) => typeof v === 'number' ? v.toFixed(2) + '%' : String(v)} />
                 <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4" />
                 <Line type="monotone" dataKey="attendance" stroke="#10b981" strokeWidth={2} dot={{r:3,fill:'#10b981'}} name="Attendance"/>
@@ -747,7 +747,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
         <p className="text-xs text-gray-400 mt-2">To track the same person across multiple projects, add them again with a different designation.</p>
       </div>
 
-      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name or designation..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name or designation..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {groupEntries.length === 0 && <div className="text-center py-12 text-gray-400 text-sm">No employees found.</div>}
