@@ -30,14 +30,11 @@ function pct(v: number | null) {
   if (v === null) return 'N/A'
   return (v * 100).toFixed(2) + '%'
 }
+function monthIndex(label: string) { return MONTHS.indexOf(label.split(' ')[0]) }
+function yearOf(label: string) { const p = label.split(' '); return parseInt(p[p.length-1]) || 0 }
 
-function monthIndex(label: string) {
-  const m = label.split(' ')[0]
-  return MONTHS.indexOf(m)
-}
-function yearOf(label: string) {
-  const parts = label.split(' ')
-  return parseInt(parts[parts.length - 1]) || 0
+async function writeAuditLog(action: string, performedBy: string, employeeName: string, monthLabel: string, fieldChanged: string, oldValue: string, newValue: string) {
+  await supabase.from('audit_log').insert({ action, performed_by: performedBy, employee_name: employeeName, month_label: monthLabel, field_changed: fieldChanged, old_value: oldValue, new_value: newValue })
 }
 
 function LoginScreen({ onLogin }: { onLogin: (u: string) => void }) {
@@ -47,8 +44,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string) => void }) {
   const [loading, setLoading] = useState(false)
 
   async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true); setError('')
+    e.preventDefault(); setLoading(true); setError('')
     try {
       const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) })
       const data = await res.json()
@@ -77,9 +73,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string) => void }) {
             <input type="password" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} required />
           </div>
           {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
-          <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">
-            {loading ? 'Signing in...' : 'Sign in'}
-          </button>
+          <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">{loading ? 'Signing in...' : 'Sign in'}</button>
         </form>
         <p className="text-center text-xs text-gray-400 mt-6">Default: admin / admin123</p>
       </div>
@@ -111,8 +105,7 @@ export default function KPIApp() {
   useEffect(() => { if (user) loadData() }, [user])
 
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 3500)
+    setToast({ msg, type }); setTimeout(() => setToast(null), 3500)
   }
 
   async function loadData() {
@@ -138,6 +131,9 @@ export default function KPIApp() {
     { id: 'teams' as View, label: 'Teams', icon: <Award className="w-4 h-4" /> },
     { id: 'settings' as View, label: 'Settings', icon: <FileText className="w-4 h-4" /> },
   ]
+
+  // Only active employee IDs for filtering performance
+  const activeEmpIds = new Set(employees.filter(e => e.active).map(e => e.id))
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -181,20 +177,11 @@ export default function KPIApp() {
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
         ) : (
           <>
-            {view === 'dashboard-month' && (
-              <PerformanceDashboard
-                records={records} employees={employees}
-                perfView={perfView} setPerfView={setPerfView}
-                selMonth={selMonth} selYear={selYear} selQuarter={selQuarter}
-                setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter}
-                searchQ={searchQ} setSearchQ={setSearchQ}
-                onEditRecord={() => loadData()} showToast={showToast}
-              />
-            )}
-            {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} selEmployee={selEmployee} setSelEmployee={setSelEmployee} />}
-            {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} showToast={showToast} />}
-            {view === 'entry' && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} />}
-            {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} />}
+            {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} />}
+            {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} />}
+            {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
+            {view === 'entry' && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
+            {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
             {view === 'settings' && <SettingsPanel currentUser={user} showToast={showToast} />}
           </>
@@ -204,209 +191,159 @@ export default function KPIApp() {
   )
 }
 
-// ── Performance Dashboard (Monthly/Weekly/Quarterly/Annual) ─────────────────
-function PerformanceDashboard({ records, employees, perfView, setPerfView, selMonth, selYear, selQuarter, setSelMonth, setSelYear, setSelQuarter, searchQ, setSearchQ, onEditRecord, showToast }:
-  { records: KpiRecord[], employees: Employee[], perfView: PerfView, setPerfView: (v: PerfView) => void, selMonth: string, selYear: string, selQuarter: number, setSelMonth: (v: string) => void, setSelYear: (v: string) => void, setSelQuarter: (v: number) => void, searchQ: string, setSearchQ: (v: string) => void, onEditRecord: () => void, showToast: (m: string, t?: 'success'|'error') => void }) {
-
-  const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
-  const [editAtt, setEditAtt] = useState('')
-  const [editAcc, setEditAcc] = useState('')
-  const [editEff, setEditEff] = useState('')
-  const [editFb, setEditFb] = useState('')
-  const [editNotes, setEditNotes] = useState('')
+// ── Edit Score Modal ────────────────────────────────────────────────────────
+function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { record: KpiRecord, currentUser: string, onSaved: () => void, onClose: () => void, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [att, setAtt] = useState(record.attendance !== null ? (record.attendance * 100).toFixed(2) : '')
+  const [acc, setAcc] = useState(record.accuracy !== null ? (record.accuracy * 100).toFixed(2) : '')
+  const [eff, setEff] = useState(record.efficiency !== null ? (record.efficiency * 100).toFixed(2) : '')
+  const [fb, setFb] = useState(record.feedback !== null ? (record.feedback * 100).toFixed(2) : '')
+  const [notes, setNotes] = useState(record.notes || '')
   const [saving, setSaving] = useState(false)
 
-  function filterRecords(recs: KpiRecord[]) {
-    const q = searchQ.toLowerCase()
-    return recs.filter(r => !q || r.employee_name?.toLowerCase().includes(q) || r.designation?.toLowerCase().includes(q))
+  async function save() {
+    setSaving(true)
+    const attN = att !== '' ? parseFloat(att)/100 : null
+    const accN = acc !== '' ? parseFloat(acc)/100 : null
+    const effN = eff !== '' ? parseFloat(eff)/100 : null
+    const fbN = fb !== '' ? parseFloat(fb)/100 : null
+    const overall = (attN !== null && accN !== null && effN !== null && fbN !== null)
+      ? attN*0.2 + accN*0.3 + effN*0.3 + fbN*0.2 : record.overall_score
+
+    // Build audit entries for changed fields
+    const changes: {field: string, old: string, nw: string}[] = []
+    if (attN !== record.attendance) changes.push({ field: 'Attendance', old: pct(record.attendance), nw: pct(attN) })
+    if (accN !== record.accuracy) changes.push({ field: 'Accuracy', old: pct(record.accuracy), nw: pct(accN) })
+    if (effN !== record.efficiency) changes.push({ field: 'Efficiency', old: pct(record.efficiency), nw: pct(effN) })
+    if (fbN !== record.feedback) changes.push({ field: 'Feedback', old: pct(record.feedback), nw: pct(fbN) })
+    if (notes !== record.notes) changes.push({ field: 'Notes', old: record.notes || '', nw: notes })
+
+    const { error } = await supabase.from('kpi_records').update({ attendance: attN, accuracy: accN, efficiency: effN, feedback: fbN, overall_score: overall, notes, updated_at: new Date().toISOString() }).eq('id', record.id)
+    if (error) { showToast(error.message, 'error'); setSaving(false); return }
+
+    // Write audit log for each changed field
+    for (const c of changes) {
+      await writeAuditLog('EDIT_SCORE', currentUser, record.employee_name || '', record.month_label || '', c.field, c.old, c.nw)
+    }
+
+    showToast('Record updated!'); onSaved(); onClose()
+    setSaving(false)
   }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-gray-900">Edit KPI Record</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Changes will be logged to audit trail</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="bg-gray-50 rounded-lg px-3 py-2">
+          <p className="text-sm font-medium text-gray-900">{record.employee_name}</p>
+          <p className="text-xs text-gray-500">{record.designation} · {record.month_label}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label: 'Attendance (20%)', val: att, set: setAtt },
+            { label: 'Accuracy (30%)', val: acc, set: setAcc },
+            { label: 'Efficiency (30%)', val: eff, set: setEff },
+            { label: 'Feedback (20%)', val: fb, set: setFb },
+          ].map(f => (
+            <div key={f.label}>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+              <div className="relative">
+                <input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e => f.set(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving...' : 'Save Changes'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Performance Dashboard ───────────────────────────────────────────────────
+function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setPerfView, selMonth, selYear, selQuarter, setSelMonth, setSelYear, setSelQuarter, searchQ, setSearchQ, onEditRecord, showToast, currentUser }:
+  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, perfView: PerfView, setPerfView: (v: PerfView) => void, selMonth: string, selYear: string, selQuarter: number, setSelMonth: (v: string) => void, setSelYear: (v: string) => void, setSelQuarter: (v: number) => void, searchQ: string, setSearchQ: (v: string) => void, onEditRecord: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
+
+  const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
 
   function getFilteredByView(): KpiRecord[] {
-    let filtered: KpiRecord[] = []
-    if (perfView === 'monthly') {
-      filtered = records.filter(r => {
-        const ml = r.month_label || ''
-        return ml.toLowerCase().includes(selMonth.toLowerCase()) && ml.includes(selYear)
-      })
+    const q = searchQ.toLowerCase()
+    let base = records.filter(r => activeEmpIds.has(r.employee_id))
+    if (perfView === 'monthly' || perfView === 'weekly') {
+      base = base.filter(r => (r.month_label||'').toLowerCase().includes(selMonth.toLowerCase()) && (r.month_label||'').includes(selYear))
     } else if (perfView === 'quarterly') {
-      const qMonths = [
-        [0,1,2],[3,4,5],[6,7,8],[9,10,11]
-      ][selQuarter]
-      filtered = records.filter(r => {
-        const mi = monthIndex(r.month_label || '')
-        const yr = yearOf(r.month_label || '')
-        return qMonths.includes(mi) && yr === parseInt(selYear)
-      })
-    } else if (perfView === 'annual') {
-      filtered = records.filter(r => yearOf(r.month_label || '') === parseInt(selYear))
+      const qMonths = [[0,1,2],[3,4,5],[6,7,8],[9,10,11]][selQuarter]
+      base = base.filter(r => qMonths.includes(monthIndex(r.month_label||'')) && yearOf(r.month_label||'') === parseInt(selYear))
     } else {
-      // weekly — show current month as proxy (no weekly data in DB)
-      filtered = records.filter(r => {
-        const ml = r.month_label || ''
-        return ml.toLowerCase().includes(selMonth.toLowerCase()) && ml.includes(selYear)
-      })
+      base = base.filter(r => yearOf(r.month_label||'') === parseInt(selYear))
     }
-    return filterRecords(filtered)
+    return base.filter(r => !q || r.employee_name?.toLowerCase().includes(q) || r.designation?.toLowerCase().includes(q))
   }
 
-  // For quarterly/annual: aggregate per employee
   function aggregateRecords(recs: KpiRecord[]): KpiRecord[] {
     if (perfView === 'monthly' || perfView === 'weekly') return recs
     const empMap = new Map<string, KpiRecord[]>()
-    recs.forEach(r => {
-      const key = r.employee_id
-      if (!empMap.has(key)) empMap.set(key, [])
-      empMap.get(key)!.push(r)
-    })
+    recs.forEach(r => { if (!empMap.has(r.employee_id)) empMap.set(r.employee_id, []); empMap.get(r.employee_id)!.push(r) })
     const result: KpiRecord[] = []
-    empMap.forEach((empRecs, empId) => {
+    empMap.forEach(empRecs => {
       const valid = empRecs.filter(r => r.overall_score !== null)
-      if (valid.length === 0) return
-      const avg = (arr: (number|null)[]) => {
-        const nums = arr.filter(x => x !== null) as number[]
-        return nums.length ? nums.reduce((a,b) => a+b, 0)/nums.length : null
-      }
-      result.push({
-        ...valid[0],
-        attendance: avg(valid.map(r => r.attendance)),
-        accuracy: avg(valid.map(r => r.accuracy)),
-        efficiency: avg(valid.map(r => r.efficiency)),
-        feedback: avg(valid.map(r => r.feedback)),
-        overall_score: avg(valid.map(r => r.overall_score)),
-        month_label: perfView === 'quarterly' ? QUARTERS[selQuarter] + ' ' + selYear : selYear,
-        notes: null,
-      })
+      if (!valid.length) return
+      const avg = (arr: (number|null)[]) => { const n = arr.filter(x => x !== null) as number[]; return n.length ? n.reduce((a,b) => a+b,0)/n.length : null }
+      result.push({ ...valid[0], attendance: avg(valid.map(r=>r.attendance)), accuracy: avg(valid.map(r=>r.accuracy)), efficiency: avg(valid.map(r=>r.efficiency)), feedback: avg(valid.map(r=>r.feedback)), overall_score: avg(valid.map(r=>r.overall_score)), month_label: perfView === 'quarterly' ? QUARTERS[selQuarter]+' '+selYear : selYear, notes: null })
     })
     return result
   }
 
   const filtered = getFilteredByView()
   const displayed = aggregateRecords(filtered)
-  const ranked = [...displayed].filter(r => r.overall_score !== null && (r.overall_score || 0) > 0).sort((a, b) => (b.overall_score || 0) - (a.overall_score || 0))
-  const avgScore = ranked.length ? ranked.reduce((s, r) => s + (r.overall_score || 0), 0) / ranked.length : 0
+  const ranked = [...displayed].filter(r => r.overall_score !== null && (r.overall_score||0) > 0).sort((a,b) => (b.overall_score||0)-(a.overall_score||0))
+  const avgScore = ranked.length ? ranked.reduce((s,r) => s+(r.overall_score||0),0)/ranked.length : 0
+  const viewLabel = perfView === 'quarterly' ? QUARTERS[selQuarter]+' '+selYear : perfView === 'annual' ? selYear : selMonth+' '+selYear
 
-  function openEdit(r: KpiRecord) {
-    setEditRecord(r)
-    setEditAtt(r.attendance !== null ? (r.attendance * 100).toFixed(2) : '')
-    setEditAcc(r.accuracy !== null ? (r.accuracy * 100).toFixed(2) : '')
-    setEditEff(r.efficiency !== null ? (r.efficiency * 100).toFixed(2) : '')
-    setEditFb(r.feedback !== null ? (r.feedback * 100).toFixed(2) : '')
-    setEditNotes(r.notes || '')
-  }
-
-  async function saveEdit() {
-    if (!editRecord) return
-    setSaving(true)
-    const att = editAtt !== '' ? parseFloat(editAtt)/100 : null
-    const acc = editAcc !== '' ? parseFloat(editAcc)/100 : null
-    const eff = editEff !== '' ? parseFloat(editEff)/100 : null
-    const fb = editFb !== '' ? parseFloat(editFb)/100 : null
-    const overall = (att !== null && acc !== null && eff !== null && fb !== null)
-      ? att*0.2 + acc*0.3 + eff*0.3 + fb*0.2 : editRecord.overall_score
-    const { error } = await supabase.from('kpi_records').update({
-      attendance: att, accuracy: acc, efficiency: eff, feedback: fb,
-      overall_score: overall, notes: editNotes, updated_at: new Date().toISOString()
-    }).eq('id', editRecord.id)
-    if (error) showToast(error.message, 'error')
-    else { showToast('Record updated!'); setEditRecord(null); onEditRecord() }
-    setSaving(false)
-  }
-
-  const perfTabs: { id: PerfView, label: string }[] = [
-    { id: 'weekly', label: 'Weekly' },
-    { id: 'monthly', label: 'Monthly' },
-    { id: 'quarterly', label: 'Quarterly' },
-    { id: 'annual', label: 'Annual' },
+  const perfTabs: {id: PerfView, label: string}[] = [
+    {id:'weekly',label:'Weekly'},{id:'monthly',label:'Monthly'},{id:'quarterly',label:'Quarterly'},{id:'annual',label:'Annual'}
   ]
-
-  const viewLabel = perfView === 'quarterly' ? QUARTERS[selQuarter] + ' ' + selYear
-    : perfView === 'annual' ? selYear
-    : selMonth + ' ' + selYear
 
   return (
     <div className="space-y-6">
-      {/* Edit modal */}
-      {editRecord && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-gray-900">Edit Record</h3>
-              <button onClick={() => setEditRecord(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-            </div>
-            <p className="text-sm text-gray-500">{editRecord.employee_name} — {editRecord.month_label}</p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: 'Attendance (20%)', val: editAtt, set: setEditAtt },
-                { label: 'Accuracy (30%)', val: editAcc, set: setEditAcc },
-                { label: 'Efficiency (30%)', val: editEff, set: setEditEff },
-                { label: 'Feedback (20%)', val: editFb, set: setEditFb },
-              ].map(f => (
-                <div key={f.label}>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
-                  <div className="relative">
-                    <input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e => f.set(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100" />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-              <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-            <div className="flex gap-3 pt-1">
-              <button onClick={() => setEditRecord(null)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
-              <button onClick={saveEdit} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {editRecord && <EditScoreModal record={editRecord} currentUser={currentUser} onSaved={onEditRecord} onClose={() => setEditRecord(null)} showToast={showToast} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Performance</h2>
-          <p className="text-sm text-gray-500">{ranked.length} records for {viewLabel}</p>
+          <p className="text-sm text-gray-500">{ranked.length} active employees for {viewLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Period toggle */}
           <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
             {perfTabs.map(t => (
-              <button key={t.id} onClick={() => setPerfView(t.id)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${perfView === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
-                {t.label}
-              </button>
+              <button key={t.id} onClick={() => setPerfView(t.id)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${perfView === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>{t.label}</button>
             ))}
           </div>
-          {/* Selectors */}
-          {perfView === 'quarterly' && (
-            <select value={selQuarter} onChange={e => setSelQuarter(parseInt(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {QUARTERS.map((q,i) => <option key={q} value={i}>{q}</option>)}
-            </select>
-          )}
-          {(perfView === 'monthly' || perfView === 'weekly') && (
-            <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {MONTHS.map(m => <option key={m}>{m}</option>)}
-            </select>
-          )}
-          {perfView !== 'weekly' && (
-            <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {YEARS.map(y => <option key={y}>{y}</option>)}
-            </select>
-          )}
+          {perfView === 'quarterly' && <select value={selQuarter} onChange={e => setSelQuarter(parseInt(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{QUARTERS.map((q,i) => <option key={q} value={i}>{q}</option>)}</select>}
+          {(perfView === 'monthly' || perfView === 'weekly') && <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{MONTHS.map(m => <option key={m}>{m}</option>)}</select>}
+          {perfView !== 'weekly' && <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{YEARS.map(y => <option key={y}>{y}</option>)}</select>}
           <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search..." className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-36" /></div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Employees', value: ranked.length, icon: <Users className="w-5 h-5 text-blue-500" />, bg: 'bg-blue-50' },
-          { label: 'Avg Score', value: avgScore > 0 ? (avgScore * 100).toFixed(2) + '%' : 'N/A', icon: <BarChart2 className="w-5 h-5 text-purple-500" />, bg: 'bg-purple-50' },
-          { label: 'Perfect (100%)', value: ranked.filter(r => (r.overall_score || 0) >= 0.9999).length, icon: <Award className="w-5 h-5 text-emerald-500" />, bg: 'bg-emerald-50' },
-          { label: 'At Risk (<97%)', value: ranked.filter(r => (r.overall_score || 0) < 0.97).length, icon: <AlertCircle className="w-5 h-5 text-red-500" />, bg: 'bg-red-50' },
+          {label:'Employees',value:ranked.length,icon:<Users className="w-5 h-5 text-blue-500"/>,bg:'bg-blue-50'},
+          {label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A',icon:<BarChart2 className="w-5 h-5 text-purple-500"/>,bg:'bg-purple-50'},
+          {label:'Perfect (100%)',value:ranked.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
+          {label:'At Risk (<97%)',value:ranked.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50'},
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3">
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
@@ -419,15 +356,15 @@ function PerformanceDashboard({ records, employees, perfView, setPerfView, selMo
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
-              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall','Notes','Edit'].map(h => (
-                <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
+              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall','Notes',''].map(h => (
+                <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
-              {ranked.length === 0 && <tr><td colSpan={10} className="text-center py-12 text-gray-400">No records found for this period.</td></tr>}
-              {ranked.map((r, i) => (
+              {ranked.length===0 && <tr><td colSpan={10} className="text-center py-12 text-gray-400">No records for active employees in this period.</td></tr>}
+              {ranked.map((r,i) => (
                 <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-400 font-medium">{i + 1}</td>
+                  <td className="px-4 py-3 text-gray-400 font-medium">{i+1}</td>
                   <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{r.employee_name}</td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.designation}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.attendance)}</td>
@@ -435,11 +372,9 @@ function PerformanceDashboard({ records, employees, perfView, setPerfView, selMo
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.efficiency)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.feedback)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{r.notes ? r.notes.substring(0,60)+(r.notes.length>60?'...':'') : 'N/A'}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{r.notes?r.notes.substring(0,50)+(r.notes.length>50?'...':''):'N/A'}</td>
                   <td className="px-4 py-3">
-                    {(perfView === 'monthly' || perfView === 'weekly') && (
-                      <button onClick={() => openEdit(r)} className="text-gray-400 hover:text-blue-600 p-1 transition"><Edit2 className="w-4 h-4" /></button>
-                    )}
+                    {(perfView==='monthly'||perfView==='weekly') && <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>}
                   </td>
                 </tr>
               ))}
@@ -452,8 +387,8 @@ function PerformanceDashboard({ records, employees, perfView, setPerfView, selMo
 }
 
 // ── Team Dashboard ──────────────────────────────────────────────────────────
-function TeamDashboard({ records, employees, showToast }:
-  { records: KpiRecord[], employees: Employee[], showToast: (m: string, t?: 'success'|'error') => void }) {
+function TeamDashboard({ records, employees, activeEmpIds, showToast }:
+  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [teams, setTeams] = useState<any[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [selTeam, setSelTeam] = useState<string>('')
@@ -467,19 +402,17 @@ function TeamDashboard({ records, employees, showToast }:
       supabase.from('teams').select('*, team_lead:employees(name)').order('name'),
       supabase.from('team_members').select('*, employee:employees(name, designation)')
     ])
-    setTeams(t || [])
-    setMembers(m || [])
+    setTeams(t || []); setMembers(m || [])
     if (t && t.length > 0 && !selTeam) setSelTeam(t[0].id)
     setLoading(false)
   }
 
   useEffect(() => { loadTeams() }, [])
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
-
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"/></div>
   if (teams.length === 0) return (
     <div className="text-center py-20 text-gray-400">
-      <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+      <Users className="w-12 h-12 mx-auto mb-3 opacity-30"/>
       <p className="font-medium">No teams configured yet</p>
       <p className="text-sm mt-1">Go to the Teams tab to create teams and assign members</p>
     </div>
@@ -487,53 +420,37 @@ function TeamDashboard({ records, employees, showToast }:
 
   const selectedTeam = teams.find(t => t.id === selTeam)
   const teamMemberIds = members.filter(m => m.team_id === selTeam).map(m => m.employee_id)
-  const monthLabel = `${selMonth} ${selYear}`
+  const activeTeamMemberIds = teamMemberIds.filter(id => activeEmpIds.has(id))
   const teamRecords = records.filter(r =>
-    teamMemberIds.includes(r.employee_id) &&
-    (r.month_label || '').toLowerCase().includes(selMonth.toLowerCase()) &&
-    (r.month_label || '').includes(selYear) &&
-    r.overall_score !== null && (r.overall_score || 0) > 0
-  ).sort((a, b) => (b.overall_score || 0) - (a.overall_score || 0))
-
-  const avgScore = teamRecords.length ? teamRecords.reduce((s, r) => s + (r.overall_score || 0), 0) / teamRecords.length : 0
+    activeTeamMemberIds.includes(r.employee_id) &&
+    (r.month_label||'').toLowerCase().includes(selMonth.toLowerCase()) &&
+    (r.month_label||'').includes(selYear) &&
+    r.overall_score !== null && (r.overall_score||0) > 0
+  ).sort((a,b) => (b.overall_score||0)-(a.overall_score||0))
+  const avgScore = teamRecords.length ? teamRecords.reduce((s,r) => s+(r.overall_score||0),0)/teamRecords.length : 0
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Team View</h2>
-          <p className="text-sm text-gray-500">{teamRecords.length} records for {monthLabel}</p>
-        </div>
+        <div><h2 className="text-xl font-bold text-gray-900">Team View</h2><p className="text-sm text-gray-500">{teamRecords.length} active members with records</p></div>
         <div className="flex flex-wrap gap-2">
-          <select value={selTeam} onChange={e => setSelTeam(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            {MONTHS.map(m => <option key={m}>{m}</option>)}
-          </select>
-          <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            {YEARS.map(y => <option key={y}>{y}</option>)}
-          </select>
+          <select value={selTeam} onChange={e => setSelTeam(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+          <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{MONTHS.map(m => <option key={m}>{m}</option>)}</select>
+          <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{YEARS.map(y => <option key={y}>{y}</option>)}</select>
         </div>
       </div>
-
       {selectedTeam && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">{selectedTeam.name.charAt(0)}</div>
-          <div>
-            <h3 className="font-bold text-gray-900">{selectedTeam.name}</h3>
-            <p className="text-sm text-gray-500">{selectedTeam.department}{selectedTeam.team_lead?.name ? ` · Lead: ${selectedTeam.team_lead.name.split(',')[0]}` : ''}</p>
-            <p className="text-xs text-gray-400">{teamMemberIds.length} members</p>
-          </div>
+          <div><h3 className="font-bold text-gray-900">{selectedTeam.name}</h3><p className="text-sm text-gray-500">{selectedTeam.department}{selectedTeam.team_lead?.name ? ` · Lead: ${selectedTeam.team_lead.name.split(',')[0]}` : ''}</p><p className="text-xs text-gray-400">{activeTeamMemberIds.length} active members</p></div>
         </div>
       )}
-
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Members', value: teamRecords.length, icon: <Users className="w-5 h-5 text-blue-500" />, bg: 'bg-blue-50' },
-          { label: 'Avg Score', value: avgScore > 0 ? (avgScore * 100).toFixed(2) + '%' : 'N/A', icon: <BarChart2 className="w-5 h-5 text-purple-500" />, bg: 'bg-purple-50' },
-          { label: 'Perfect (100%)', value: teamRecords.filter(r => (r.overall_score || 0) >= 0.9999).length, icon: <Award className="w-5 h-5 text-emerald-500" />, bg: 'bg-emerald-50' },
-          { label: 'At Risk (<97%)', value: teamRecords.filter(r => (r.overall_score || 0) < 0.97).length, icon: <AlertCircle className="w-5 h-5 text-red-500" />, bg: 'bg-red-50' },
+          {label:'Members',value:teamRecords.length,icon:<Users className="w-5 h-5 text-blue-500"/>,bg:'bg-blue-50'},
+          {label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A',icon:<BarChart2 className="w-5 h-5 text-purple-500"/>,bg:'bg-purple-50'},
+          {label:'Perfect (100%)',value:teamRecords.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
+          {label:'At Risk (<97%)',value:teamRecords.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50'},
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3">
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
@@ -541,20 +458,19 @@ function TeamDashboard({ records, employees, showToast }:
           </div>
         ))}
       </div>
-
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
               {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall','Notes'].map(h => (
-                <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
+                <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
-              {teamRecords.length === 0 && <tr><td colSpan={9} className="text-center py-12 text-gray-400">No records for this team and period.</td></tr>}
-              {teamRecords.map((r, i) => (
+              {teamRecords.length===0 && <tr><td colSpan={9} className="text-center py-12 text-gray-400">No records for active members in this period.</td></tr>}
+              {teamRecords.map((r,i) => (
                 <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-400 font-medium">{i + 1}</td>
+                  <td className="px-4 py-3 text-gray-400 font-medium">{i+1}</td>
                   <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{r.employee_name}</td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.designation}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.attendance)}</td>
@@ -562,7 +478,7 @@ function TeamDashboard({ records, employees, showToast }:
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.efficiency)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.feedback)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{r.notes ? r.notes.substring(0,60)+(r.notes.length>60?'...':'') : 'N/A'}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{r.notes?r.notes.substring(0,50)+'...':'N/A'}</td>
                 </tr>
               ))}
             </tbody>
@@ -573,21 +489,15 @@ function TeamDashboard({ records, employees, showToast }:
   )
 }
 
-function EmployeeDashboard({ records, employees, selEmployee, setSelEmployee }:
-  { records: KpiRecord[], employees: Employee[], selEmployee: string, setSelEmployee: (v: string) => void }) {
+// ── Employee Dashboard ──────────────────────────────────────────────────────
+function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setSelEmployee }:
+  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, selEmployee: string, setSelEmployee: (v: string) => void }) {
   const emp = employees.find(e => e.id === selEmployee)
-  const empRecords = records.filter(r => r.employee_id === selEmployee && r.overall_score !== null && (r.overall_score || 0) > 0).sort((a, b) => a.month_label.localeCompare(b.month_label))
-  const chartData = empRecords.map(r => ({
-    month: r.month_label.replace(' - ', "'").substring(0, 10),
-    score: r.overall_score ? parseFloat((r.overall_score * 100).toFixed(2)) : 0,
-    attendance: r.attendance ? parseFloat((r.attendance * 100).toFixed(2)) : 0,
-    accuracy: r.accuracy ? parseFloat((r.accuracy * 100).toFixed(2)) : 0,
-    efficiency: r.efficiency ? parseFloat((r.efficiency * 100).toFixed(2)) : 0,
-    feedback: r.feedback ? parseFloat((r.feedback * 100).toFixed(2)) : 0,
-  }))
-  const avgScore = empRecords.length ? empRecords.reduce((s, r) => s + (r.overall_score || 0), 0) / empRecords.length : 0
-  const latest = empRecords[empRecords.length - 1]
-  const best = empRecords.reduce((b, r) => ((r.overall_score || 0) > (b?.overall_score || 0) ? r : b), empRecords[0])
+  const empRecords = records.filter(r => r.employee_id === selEmployee && r.overall_score !== null && (r.overall_score||0) > 0).sort((a,b) => a.month_label.localeCompare(b.month_label))
+  const chartData = empRecords.map(r => ({ month: r.month_label.substring(0,10), score: r.overall_score ? parseFloat((r.overall_score*100).toFixed(2)) : 0 }))
+  const avgScore = empRecords.length ? empRecords.reduce((s,r) => s+(r.overall_score||0),0)/empRecords.length : 0
+  const latest = empRecords[empRecords.length-1]
+  const best = empRecords.reduce((b,r) => ((r.overall_score||0)>(b?.overall_score||0)?r:b), empRecords[0])
 
   return (
     <div className="space-y-6">
@@ -599,40 +509,35 @@ function EmployeeDashboard({ records, employees, selEmployee, setSelEmployee }:
       </div>
       {emp && <>
         <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">{emp.name.split(',')[0]?.charAt(0) || '?'}</div>
+          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">{emp.name.split(',')[0]?.charAt(0)||'?'}</div>
           <div><h3 className="font-bold text-gray-900">{emp.name}</h3><p className="text-sm text-gray-500">{emp.designation}</p></div>
           {latest && <div className="ml-auto text-right"><p className="text-xs text-gray-400">Latest</p><span className={`text-xl font-bold ${scoreColor(latest.overall_score)}`}>{pct(latest.overall_score)}</span><p className="text-xs text-gray-400">{latest.month_label}</p></div>}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { label: 'Avg Score', value: avgScore > 0 ? (avgScore * 100).toFixed(2) + '%' : 'N/A' },
-            { label: 'Months Tracked', value: empRecords.length },
-            { label: 'Best Score', value: best ? pct(best.overall_score) : 'N/A' },
-            { label: 'Perfect Months', value: empRecords.filter(r => (r.overall_score || 0) >= 0.9999).length },
-          ].map(c => <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-500">{c.label}</p><p className="text-xl font-bold text-gray-900 mt-1">{c.value}</p></div>)}
+          {[{label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A'},{label:'Months Tracked',value:empRecords.length},{label:'Best Score',value:best?pct(best.overall_score):'N/A'},{label:'Perfect Months',value:empRecords.filter(r=>(r.overall_score||0)>=0.9999).length}].map(c => <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-500">{c.label}</p><p className="text-xl font-bold text-gray-900 mt-1">{c.value}</p></div>)}
         </div>
-        {chartData.length > 1 && <>
+        {chartData.length > 1 && (
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h4 className="font-semibold text-gray-700 mb-4 text-sm">Overall Score Trend</h4>
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                <YAxis domain={[80, 101]} tick={{ fontSize: 10 }} tickFormatter={v => v + '%'} />
-                <Tooltip formatter={(v: unknown) => typeof v === 'number' ? v.toFixed(2) + '%' : ''} />
-                <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4, fill: '#3b82f6' }} name="Overall" />
+              <LineChart data={chartData} margin={{top:5,right:10,left:-20,bottom:5}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
+                <XAxis dataKey="month" tick={{fontSize:10}}/>
+                <YAxis domain={[80,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
+                <Tooltip formatter={(v:unknown)=>typeof v==='number'?v.toFixed(2)+'%':''}/>
+                <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4"/>
+                <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2} dot={{r:4,fill:'#3b82f6'}} name="Overall"/>
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </>}
+        )}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100"><h4 className="font-semibold text-gray-700 text-sm">Monthly History</h4></div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="bg-gray-50 border-b border-gray-100">
                 {['Month','Designation','Attendance','Accuracy','Efficiency','Feedback','Overall','Notes'].map(h => (
-                  <th key={h} className={`px-4 py-2.5 font-medium text-gray-500 ${['Attendance','Accuracy','Efficiency','Feedback','Overall'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
+                  <th key={h} className={`px-4 py-2.5 font-medium text-gray-500 ${['Attendance','Accuracy','Efficiency','Feedback','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
@@ -645,7 +550,7 @@ function EmployeeDashboard({ records, employees, selEmployee, setSelEmployee }:
                     <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.efficiency)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.feedback)}</td>
                     <td className="px-4 py-2.5 text-right"><span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs truncate">{r.notes ? r.notes.substring(0,60)+'...' : 'N/A'}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs truncate">{r.notes?r.notes.substring(0,60)+'...':'N/A'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -657,9 +562,10 @@ function EmployeeDashboard({ records, employees, selEmployee, setSelEmployee }:
   )
 }
 
-function KPIEntry({ employees, records, onSaved, showToast }:
-  { employees: Employee[], records: KpiRecord[], onSaved: () => void, showToast: (m: string, t?: 'success' | 'error') => void }) {
-  const [empId, setEmpId] = useState(employees.find(e => e.active)?.id || '')
+// ── KPI Entry ───────────────────────────────────────────────────────────────
+function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
+  { employees: Employee[], records: KpiRecord[], onSaved: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
+  const [empId, setEmpId] = useState(employees.find(e=>e.active)?.id||'')
   const [monthLabel, setMonthLabel] = useState(`${MONTHS[new Date().getMonth()]} ${new Date().getFullYear()}`)
   const [designation, setDesignation] = useState('')
   const [attendance, setAttendance] = useState('')
@@ -669,321 +575,226 @@ function KPIEntry({ employees, records, onSaved, showToast }:
   const [notes, setNotes] = useState('')
   const [coached, setCoached] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [editId, setEditId] = useState<string | null>(null)
-  const selEmp = employees.find(e => e.id === empId)
+  const [editId, setEditId] = useState<string|null>(null)
+  const selEmp = employees.find(e=>e.id===empId)
 
   useEffect(() => { if (selEmp) setDesignation(selEmp.designation) }, [empId])
   useEffect(() => {
-    const existing = records.find(r => r.employee_id === empId && r.month_label === monthLabel)
+    const existing = records.find(r=>r.employee_id===empId&&r.month_label===monthLabel)
     if (existing) {
-      setEditId(existing.id)
-      setAttendance(existing.attendance !== null ? (existing.attendance * 100).toFixed(2) : '')
-      setAccuracy(existing.accuracy !== null ? (existing.accuracy * 100).toFixed(2) : '')
-      setEfficiency(existing.efficiency !== null ? (existing.efficiency * 100).toFixed(2) : '')
-      setFeedback(existing.feedback !== null ? (existing.feedback * 100).toFixed(2) : '')
-      setNotes(existing.notes || '')
-      setCoached(existing.coached || false)
-      setDesignation(existing.designation || selEmp?.designation || '')
-    } else {
-      setEditId(null)
-      setAttendance(''); setAccuracy(''); setEfficiency(''); setFeedback(''); setNotes(''); setCoached(false)
-    }
+      setEditId(existing.id); setAttendance(existing.attendance!==null?(existing.attendance*100).toFixed(2):''); setAccuracy(existing.accuracy!==null?(existing.accuracy*100).toFixed(2):''); setEfficiency(existing.efficiency!==null?(existing.efficiency*100).toFixed(2):''); setFeedback(existing.feedback!==null?(existing.feedback*100).toFixed(2):''); setNotes(existing.notes||''); setCoached(existing.coached||false); setDesignation(existing.designation||selEmp?.designation||'')
+    } else { setEditId(null); setAttendance(''); setAccuracy(''); setEfficiency(''); setFeedback(''); setNotes(''); setCoached(false) }
   }, [empId, monthLabel])
 
-  function calcOverall() {
-    const a = parseFloat(attendance)/100, b = parseFloat(accuracy)/100, c = parseFloat(efficiency)/100, d = parseFloat(feedback)/100
-    if ([a,b,c,d].some(isNaN)) return null
-    return a*0.2 + b*0.3 + c*0.3 + d*0.2
-  }
+  function calcOverall() { const a=parseFloat(attendance)/100,b=parseFloat(accuracy)/100,c=parseFloat(efficiency)/100,d=parseFloat(feedback)/100; if([a,b,c,d].some(isNaN))return null; return a*0.2+b*0.3+c*0.3+d*0.2 }
   const overall = calcOverall()
-  const allMonths = [...MONTHS.map(m => `${m} 2024`), ...MONTHS.map(m => `${m} 2025`), ...MONTHS.map(m => `${m} 2026`)]
+  const allMonths = [...MONTHS.map(m=>`${m} 2024`),...MONTHS.map(m=>`${m} 2025`),...MONTHS.map(m=>`${m} 2026`)]
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
-      const payload = {
-        employee_id: empId, employee_name: selEmp?.name || '', designation: designation || selEmp?.designation || '',
-        month_label: monthLabel,
-        attendance: attendance !== '' ? parseFloat(attendance)/100 : null,
-        accuracy: accuracy !== '' ? parseFloat(accuracy)/100 : null,
-        efficiency: efficiency !== '' ? parseFloat(efficiency)/100 : null,
-        feedback: feedback !== '' ? parseFloat(feedback)/100 : null,
-        overall_score: overall, notes, coached, updated_at: new Date().toISOString()
-      }
-      const { error } = editId
-        ? await supabase.from('kpi_records').update(payload).eq('id', editId)
-        : await supabase.from('kpi_records').insert(payload)
+      const payload = { employee_id:empId, employee_name:selEmp?.name||'', designation:designation||selEmp?.designation||'', month_label:monthLabel, attendance:attendance!==''?parseFloat(attendance)/100:null, accuracy:accuracy!==''?parseFloat(accuracy)/100:null, efficiency:efficiency!==''?parseFloat(efficiency)/100:null, feedback:feedback!==''?parseFloat(feedback)/100:null, overall_score:overall, notes, coached, updated_at:new Date().toISOString() }
+      const {error} = editId ? await supabase.from('kpi_records').update(payload).eq('id',editId) : await supabase.from('kpi_records').insert(payload)
       if (error) throw error
+      await writeAuditLog(editId?'UPDATE_RECORD':'CREATE_RECORD', currentUser, selEmp?.name||'', monthLabel, 'All fields', '', `Overall: ${pct(overall)}`)
       onSaved()
-    } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Save failed', 'error') }
+    } catch (err:unknown) { showToast(err instanceof Error?err.message:'Save failed','error') }
     finally { setSaving(false) }
   }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-gray-900">KPI Entry</h2><p className="text-sm text-gray-500">Enter or update monthly KPI scores</p></div>
-      {editId && <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><Edit2 className="w-4 h-4" />Editing existing record for {selEmp?.name}</div>}
+      {editId && <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><Edit2 className="w-4 h-4"/>Editing existing record for {selEmp?.name}</div>}
       <form onSubmit={handleSave} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Employee</label>
-            <select value={empId} onChange={e => setEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
-            <select value={monthLabel} onChange={e => setMonthLabel(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {allMonths.map(m => <option key={m}>{m}</option>)}
-            </select>
-          </div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Employee</label><select value={empId} onChange={e=>setEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{employees.filter(e=>e.active).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Month</label><select value={monthLabel} onChange={e=>setMonthLabel(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">{allMonths.map(m=><option key={m}>{m}</option>)}</select></div>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
-          <input value={designation} onChange={e => setDesignation(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. FSCM, AR B2B, AP - COGS" />
-        </div>
+        <div><label className="block text-sm font-medium text-gray-700 mb-1">Designation</label><input value={designation} onChange={e=>setDesignation(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. FSCM, AR B2B"/></div>
         <div className="grid grid-cols-2 gap-4">
-          {[
-            { label: 'Attendance', weight: '20%', val: attendance, set: setAttendance },
-            { label: 'Accuracy', weight: '30%', val: accuracy, set: setAccuracy },
-            { label: 'Efficiency', weight: '30%', val: efficiency, set: setEfficiency },
-            { label: 'Ext/Int Feedback', weight: '20%', val: feedback, set: setFeedback },
-          ].map(f => (
-            <div key={f.label}>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{f.label} <span className="text-gray-400 font-normal text-xs">({f.weight})</span></label>
-              <div className="relative">
-                <input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e => f.set(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
-              </div>
-            </div>
+          {[{label:'Attendance',weight:'20%',val:attendance,set:setAttendance},{label:'Accuracy',weight:'30%',val:accuracy,set:setAccuracy},{label:'Efficiency',weight:'30%',val:efficiency,set:setEfficiency},{label:'Ext/Int Feedback',weight:'20%',val:feedback,set:setFeedback}].map(f=>(
+            <div key={f.label}><label className="block text-sm font-medium text-gray-700 mb-1">{f.label} <span className="text-gray-400 font-normal text-xs">({f.weight})</span></label><div className="relative"><input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e=>f.set(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span></div></div>
           ))}
         </div>
-        {overall !== null && (
-          <div className={`rounded-xl px-4 py-3 text-center ${scoreBg(overall)}`}>
-            <p className="text-xs font-medium opacity-70">Calculated Overall Score</p>
-            <p className="text-2xl font-bold">{pct(overall)}</p>
-          </div>
-        )}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Client Feedback</label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Client feedback, coaching notes, highlights, lowlights..." />
-        </div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="coached" checked={coached} onChange={e => setCoached(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600" />
-          <label htmlFor="coached" className="text-sm text-gray-700">Coaching session conducted this month</label>
-        </div>
-        <button type="submit" disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2">
-          <Save className="w-4 h-4" />{saving ? 'Saving...' : editId ? 'Update Record' : 'Save Record'}
-        </button>
+        {overall!==null && <div className={`rounded-xl px-4 py-3 text-center ${scoreBg(overall)}`}><p className="text-xs font-medium opacity-70">Calculated Overall Score</p><p className="text-2xl font-bold">{pct(overall)}</p></div>}
+        <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes / Client Feedback</label><textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Client feedback, coaching notes..."/></div>
+        <div className="flex items-center gap-2"><input type="checkbox" id="coached" checked={coached} onChange={e=>setCoached(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600"/><label htmlFor="coached" className="text-sm text-gray-700">Coaching session conducted this month</label></div>
+        <button type="submit" disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"><Save className="w-4 h-4"/>{saving?'Saving...':editId?'Update Record':'Save Record'}</button>
       </form>
     </div>
   )
 }
 
-function EmployeeManager({ employees, onChanged, showToast }:
-  { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success' | 'error') => void }) {
+// ── Employee Manager ────────────────────────────────────────────────────────
+function EmployeeManager({ employees, onChanged, showToast, currentUser }:
+  { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
   const [newName, setNewName] = useState('')
   const [newDesig, setNewDesig] = useState('')
   const [adding, setAdding] = useState(false)
-  const [editId, setEditId] = useState<string | null>(null)
+  const [editId, setEditId] = useState<string|null>(null)
   const [editName, setEditName] = useState('')
   const [editDesig, setEditDesig] = useState('')
   const [searchQ, setSearchQ] = useState('')
-  const filtered = employees.filter(e => !searchQ || e.name.toLowerCase().includes(searchQ.toLowerCase()) || e.designation.toLowerCase().includes(searchQ.toLowerCase()))
+  const [showInactive, setShowInactive] = useState(false)
+  const filtered = employees.filter(e => {
+    const matchSearch = !searchQ || e.name.toLowerCase().includes(searchQ.toLowerCase()) || e.designation.toLowerCase().includes(searchQ.toLowerCase())
+    const matchActive = showInactive ? true : e.active
+    return matchSearch && matchActive
+  })
 
   async function addEmployee() {
     if (!newName.trim()) return; setAdding(true)
-    const { error } = await supabase.from('employees').insert({ name: newName.trim(), designation: newDesig.trim(), active: true })
-    if (error) showToast(error.message, 'error')
-    else { setNewName(''); setNewDesig(''); onChanged() }
+    const {error} = await supabase.from('employees').insert({name:newName.trim(),designation:newDesig.trim(),active:true})
+    if (error) showToast(error.message,'error')
+    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); onChanged() }
     setAdding(false)
   }
 
   async function saveEdit(id: string) {
-    const { error } = await supabase.from('employees').update({ name: editName, designation: editDesig }).eq('id', id)
-    if (error) showToast(error.message, 'error')
-    else { setEditId(null); onChanged() }
+    const emp = employees.find(e=>e.id===id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig}).eq('id',id)
+    if (error) showToast(error.message,'error')
+    else { await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Name/Designation',emp?.name||'',editName); setEditId(null); onChanged() }
   }
 
   async function toggleActive(emp: Employee) {
-    const { error } = await supabase.from('employees').update({ active: !emp.active }).eq('id', emp.id)
-    if (error) showToast(error.message, 'error')
-    else onChanged()
+    const {error} = await supabase.from('employees').update({active:!emp.active}).eq('id',emp.id)
+    if (error) showToast(error.message,'error')
+    else { await writeAuditLog('STATUS_CHANGE',currentUser,emp.name,'','Status',emp.active?'Active':'Inactive',emp.active?'Inactive':'Active'); onChanged() }
   }
 
   async function deleteEmployee(id: string) {
     if (!confirm('Delete this employee and all their KPI records?')) return
-    const { error } = await supabase.from('employees').delete().eq('id', id)
-    if (error) showToast(error.message, 'error')
-    else { showToast('Employee deleted'); onChanged() }
+    const emp = employees.find(e=>e.id===id)
+    const {error} = await supabase.from('employees').delete().eq('id',id)
+    if (error) showToast(error.message,'error')
+    else { await writeAuditLog('DELETE_EMPLOYEE',currentUser,emp?.name||'','','','','Deleted'); showToast('Employee deleted'); onChanged() }
   }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div><h2 className="text-xl font-bold text-gray-900">Employee Management</h2><p className="text-sm text-gray-500">{employees.filter(e => e.active).length} active, {employees.filter(e => !e.active).length} inactive</p></div>
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold text-gray-900">Employee Management</h2><p className="text-sm text-gray-500">{employees.filter(e=>e.active).length} active, {employees.filter(e=>!e.active).length} inactive</p></div>
+        <button onClick={()=>setShowInactive(!showInactive)} className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${showInactive?'bg-gray-800 text-white border-gray-800':'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{showInactive?'Hide Inactive':'Show Inactive'}</button>
+      </div>
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500" />Add New Employee</h3>
+        <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500"/>Add New Employee</h3>
         <div className="flex gap-3 flex-col sm:flex-row">
-          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Full name" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input value={newDesig} onChange={e => setNewDesig(e.target.value)} placeholder="Designation" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <button onClick={addEmployee} disabled={adding || !newName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
-            <PlusCircle className="w-4 h-4" />Add
-          </button>
+          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          <input value={newDesig} onChange={e=>setNewDesig(e.target.value)} placeholder="Designation" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"><PlusCircle className="w-4 h-4"/>Add</button>
         </div>
       </div>
-      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search employees..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search employees..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {filtered.map((emp, i) => (
-          <div key={emp.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-gray-100' : ''} hover:bg-gray-50`}>
-            {editId === emp.id ? (
-              <>
-                <input value={editName} onChange={e => setEditName(e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm" />
-                <input value={editDesig} onChange={e => setEditDesig(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm" />
-                <button onClick={() => saveEdit(emp.id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4" /></button>
-                <button onClick={() => setEditId(null)} className="text-gray-400 hover:text-gray-600 p-1"><X className="w-4 h-4" /></button>
-              </>
+        {filtered.map((emp,i) => (
+          <div key={emp.id} className={`flex items-center gap-3 px-4 py-3 ${i>0?'border-t border-gray-100':''} hover:bg-gray-50`}>
+            {editId===emp.id ? (
+              <><input value={editName} onChange={e=>setEditName(e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"/><input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm"/><button onClick={()=>saveEdit(emp.id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button><button onClick={()=>setEditId(null)} className="text-gray-400 hover:text-gray-600 p-1"><X className="w-4 h-4"/></button></>
             ) : (
               <>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${emp.active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>{emp.name.split(',')[0]?.charAt(0) || '?'}</div>
-                <div className="flex-1 min-w-0"><p className={`text-sm font-medium truncate ${emp.active ? 'text-gray-900' : 'text-gray-400'}`}>{emp.name}</p><p className="text-xs text-gray-500 truncate">{emp.designation}</p></div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${emp.active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>{emp.active ? 'Active' : 'Inactive'}</span>
-                <button onClick={() => { setEditId(emp.id); setEditName(emp.name); setEditDesig(emp.designation) }} className="text-gray-400 hover:text-blue-600 p-1 transition"><Edit2 className="w-4 h-4" /></button>
-                <button onClick={() => toggleActive(emp)} className="text-gray-400 hover:text-yellow-600 p-1 transition" title={emp.active ? 'Deactivate' : 'Activate'}>{emp.active ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}</button>
-                <button onClick={() => deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4" /></button>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${emp.active?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-400'}`}>{emp.name.split(',')[0]?.charAt(0)||'?'}</div>
+                <div className="flex-1 min-w-0"><p className={`text-sm font-medium truncate ${emp.active?'text-gray-900':'text-gray-400'}`}>{emp.name}</p><p className="text-xs text-gray-500 truncate">{emp.designation}</p></div>
+                <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 transition cursor-pointer ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`} title={emp.active?'Click to deactivate':'Click to activate'}>{emp.active?'Active':'Inactive'}</button>
+                <button onClick={()=>{setEditId(emp.id);setEditName(emp.name);setEditDesig(emp.designation)}} className="text-gray-400 hover:text-blue-600 p-1 transition"><Edit2 className="w-4 h-4"/></button>
+                <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
               </>
             )}
           </div>
         ))}
-        {filtered.length === 0 && <div className="text-center py-12 text-gray-400 text-sm">No employees found.</div>}
+        {filtered.length===0 && <div className="text-center py-12 text-gray-400 text-sm">No employees found.</div>}
       </div>
     </div>
   )
 }
 
+// ── Team Manager ────────────────────────────────────────────────────────────
 function TeamManager({ employees, showToast }:
-  { employees: Employee[], showToast: (m: string, t?: 'success' | 'error') => void }) {
+  { employees: Employee[], showToast: (m: string, t?: 'success'|'error') => void }) {
   const [teams, setTeams] = useState<any[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newTeamName, setNewTeamName] = useState('')
   const [newDept, setNewDept] = useState('')
   const [newLeadId, setNewLeadId] = useState('')
-  const [selTeam, setSelTeam] = useState<string | null>(null)
+  const [selTeam, setSelTeam] = useState<string|null>(null)
   const [addMemberId, setAddMemberId] = useState('')
 
   async function loadTeams() {
     setLoading(true)
-    const [{ data: t }, { data: m }] = await Promise.all([
-      supabase.from('teams').select('*, team_lead:employees(name)').order('name'),
-      supabase.from('team_members').select('*, employee:employees(name, designation)')
-    ])
-    setTeams(t || [])
-    setMembers(m || [])
-    setLoading(false)
+    const [{data:t},{data:m}] = await Promise.all([supabase.from('teams').select('*, team_lead:employees(name)').order('name'),supabase.from('team_members').select('*, employee:employees(name, designation)')])
+    setTeams(t||[]); setMembers(m||[]); setLoading(false)
   }
-
-  useEffect(() => { loadTeams() }, [])
+  useEffect(()=>{loadTeams()},[])
 
   async function createTeam() {
     if (!newTeamName.trim()) return
-    const { error } = await supabase.from('teams').insert({ name: newTeamName.trim(), department: newDept.trim(), team_lead_id: newLeadId || null, active: true })
-    if (error) showToast(error.message, 'error')
+    const {error} = await supabase.from('teams').insert({name:newTeamName.trim(),department:newDept.trim(),team_lead_id:newLeadId||null,active:true})
+    if (error) showToast(error.message,'error')
     else { setNewTeamName(''); setNewDept(''); setNewLeadId(''); loadTeams(); showToast('Team created!') }
   }
 
   async function deleteTeam(id: string) {
     if (!confirm('Delete this team?')) return
-    await supabase.from('teams').delete().eq('id', id)
-    setSelTeam(null); loadTeams(); showToast('Team deleted')
+    await supabase.from('teams').delete().eq('id',id); setSelTeam(null); loadTeams(); showToast('Team deleted')
   }
 
   async function addMember() {
-    if (!selTeam || !addMemberId) return
-    const { error } = await supabase.from('team_members').insert({ team_id: selTeam, employee_id: addMemberId })
-    if (error) showToast('Member already in team', 'error')
+    if (!selTeam||!addMemberId) return
+    const {error} = await supabase.from('team_members').insert({team_id:selTeam,employee_id:addMemberId})
+    if (error) showToast('Member already in team','error')
     else { setAddMemberId(''); loadTeams(); showToast('Member added!') }
   }
 
-  async function removeMember(id: string) {
-    await supabase.from('team_members').delete().eq('id', id)
-    loadTeams()
-  }
+  async function removeMember(id: string) { await supabase.from('team_members').delete().eq('id',id); loadTeams() }
+  async function updateLead(teamId: string, leadId: string) { await supabase.from('teams').update({team_lead_id:leadId||null}).eq('id',teamId); loadTeams() }
 
-  async function updateLead(teamId: string, leadId: string) {
-    await supabase.from('teams').update({ team_lead_id: leadId || null }).eq('id', teamId)
-    loadTeams()
-  }
-
-  const teamMembers = members.filter(m => m.team_id === selTeam)
-  const teamMemberIds = teamMembers.map(m => m.employee_id)
-  const availableToAdd = employees.filter(e => e.active && !teamMemberIds.includes(e.id))
-  const selectedTeam = teams.find(t => t.id === selTeam)
+  const teamMembers = members.filter(m=>m.team_id===selTeam)
+  const teamMemberIds = teamMembers.map(m=>m.employee_id)
+  const availableToAdd = employees.filter(e=>e.active&&!teamMemberIds.includes(e.id))
+  const selectedTeam = teams.find(t=>t.id===selTeam)
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div><h2 className="text-xl font-bold text-gray-900">Team Management</h2>
-        <p className="text-sm text-gray-500">{teams.length} teams configured</p></div>
+      <div><h2 className="text-xl font-bold text-gray-900">Team Management</h2><p className="text-sm text-gray-500">{teams.length} teams configured</p></div>
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><PlusCircle className="w-4 h-4 text-blue-500" />Create New Team</h3>
+        <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><PlusCircle className="w-4 h-4 text-blue-500"/>Create New Team</h3>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <input value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="Team name (e.g. AR Team)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input value={newDept} onChange={e => setNewDept(e.target.value)} placeholder="Department (e.g. AR, AP)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <select value={newLeadId} onChange={e => setNewLeadId(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="">Select team lead...</option>
-            {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
-          <button onClick={createTeam} disabled={!newTeamName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2"><PlusCircle className="w-4 h-4" />Create</button>
+          <input value={newTeamName} onChange={e=>setNewTeamName(e.target.value)} placeholder="Team name" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          <input value={newDept} onChange={e=>setNewDept(e.target.value)} placeholder="Department" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          <select value={newLeadId} onChange={e=>setNewLeadId(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="">Select team lead...</option>{employees.filter(e=>e.active).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>
+          <button onClick={createTeam} disabled={!newTeamName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2"><PlusCircle className="w-4 h-4"/>Create</button>
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50"><h3 className="font-semibold text-gray-700 text-sm">All Teams</h3></div>
-          {loading ? <div className="p-8 text-center text-gray-400">Loading...</div> :
-            teams.length === 0 ? <div className="p-8 text-center text-gray-400 text-sm">No teams yet. Create one above.</div> :
-            teams.map((team, i) => (
-              <div key={team.id} onClick={() => setSelTeam(team.id)} className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition ${i > 0 ? 'border-t border-gray-100' : ''} ${selTeam === team.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 text-sm">{team.name}</p>
-                  <p className="text-xs text-gray-500">{team.department}{team.team_lead?.name ? ` · Lead: ${team.team_lead.name.split(',')[0]}` : ' · No lead'}</p>
-                  <p className="text-xs text-gray-400">{members.filter(m => m.team_id === team.id).length} members</p>
-                </div>
-                <button onClick={e => { e.stopPropagation(); deleteTeam(team.id) }} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4" /></button>
-              </div>
-            ))
-          }
+          {loading?<div className="p-8 text-center text-gray-400">Loading...</div>:teams.length===0?<div className="p-8 text-center text-gray-400 text-sm">No teams yet.</div>:teams.map((team,i)=>(
+            <div key={team.id} onClick={()=>setSelTeam(team.id)} className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition ${i>0?'border-t border-gray-100':''} ${selTeam===team.id?'bg-blue-50':'hover:bg-gray-50'}`}>
+              <div className="flex-1 min-w-0"><p className="font-medium text-gray-900 text-sm">{team.name}</p><p className="text-xs text-gray-500">{team.department}{team.team_lead?.name?` · Lead: ${team.team_lead.name.split(',')[0]}`:' · No lead'}</p><p className="text-xs text-gray-400">{members.filter(m=>m.team_id===team.id).length} members</p></div>
+              <button onClick={e=>{e.stopPropagation();deleteTeam(team.id)}} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
+            </div>
+          ))}
         </div>
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          {!selTeam ? <div className="p-8 text-center text-gray-400 text-sm">Select a team to manage members</div> : (
+          {!selTeam?<div className="p-8 text-center text-gray-400 text-sm">Select a team to manage members</div>:(
             <>
               <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-semibold text-gray-700 text-sm">{selectedTeam?.name} — Members</h3>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-xs text-gray-500">Team Lead:</span>
-                  <select value={selectedTeam?.team_lead_id || ''} onChange={e => updateLead(selTeam, e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs text-gray-900">
-                    <option value="">No lead assigned</option>
-                    {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name.split(',')[0]}</option>)}
-                  </select>
-                </div>
+                <div className="mt-2 flex items-center gap-2"><span className="text-xs text-gray-500">Team Lead:</span><select value={selectedTeam?.team_lead_id||''} onChange={e=>updateLead(selTeam,e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs text-gray-900"><option value="">No lead assigned</option>{employees.filter(e=>e.active).map(e=><option key={e.id} value={e.id}>{e.name.split(',')[0]}</option>)}</select></div>
               </div>
               <div className="p-4 border-b border-gray-100">
-                <div className="flex gap-2">
-                  <select value={addMemberId} onChange={e => setAddMemberId(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">Add member...</option>
-                    {availableToAdd.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                  </select>
-                  <button onClick={addMember} disabled={!addMemberId} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">Add</button>
-                </div>
+                <div className="flex gap-2"><select value={addMemberId} onChange={e=>setAddMemberId(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="">Add member...</option>{availableToAdd.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select><button onClick={addMember} disabled={!addMemberId} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">Add</button></div>
               </div>
               <div>
-                {teamMembers.length === 0 ? <div className="p-6 text-center text-gray-400 text-sm">No members yet</div> :
-                  teamMembers.map((m, i) => (
-                    <div key={m.id} className={`flex items-center gap-3 px-4 py-2.5 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
-                      <div className="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">{m.employee?.name?.split(',')[0]?.charAt(0) || '?'}</div>
-                      <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-900 truncate">{m.employee?.name}</p><p className="text-xs text-gray-500">{m.employee?.designation}</p></div>
-                      <button onClick={() => removeMember(m.id)} className="text-gray-400 hover:text-red-600 p-1 transition"><X className="w-3.5 h-3.5" /></button>
-                    </div>
-                  ))
-                }
+                {teamMembers.length===0?<div className="p-6 text-center text-gray-400 text-sm">No members yet</div>:teamMembers.map((m,i)=>(
+                  <div key={m.id} className={`flex items-center gap-3 px-4 py-2.5 ${i>0?'border-t border-gray-100':''}`}>
+                    <div className="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">{m.employee?.name?.split(',')[0]?.charAt(0)||'?'}</div>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-900 truncate">{m.employee?.name}</p><p className="text-xs text-gray-500">{m.employee?.designation}</p></div>
+                    <button onClick={()=>removeMember(m.id)} className="text-gray-400 hover:text-red-600 p-1 transition"><X className="w-3.5 h-3.5"/></button>
+                  </div>
+                ))}
               </div>
             </>
           )}
@@ -993,8 +804,9 @@ function TeamManager({ employees, showToast }:
   )
 }
 
-function SettingsPanel({ currentUser, showToast }: { currentUser: string | null, showToast: (m: string, t?: 'success' | 'error') => void }) {
-  const [activeTab, setActiveTab] = useState<'users' | 'activity' | 'password'>('users')
+// ── Settings Panel ──────────────────────────────────────────────────────────
+function SettingsPanel({ currentUser, showToast }: { currentUser: string|null, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>('users')
   const [oldPassword, setOldPassword] = useState('')
   const [newPass, setNewPass] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
@@ -1004,99 +816,91 @@ function SettingsPanel({ currentUser, showToast }: { currentUser: string | null,
 
   async function loadActivityLog() {
     setLoadingLog(true)
-    const { data } = await supabase.from('kpi_records').select('employee_name, month_label, updated_at').order('updated_at', { ascending: false }).limit(50)
-    setActivityLog(data || [])
-    setLoadingLog(false)
+    const {data} = await supabase.from('audit_log').select('*').order('created_at',{ascending:false}).limit(100)
+    setActivityLog(data||[]); setLoadingLog(false)
   }
 
-  useEffect(() => { if (activeTab === 'activity') loadActivityLog() }, [activeTab])
+  useEffect(()=>{ if(activeTab==='activity') loadActivityLog() },[activeTab])
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault()
-    if (newPass !== confirmPass) { showToast('Passwords do not match', 'error'); return }
-    if (newPass.length < 6) { showToast('Password must be at least 6 characters', 'error'); return }
+    if (newPass!==confirmPass) { showToast('Passwords do not match','error'); return }
+    if (newPass.length<6) { showToast('Password must be at least 6 characters','error'); return }
     setSaving(true)
     try {
-      const res = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: currentUser, oldPassword, newPassword: newPass }) })
+      const res = await fetch('/api/auth/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:currentUser,oldPassword,newPassword:newPass})})
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      showToast('Password changed!')
-      setOldPassword(''); setNewPass(''); setConfirmPass('')
-    } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
+      showToast('Password changed!'); setOldPassword(''); setNewPass(''); setConfirmPass('')
+    } catch(err:unknown) { showToast(err instanceof Error?err.message:'Failed','error') }
     setSaving(false)
   }
 
+  const actionColors: Record<string,string> = { EDIT_SCORE:'bg-blue-50 text-blue-700', STATUS_CHANGE:'bg-yellow-50 text-yellow-700', ADD_EMPLOYEE:'bg-emerald-50 text-emerald-700', DELETE_EMPLOYEE:'bg-red-50 text-red-700', CREATE_RECORD:'bg-purple-50 text-purple-700', UPDATE_RECORD:'bg-indigo-50 text-indigo-700', EDIT_EMPLOYEE:'bg-gray-100 text-gray-600' }
+
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-gray-900">Settings</h2><p className="text-sm text-gray-500">Manage app users, activity, and security</p></div>
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['users','App Users'],['activity','Activity Log'],['password','Change Password']] as const).map(([t, l]) => (
-          <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === t ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>{l}</button>
+        {([['users','App Users'],['activity','Audit Log'],['password','Change Password']] as const).map(([t,l])=>(
+          <button key={t} onClick={()=>setActiveTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab===t?'bg-white shadow text-blue-700':'text-gray-600 hover:text-gray-900'}`}>{l}</button>
         ))}
       </div>
-      {activeTab === 'users' && (
+      {activeTab==='users' && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="font-semibold text-gray-700 text-sm mb-3 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500" />App Users</h3>
-          <p className="text-sm text-gray-500 mb-4">Users are managed via the <code className="bg-gray-100 px-1 rounded text-xs">APP_USERS</code> environment variable in Vercel. Format: <code className="bg-gray-100 px-1 rounded text-xs">username:password,user2:pass2</code></p>
+          <h3 className="font-semibold text-gray-700 text-sm mb-3 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>App Users</h3>
+          <p className="text-sm text-gray-500 mb-4">Users are managed via the <code className="bg-gray-100 px-1 rounded text-xs">APP_USERS</code> environment variable in Vercel.</p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
             <p className="font-medium mb-2">To add or remove users:</p>
-            <ol className="list-decimal list-inside space-y-1 text-blue-700">
-              <li>Go to vercel.com → your kpi-tracker project</li>
-              <li>Click Settings → Environment Variables</li>
-              <li>Edit APP_USERS and add username:password</li>
-              <li>Click Save then redeploy</li>
-            </ol>
+            <ol className="list-decimal list-inside space-y-1 text-blue-700"><li>Go to vercel.com → your kpi-tracker project</li><li>Click Settings → Environment Variables</li><li>Edit APP_USERS: format is username:password,user2:pass2</li><li>Save then redeploy</li></ol>
           </div>
         </div>
       )}
-      {activeTab === 'activity' && (
+      {activeTab==='activity' && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-700 text-sm">Recent KPI Activity</h3>
+            <h3 className="font-semibold text-gray-700 text-sm">Audit Log</h3>
             <button onClick={loadActivityLog} className="text-xs text-blue-600 hover:text-blue-700">Refresh</button>
           </div>
-          {loadingLog ? <div className="p-8 text-center text-gray-400">Loading...</div> :
+          {loadingLog?<div className="p-8 text-center text-gray-400">Loading...</div>:(
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">Action</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">By</th>
                   <th className="text-left px-4 py-2.5 font-medium text-gray-500">Employee</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">Month</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">Last Updated</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">Field</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">Old Value</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">New Value</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-gray-500">When</th>
                 </tr></thead>
                 <tbody>
-                  {activityLog.map((r, i) => (
+                  {activityLog.map((r,i)=>(
                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-2.5 text-gray-900 font-medium">{r.employee_name}</td>
-                      <td className="px-4 py-2.5 text-gray-500">{r.month_label}</td>
-                      <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(r.updated_at).toLocaleString()}</td>
+                      <td className="px-4 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${actionColors[r.action]||'bg-gray-100 text-gray-600'}`}>{r.action}</span></td>
+                      <td className="px-4 py-2.5 text-gray-700 font-medium">{r.performed_by}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{r.employee_name}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{r.field_changed}</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs">{r.old_value||'—'}</td>
+                      <td className="px-4 py-2.5 text-gray-700 text-xs font-medium">{r.new_value||'—'}</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
                     </tr>
                   ))}
-                  {activityLog.length === 0 && <tr><td colSpan={3} className="text-center py-8 text-gray-400">No activity yet</td></tr>}
+                  {activityLog.length===0&&<tr><td colSpan={7} className="text-center py-8 text-gray-400">No audit entries yet</td></tr>}
                 </tbody>
               </table>
             </div>
-          }
+          )}
         </div>
       )}
-      {activeTab === 'password' && (
+      {activeTab==='password' && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-md">
-          <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Key className="w-4 h-4 text-blue-500" />Change Your Password</h3>
+          <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Key className="w-4 h-4 text-blue-500"/>Change Your Password</h3>
           <form onSubmit={changePassword} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Current password</label>
-              <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
-              <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} required minLength={6} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label>
-              <input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-            <button type="submit" disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2">
-              <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Change Password'}
-            </button>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Current password</label><input type="password" value={oldPassword} onChange={e=>setOldPassword(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">New password</label><input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} required minLength={6} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label><input type="password" value={confirmPass} onChange={e=>setConfirmPass(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+            <button type="submit" disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"><Save className="w-4 h-4"/>{saving?'Saving...':'Change Password'}</button>
           </form>
         </div>
       )}
