@@ -55,7 +55,7 @@ async function writeAuditLog(action: string, performedBy: string, employeeName: 
   await supabase.from('audit_log').insert({ action, performed_by: performedBy, employee_name: employeeName, month_label: monthLabel, field_changed: fieldChanged, old_value: oldValue, new_value: newValue })
 }
 
-function LoginScreen({ onLogin }: { onLogin: (u: string) => void }) {
+function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -68,7 +68,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string) => void }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Login failed')
       localStorage.setItem('kpi_user', JSON.stringify(data.user))
-      onLogin(data.user.username)
+      onLogin(data.user.username, data.user.role)
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Login failed') }
     finally { setLoading(false) }
   }
@@ -101,6 +101,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string) => void }) {
 
 export default function KPIApp() {
   const [user, setUser] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string>('viewer')
   const [view, setView] = useState<View>('dashboard-month')
   const [perfView, setPerfView] = useState<PerfView>('monthly')
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -116,7 +117,7 @@ export default function KPIApp() {
 
   useEffect(() => {
     const stored = localStorage.getItem('kpi_user')
-    if (stored) setUser(JSON.parse(stored).username)
+    if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer') }
     else setLoading(false)
   }, [])
 
@@ -138,7 +139,7 @@ export default function KPIApp() {
     setLoading(false)
   }
 
-  if (!user) return <LoginScreen onLogin={u => { setUser(u); setLoading(true) }} />
+  if (!user) return <LoginScreen onLogin={(u, r) => { setUser(u); setUserRole(r || 'viewer'); setLoading(true) }} />
 
   const navItems = [
     { id: 'dashboard-month' as View, label: 'Performance', icon: <BarChart2 className="w-4 h-4" /> },
@@ -202,11 +203,13 @@ export default function KPIApp() {
             {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} />}
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} />}
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
-            {view === 'entry' && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
+            {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
+            {view === 'entry' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
-            {view === 'observations' && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
-            {view === 'settings' && <SettingsPanel currentUser={user} showToast={showToast} />}
+            {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
+            {view === 'observations' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Observations require Team Lead access or higher</p></div>}
+            {view === 'settings' && <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} />}
           </>
         )}
       </main>
@@ -1000,7 +1003,7 @@ function TeamManager({ employees, showToast }:
 
 
 // ── User Manager ────────────────────────────────────────────────────────────
-function UserManager({ showToast }: { showToast: (m: string, t?: 'success'|'error') => void }) {
+function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string }) {
   const [appUsers, setAppUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newUser, setNewUser] = useState('')
@@ -1059,23 +1062,26 @@ function UserManager({ showToast }: { showToast: (m: string, t?: 'success'|'erro
     showToast('User deleted'); loadUsers()
   }
 
-  const roleColors: Record<string,string> = { admin: 'bg-blue-50 text-blue-700', viewer: 'bg-gray-100 text-gray-600' }
+  const roleColors: Record<string,string> = { super_admin: 'bg-purple-50 text-purple-700', admin: 'bg-blue-50 text-blue-700', team_lead: 'bg-emerald-50 text-emerald-700', viewer: 'bg-gray-100 text-gray-600' }
+  const roleLabels: Record<string,string> = { super_admin: 'Super Admin', admin: 'Manager', team_lead: 'Team Lead', viewer: 'Viewer' }
 
   return (
     <div className="space-y-5">
-      {/* Add user form */}
-      <div>
+      {/* Add user form - only super_admin and admin */}
+      {(currentUserRole === 'super_admin' || currentUserRole === 'admin') && <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Add New User</p>
         <form onSubmit={addUser} className="flex flex-col sm:flex-row gap-3">
           <input value={newUser} onChange={e=>setNewUser(e.target.value)} placeholder="Username" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
           <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Password (min 6 chars)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
           <select value={newRole} onChange={e=>setNewRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="admin">Admin</option>
+            {currentUserRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
+            {(currentUserRole === 'super_admin' || currentUserRole === 'admin') && <option value="admin">Admin / Manager</option>}
+            <option value="team_lead">Team Lead</option>
             <option value="viewer">Viewer</option>
           </select>
           <button type="submit" disabled={saving||!newUser.trim()||!newPass.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap flex items-center gap-2"><UserPlus className="w-4 h-4"/>Add User</button>
         </form>
-      </div>
+      </div>}
 
       {/* Users list */}
       <div>
@@ -1090,10 +1096,14 @@ function UserManager({ showToast }: { showToast: (m: string, t?: 'success'|'erro
                     <p className={`text-sm font-medium ${u.active ? 'text-gray-900' : 'text-gray-400'}`}>{u.username}</p>
                     <p className="text-xs text-gray-400">Added {new Date(u.created_at).toLocaleDateString()}</p>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}>{u.role}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}>{roleLabels[u.role]||u.role}</span>
                   <button onClick={() => toggleUserActive(u)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${u.active ? 'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600' : 'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{u.active ? 'Active' : 'Inactive'}</button>
-                  <button onClick={() => { setResetUserId(resetUserId === u.id ? null : u.id); setResetPass('') }} className="text-gray-400 hover:text-orange-500 p-1 transition" title="Reset password"><Key className="w-4 h-4"/></button>
-                  <button onClick={() => deleteUser(u)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
+                  {(currentUserRole === 'super_admin' || (currentUserRole === 'admin' && u.role !== 'super_admin' && u.role !== 'admin')) && (
+                    <button onClick={() => { setResetUserId(resetUserId === u.id ? null : u.id); setResetPass('') }} className="text-gray-400 hover:text-orange-500 p-1 transition" title="Reset password"><Key className="w-4 h-4"/></button>
+                  )}
+                  {currentUserRole === 'super_admin' && (
+                    <button onClick={() => deleteUser(u)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
+                  )}
                 </div>
                 {resetUserId === u.id && (
                   <div className="px-4 pb-3 flex gap-2 bg-orange-50 border-t border-orange-100">
@@ -1309,7 +1319,7 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
 }
 
 // ── Settings Panel ──────────────────────────────────────────────────────────
-function SettingsPanel({ currentUser, showToast }: { currentUser: string|null, showToast: (m: string, t?: 'success'|'error') => void }) {
+function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>('users')
   const [oldPassword, setOldPassword] = useState('')
   const [newPass, setNewPass] = useState('')
@@ -1354,7 +1364,7 @@ function SettingsPanel({ currentUser, showToast }: { currentUser: string|null, s
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>App User Management</h3>
-            <UserManager showToast={showToast} />
+            <UserManager showToast={showToast} currentUserRole={userRole} />
           </div>
 
         </div>
