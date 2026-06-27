@@ -181,12 +181,12 @@ export default function KPIApp() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-30 w-56 bg-blue-900 flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-xl md:shadow-none`}>
+        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-30 w-56 bg-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-xl border-r border-gray-200`}>
           <div className="flex-1 overflow-y-auto py-4 space-y-1">
 
             {/* Performance */}
             <div className="px-3 pt-2 pb-1">
-              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Performance</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Performance</p>
             </div>
             {[
               { id: 'dashboard-month' as View, label: 'Dashboard', icon: <BarChart2 className="w-4 h-4" /> },
@@ -194,14 +194,14 @@ export default function KPIApp() {
               { id: 'dashboard-team' as View, label: 'Team View', icon: <Users className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* People */}
             <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">People</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">People</p>
             </div>
             {[
               { id: 'employees' as View, label: 'Employees', icon: <UserPlus className="w-4 h-4" /> },
@@ -209,14 +209,14 @@ export default function KPIApp() {
               { id: 'org-chart' as View, label: 'Org Chart', icon: <Users className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* Operations */}
             <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Operations</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Operations</p>
             </div>
             {[
               { id: 'tickets' as View, label: 'Tickets', icon: <FileText className="w-4 h-4" /> },
@@ -224,53 +224,53 @@ export default function KPIApp() {
               { id: 'observations' as View, label: 'Observations', icon: <FileText className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* Team Lead Tools */}
             <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Team Lead Tools</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Team Lead Tools</p>
             </div>
             {[
               { id: 'tl-tools' as View, label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* Directory */}
             <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Directory</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Directory</p>
             </div>
             {[
               { id: 'directory' as View, label: 'Links & Resources', icon: <TrendingUp className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* Settings */}
             <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-blue-300 uppercase tracking-widest">System</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">System</p>
             </div>
             <button onClick={() => { setView('settings'); setMobileMenuOpen(false) }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === 'settings' ? 'bg-white/20 text-white border-r-2 border-white' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === 'settings' ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
               <Shield className="w-4 h-4" />Settings
             </button>
           </div>
 
           {/* User info at bottom of sidebar */}
-          <div className="border-t border-blue-800 p-3 flex items-center gap-3">
+          <div className="border-t border-gray-200 p-3 flex items-center gap-3 bg-white">
             <UserAvatar username={user || ''} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-white truncate">{user}</p>
-              <p className="text-xs text-blue-300 truncate capitalize">{userRole.replace('_',' ')}</p>
+              <p className="text-xs font-medium text-gray-900 truncate">{user}</p>
+              <p className="text-xs text-gray-500 truncate capitalize">{userRole.replace('_',' ')}</p>
             </div>
           </div>
         </aside>
