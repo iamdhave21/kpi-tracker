@@ -314,7 +314,7 @@ export default function KPIApp() {
             {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
             {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
             {view === 'tl-tools' && <ComingSoon title="Team Lead Tools" description="Coaching logs, 1-on-1 trackers, and performance planning tools. Coming soon!" icon="🔧" />}
-            {{view === 'directory' && <DirectoryLinks />}
+            {view === 'directory' && <DirectoryLinks />}
           </>
         )}
         </div>
