@@ -1089,7 +1089,7 @@ function ObservationsPanel({ employees, currentUser, showToast }:
   const [text, setText] = useState('')
   const [saving, setSaving] = useState(false)
   const [filterEmp, setFilterEmp] = useState<string>('all')
-  const [activeTab, setActiveTab] = useState<'monthly'|'general'>('monthly')
+  const [filterMonth, setFilterMonth] = useState<string>('all')
 
   const allMonths = ['2024','2025','2026','2027'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
 
@@ -1099,30 +1099,28 @@ function ObservationsPanel({ employees, currentUser, showToast }:
 
   async function loadObs() {
     setLoading(true)
-    let q = supabase.from('observations').select('*').order('created_at', { ascending: false })
-    if (activeTab === 'monthly') q = q.not('month_label', 'is', null)
-    else q = q.is('month_label', null)
+    let q = supabase.from('observations').select('*').order('created_at', { ascending: false }).limit(200)
     if (filterEmp !== 'all') q = q.eq('employee_id', filterEmp)
-    const { data } = await q.limit(100)
+    if (filterMonth !== 'all') q = q.eq('month_label', filterMonth)
+    const { data } = await q
     setObs(data || [])
     setLoading(false)
   }
 
-  useEffect(() => { loadObs() }, [activeTab, filterEmp])
+  useEffect(() => { loadObs() }, [filterEmp, filterMonth])
 
   async function saveObs(e: React.FormEvent) {
     e.preventDefault()
-    if (!text.trim() || !selEmp) return
+    if (!text.trim() || !selEmp || !selMonth) return
     setSaving(true)
     const emp = employees.find(e => e.id === selEmp)
-    const payload: any = {
+    const { error } = await supabase.from('observations').insert({
       employee_id: selEmp,
       employee_name: emp?.name || '',
+      month_label: selMonth,
       observation: text.trim(),
       observed_by: currentUser || 'unknown',
-    }
-    if (activeTab === 'monthly' && selMonth) payload.month_label = selMonth
-    const { error } = await supabase.from('observations').insert(payload)
+    })
     if (error) showToast(error.message, 'error')
     else { showToast('Observation saved!'); setText(''); loadObs() }
     setSaving(false)
@@ -1138,20 +1136,12 @@ function ObservationsPanel({ employees, currentUser, showToast }:
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h2 className="text-xl font-bold text-gray-900">Observations</h2>
-        <p className="text-sm text-gray-500">Record monthly or general observations per employee</p>
-      </div>
-
-      {/* Tab toggle */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['monthly','Monthly Observations'],['general','General Log']] as const).map(([t,l]) => (
-          <button key={t} onClick={() => setActiveTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === t ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>{l}</button>
-        ))}
+        <p className="text-sm text-gray-500">Record and track monthly observations per employee</p>
       </div>
 
       {/* Add observation form */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-700 text-sm mb-4">Add {activeTab === 'monthly' ? 'Monthly' : 'General'} Observation</h3>
+        <h3 className="font-semibold text-gray-700 text-sm mb-4">Add Observation</h3>
         <form onSubmit={saveObs} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -1160,56 +1150,59 @@ function ObservationsPanel({ employees, currentUser, showToast }:
                 {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>)}
               </select>
             </div>
-            {activeTab === 'monthly' && (
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
-                <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">Select month...</option>
-                  {allMonths.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-            )}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
+              <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Select month...</option>
+                {allMonths.map(m => <option key={m}>{m}</option>)}
+              </select>
+            </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Observation</label>
             <textarea value={text} onChange={e => setText(e.target.value)} rows={4} required
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={activeTab === 'monthly' ? "e.g. Consistently meets deadlines, needs improvement on accuracy..." : "General note about this employee..."} />
+              placeholder="e.g. Consistently meets deadlines, needs improvement on accuracy..." />
           </div>
-          <button type="submit" disabled={saving || !text.trim() || (activeTab === 'monthly' && !selMonth)}
+          <button type="submit" disabled={saving || !text.trim() || !selMonth}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2">
             <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Observation'}
           </button>
         </form>
       </div>
 
-      {/* Filter + list */}
+      {/* Filter + log */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between flex-wrap gap-2">
-          <h3 className="font-semibold text-gray-700 text-sm">{activeTab === 'monthly' ? 'Monthly' : 'General'} Observations Log</h3>
-          <div className="flex items-center gap-2">
+        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-semibold text-gray-700 text-sm">Observations Log</h3>
+          <div className="flex flex-wrap items-center gap-2">
             <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="all">All Employees</option>
-              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name.split(',')[0]}</option>)}
+              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name.split(',')[0]} — {e.designation}</option>)}
             </select>
-            <button onClick={loadObs} className="text-xs text-blue-600 hover:text-blue-700">Refresh</button>
+            <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="all">All Months</option>
+              {allMonths.map(m => <option key={m}>{m}</option>)}
+            </select>
+            <button onClick={loadObs} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Refresh</button>
           </div>
         </div>
         {loading ? <div className="p-8 text-center text-gray-400">Loading...</div> : (
           <div className="divide-y divide-gray-100">
-            {obs.length === 0 && <div className="p-8 text-center text-gray-400 text-sm">No observations yet.</div>}
+            {obs.length === 0 && <div className="p-8 text-center text-gray-400 text-sm">No observations found.</div>}
             {obs.map(o => (
               <div key={o.id} className="px-4 py-4 hover:bg-gray-50">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="font-medium text-gray-900 text-sm">{o.employee_name}</span>
-                      {o.month_label && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{o.month_label}</span>}
-                      <span className="text-xs text-gray-400">by {o.observed_by} · {new Date(o.created_at).toLocaleDateString()}</span>
+                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                      <span className="font-semibold text-gray-900 text-sm">{o.employee_name}</span>
+                      {o.month_label && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">{o.month_label}</span>}
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">by {o.observed_by}</span>
+                      <span className="text-xs text-gray-400">{new Date(o.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
                     </div>
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{o.observation}</p>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{o.observation}</p>
                   </div>
-                  <button onClick={() => deleteObs(o.id)} className="text-gray-400 hover:text-red-600 p-1 flex-shrink-0"><Trash2 className="w-4 h-4"/></button>
+                  <button onClick={() => deleteObs(o.id)} className="text-gray-400 hover:text-red-600 p-1 flex-shrink-0 transition"><Trash2 className="w-4 h-4"/></button>
                 </div>
               </div>
             ))}
