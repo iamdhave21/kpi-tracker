@@ -164,7 +164,7 @@ export default function KPIApp() {
         </div>
       )}
       {/* Top bar */}
-      <header className="bg-blue-900 shadow-lg sticky top-0 z-40 h-14 flex items-center px-4 justify-between">
+      <header className="bg-gradient-to-r from-blue-900 via-blue-800 to-blue-900 shadow-lg sticky top-0 z-40 h-14 flex items-center px-4 justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><Menu className="w-4 h-4" /></button>
           <img src="/ab-logo.png" alt="AB BSS" className="h-8 w-8 object-contain" />
@@ -181,12 +181,14 @@ export default function KPIApp() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-30 w-56 bg-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-xl border-r border-gray-200`}>
+        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200`}>
           <div className="flex-1 overflow-y-auto py-4 space-y-1">
 
             {/* Performance */}
-            <div className="px-3 pt-2 pb-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Performance</p>
+            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
+              <div className="h-px flex-1 bg-gray-200"/>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Performance</p>
+              <div className="h-px flex-1 bg-gray-200"/>
             </div>
             {[
               { id: 'dashboard-month' as View, label: 'Dashboard', icon: <BarChart2 className="w-4 h-4" /> },
@@ -194,14 +196,16 @@ export default function KPIApp() {
               { id: 'dashboard-team' as View, label: 'Team View', icon: <Users className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* People */}
-            <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">People</p>
+            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
+              <div className="h-px flex-1 bg-gray-200"/>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">People</p>
+              <div className="h-px flex-1 bg-gray-200"/>
             </div>
             {[
               { id: 'employees' as View, label: 'Employees', icon: <UserPlus className="w-4 h-4" /> },
@@ -209,27 +213,31 @@ export default function KPIApp() {
               { id: 'org-chart' as View, label: 'Org Chart', icon: <Users className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* Operations */}
-            <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Operations</p>
+            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
+              <div className="h-px flex-1 bg-gray-200"/>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Operations</p>
+              <div className="h-px flex-1 bg-gray-200"/>
             </div>
             {[
               { id: 'tickets' as View, label: 'Tickets', icon: <FileText className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* Team Lead Tools */}
-            <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Team Lead Tools</p>
+            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
+              <div className="h-px flex-1 bg-gray-200"/>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Team Lead Tools</p>
+              <div className="h-px flex-1 bg-gray-200"/>
             </div>
             {[
               { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
@@ -237,30 +245,34 @@ export default function KPIApp() {
               { id: 'tl-tools' as View, label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* Directory */}
-            <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Directory</p>
+            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
+              <div className="h-px flex-1 bg-gray-200"/>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Directory</p>
+              <div className="h-px flex-1 bg-gray-200"/>
             </div>
             {[
               { id: 'directory' as View, label: 'Links & Resources', icon: <TrendingUp className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
                 {n.icon}{n.label}
               </button>
             ))}
 
             {/* Settings */}
-            <div className="px-3 pt-4 pb-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">System</p>
+            <div className="px-4 pt-4 pb-1 flex items-center gap-2">
+              <div className="h-px flex-1 bg-gray-200"/>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">System</p>
+              <div className="h-px flex-1 bg-gray-200"/>
             </div>
             <button onClick={() => { setView('settings'); setMobileMenuOpen(false) }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === 'settings' ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === 'settings' ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md rounded-lg mx-2 px-3 border-0' : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900 rounded-lg mx-2 px-3'}`}>
               <Shield className="w-4 h-4" />Settings
             </button>
           </div>
@@ -280,7 +292,7 @@ export default function KPIApp() {
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
-        <div className="max-w-6xl mx-auto px-6 py-6">
+        <div className="max-w-6xl mx-auto px-6 py-6 animate-fadeIn">
         {loading ? (
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
         ) : (
@@ -501,7 +513,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
           {label:'Perfect (100%)',value:ranked.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
           {label:'At Risk (<97%)',value:ranked.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50'},
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3">
+          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
             <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
           </div>
@@ -638,7 +650,7 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
           {label:'Perfect (100%)',value:teamRecords.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
           {label:'At Risk (<97%)',value:teamRecords.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50'},
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3">
+          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
             <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
           </div>
