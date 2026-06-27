@@ -549,8 +549,8 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
                 <XAxis dataKey="month" tick={{fontSize:10}}/>
                 <YAxis domain={[80,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
-                <Tooltip formatter={(v:unknown,name:unknown)=>typeof v==='number'?[v.toFixed(2)+'%',name]:[v,name]}/>
-                <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4" label={{value:'97%',position:'insideTopRight',fontSize:9,fill:'#d97706'}}/>
+                <Tooltip formatter={(v:unknown) => typeof v === 'number' ? v.toFixed(2) + '%' : String(v)} />
+                <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4" />
                 <Line type="monotone" dataKey="attendance" stroke="#10b981" strokeWidth={2} dot={{r:3,fill:'#10b981'}} name="Attendance"/>
                 <Line type="monotone" dataKey="accuracy" stroke="#3b82f6" strokeWidth={2} dot={{r:3,fill:'#3b82f6'}} name="Accuracy"/>
                 <Line type="monotone" dataKey="efficiency" stroke="#8b5cf6" strokeWidth={2} dot={{r:3,fill:'#8b5cf6'}} name="Efficiency"/>
