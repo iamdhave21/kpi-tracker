@@ -220,8 +220,6 @@ export default function KPIApp() {
             </div>
             {[
               { id: 'tickets' as View, label: 'Tickets', icon: <FileText className="w-4 h-4" /> },
-              { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
-              { id: 'observations' as View, label: 'Observations', icon: <FileText className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition ${view === n.id ? 'bg-blue-50 text-blue-900 border-r-2 border-blue-900 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
@@ -234,6 +232,8 @@ export default function KPIApp() {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Team Lead Tools</p>
             </div>
             {[
+              { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
+              { id: 'observations' as View, label: 'Observations', icon: <FileText className="w-4 h-4" /> },
               { id: 'tl-tools' as View, label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4" /> },
             ].map(n => (
               <button key={n.id} onClick={() => { setView(n.id); setMobileMenuOpen(false) }}
