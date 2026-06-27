@@ -127,27 +127,27 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
       <div className="absolute inset-0 z-0" style={{backgroundImage:"url('/login-bg.jpg')",backgroundSize:'cover',backgroundPosition:'center left',filter:'blur(2px) brightness(0.5)',transform:'scale(1.05)'}} />
       {/* Dark overlay */}
       <div className="absolute inset-0 z-0 bg-blue-950/30" />
-      <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl w-full max-w-md mx-4 md:mx-0 p-8 relative z-10">
+      <div className="bg-white/20 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-md mx-4 md:mx-0 p-8 relative z-10 border border-white/30">
         <div className="text-center mb-8">
           <img src="/ab-logo.png" alt="AB BSS" className="w-20 h-20 object-contain mb-2 mx-auto" />
           <h1 className="text-2xl font-bold text-gray-900">Operations Portal</h1>
-          <p className="text-gray-500 text-sm mt-1">AB Business Support Services</p>
+          <p className="text-white/80 text-sm mt-1">AB Business Support Services</p>
         </div>
 
         {mode === 'login' && (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-white mb-1">Email</label>
               <input type="email" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="you@ab-businesssupport.com" value={username} onChange={e => setUsername(e.target.value)} required autoFocus />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-white mb-1">Password</label>
               <input type="password" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" value={password} onChange={e => setPassword(e.target.value)} required />
             </div>
             {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
             <button type="submit" disabled={loading} className="w-full bg-blue-900 hover:bg-blue-950 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">{loading ? 'Signing in...' : 'Sign in'}</button>
             <div className="text-center pt-1">
-              <button type="button" onClick={() => setMode('forgot')} className="text-sm text-blue-600 hover:text-blue-800 hover:underline transition">Forgot your password?</button>
+              <button type="button" onClick={() => setMode('forgot')} className="text-sm text-white/90 hover:text-white hover:underline transition">Forgot your password?</button>
             </div>
           </form>
         )}
@@ -158,7 +158,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
               <form onSubmit={handleForgot} className="space-y-4">
                 <p className="text-sm text-gray-500 mb-2">Enter your email and we will send you a reset link. It expires in 1 hour.</p>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+                  <label className="block text-sm font-medium text-white mb-1">Email address</label>
                   <input type="email" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="you@ab-businesssupport.com" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required autoFocus />
                 </div>
                 {forgotError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{forgotError}</p>}
@@ -205,7 +205,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
           </div>
         )}
 
-        {mode === 'login' && <p className="text-center text-xs text-gray-400 mt-6">Use your @ab-businesssupport.com email</p>}
+        {mode === 'login' && <p className="text-center text-xs text-white/60 mt-6">Use your @ab-businesssupport.com email</p>}
       </div>
     </div>
   )
