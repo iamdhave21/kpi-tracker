@@ -130,7 +130,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
       <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl w-full max-w-md mx-4 md:mx-0 p-8 relative z-10">
         <div className="text-center mb-8">
           <img src="/ab-logo.png" alt="AB BSS" className="w-20 h-20 object-contain mb-2 mx-auto" />
-          <h1 className="text-2xl font-bold text-gray-900">ABBSS Operations Portal</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Operations Portal</h1>
           <p className="text-gray-500 text-sm mt-1">AB Business Support Services</p>
         </div>
 
