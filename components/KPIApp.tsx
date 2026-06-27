@@ -655,11 +655,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   const [editDesig, setEditDesig] = useState('')
   const [searchQ, setSearchQ] = useState('')
   const [showInactive, setShowInactive] = useState(false)
-  const filtered = employees.filter(e => {
-    const matchSearch = !searchQ || e.name.toLowerCase().includes(searchQ.toLowerCase()) || e.designation.toLowerCase().includes(searchQ.toLowerCase())
-    const matchActive = showInactive ? true : e.active
-    return matchSearch && matchActive
-  })
+  const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
 
   async function addEmployee() {
     if (!newName.trim()) return; setAdding(true)
@@ -683,45 +679,136 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   }
 
   async function deleteEmployee(id: string) {
-    if (!confirm('Delete this employee and all their KPI records?')) return
+    if (!confirm('Delete this employee record and all their KPI records?')) return
     const emp = employees.find(e=>e.id===id)
     const {error} = await supabase.from('employees').delete().eq('id',id)
     if (error) showToast(error.message,'error')
     else { await writeAuditLog('DELETE_EMPLOYEE',currentUser,emp?.name||'','','','','Deleted'); showToast('Employee deleted'); onChanged() }
   }
 
+  function toggleExpand(name: string) {
+    setExpandedNames(prev => {
+      const next = new Set(prev)
+      next.has(name) ? next.delete(name) : next.add(name)
+      return next
+    })
+  }
+
+  // Group employees by name
+  const filtered = employees.filter(e => {
+    const matchSearch = !searchQ || e.name.toLowerCase().includes(searchQ.toLowerCase()) || e.designation.toLowerCase().includes(searchQ.toLowerCase())
+    const matchActive = showInactive ? true : e.active
+    return matchSearch && matchActive
+  })
+
+  // Build grouped structure
+  const grouped: Map<string, Employee[]> = new Map()
+  filtered.forEach(e => {
+    if (!grouped.has(e.name)) grouped.set(e.name, [])
+    grouped.get(e.name)!.push(e)
+  })
+  const groupEntries = Array.from(grouped.entries()).sort(([a],[b]) => a.localeCompare(b))
+
+  const uniquePeople = new Set(employees.map(e => e.name)).size
+  const activeCount = employees.filter(e=>e.active).length
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <div><h2 className="text-xl font-bold text-gray-900">Employee Management</h2><p className="text-sm text-gray-500">{employees.filter(e=>e.active).length} active, {employees.filter(e=>!e.active).length} inactive</p></div>
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Employee Management</h2>
+          <p className="text-sm text-gray-500">{uniquePeople} people · {activeCount} active records</p>
+        </div>
         <button onClick={()=>setShowInactive(!showInactive)} className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${showInactive?'bg-gray-800 text-white border-gray-800':'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{showInactive?'Hide Inactive':'Show Inactive'}</button>
       </div>
+
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500"/>Add New Employee</h3>
+        <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500"/>Add Employee / Role</h3>
         <div className="flex gap-3 flex-col sm:flex-row">
           <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-          <input value={newDesig} onChange={e=>setNewDesig(e.target.value)} placeholder="Designation" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          <input value={newDesig} onChange={e=>setNewDesig(e.target.value)} placeholder="Designation / Project" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
           <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"><PlusCircle className="w-4 h-4"/>Add</button>
         </div>
+        <p className="text-xs text-gray-400 mt-2">To track the same person across multiple projects, add them again with a different designation.</p>
       </div>
-      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search employees..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+
+      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name or designation..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {filtered.map((emp,i) => (
-          <div key={emp.id} className={`flex items-center gap-3 px-4 py-3 ${i>0?'border-t border-gray-100':''} hover:bg-gray-50`}>
-            {editId===emp.id ? (
-              <><input value={editName} onChange={e=>setEditName(e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"/><input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm"/><button onClick={()=>saveEdit(emp.id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button><button onClick={()=>setEditId(null)} className="text-gray-400 hover:text-gray-600 p-1"><X className="w-4 h-4"/></button></>
-            ) : (
-              <>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${emp.active?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-400'}`}>{emp.name.split(',')[0]?.charAt(0)||'?'}</div>
-                <div className="flex-1 min-w-0"><p className={`text-sm font-medium truncate ${emp.active?'text-gray-900':'text-gray-400'}`}>{emp.name}</p><p className="text-xs text-gray-500 truncate">{emp.designation}</p></div>
-                <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 transition cursor-pointer ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`} title={emp.active?'Click to deactivate':'Click to activate'}>{emp.active?'Active':'Inactive'}</button>
-                <button onClick={()=>{setEditId(emp.id);setEditName(emp.name);setEditDesig(emp.designation)}} className="text-gray-400 hover:text-blue-600 p-1 transition"><Edit2 className="w-4 h-4"/></button>
-                <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
-              </>
-            )}
-          </div>
-        ))}
-        {filtered.length===0 && <div className="text-center py-12 text-gray-400 text-sm">No employees found.</div>}
+        {groupEntries.length === 0 && <div className="text-center py-12 text-gray-400 text-sm">No employees found.</div>}
+        {groupEntries.map(([name, emps], gi) => {
+          const isMulti = emps.length > 1
+          const isExpanded = expandedNames.has(name) || emps.length === 1
+          const allActive = emps.every(e => e.active)
+          const someActive = emps.some(e => e.active)
+          const initial = name.split(',')[0]?.charAt(0) || '?'
+
+          return (
+            <div key={name} className={gi > 0 ? 'border-t border-gray-200' : ''}>
+              {/* Group header row */}
+              <div className={`flex items-center gap-3 px-4 py-3 ${isMulti ? 'cursor-pointer hover:bg-gray-50' : 'hover:bg-gray-50'}`} onClick={() => isMulti && toggleExpand(name)}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${someActive ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>{initial}</div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-semibold ${someActive ? 'text-gray-900' : 'text-gray-400'}`}>{name}</p>
+                  {!isExpanded && isMulti && (
+                    <p className="text-xs text-gray-500">{emps.map(e=>e.designation).join(' · ')}</p>
+                  )}
+                  {!isMulti && <p className="text-xs text-gray-500">{emps[0].designation}</p>}
+                </div>
+                {isMulti && (
+                  <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium flex-shrink-0">{emps.length} roles</span>
+                )}
+                {!isMulti && (
+                  <>
+                    {editId === emps[0].id ? (
+                      <div className="flex items-center gap-2" onClick={e=>e.stopPropagation()}>
+                        <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"/>
+                        <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-32 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"/>
+                        <button onClick={()=>saveEdit(emps[0].id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button>
+                        <button onClick={()=>setEditId(null)} className="text-gray-400 p-1"><X className="w-4 h-4"/></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
+                        <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
+                        <button onClick={()=>{setEditId(emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation)}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
+                      </div>
+                    )}
+                  </>
+                )}
+                {isMulti && (
+                  <span className="text-gray-400 ml-1">{isExpanded ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}</span>
+                )}
+              </div>
+
+              {/* Expanded sub-rows for multi-role employees */}
+              {isExpanded && isMulti && emps.map((emp, ei) => (
+                <div key={emp.id} className="flex items-center gap-3 pl-14 pr-4 py-2.5 border-t border-gray-100 bg-gray-50/50 hover:bg-gray-50">
+                  <div className="flex-shrink-0 w-3 h-3 flex items-center justify-center">
+                    <span className="text-gray-300 text-lg leading-none">{ei === emps.length-1 ? '└' : '├'}</span>
+                  </div>
+                  {editId === emp.id ? (
+                    <div className="flex-1 flex items-center gap-2">
+                      <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"/>
+                      <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"/>
+                      <button onClick={()=>saveEdit(emp.id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button>
+                      <button onClick={()=>setEditId(null)} className="text-gray-400 p-1"><X className="w-4 h-4"/></button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-sm ${emp.active ? 'text-gray-700' : 'text-gray-400'}`}>{emp.designation}</span>
+                      </div>
+                      <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
+                      <button onClick={()=>{setEditId(emp.id);setEditName(emp.name);setEditDesig(emp.designation)}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
+                      <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
