@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     const resend = new Resend(process.env.RESEND_API_KEY)
     await resend.emails.send({
-      from: 'AB BSS Portal <noreply@ab-businesssupport.com>',
+      from: 'AB BSS Portal <onboarding@resend.dev>',
       to: emailLower,
       subject: 'Reset your AB BSS Portal password',
       html: `
