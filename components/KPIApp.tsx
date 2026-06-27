@@ -388,7 +388,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0"/>
               <XAxis type="number" domain={[0,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
               <YAxis type="category" dataKey="name" tick={{fontSize:10}} width={75}/>
-              <Tooltip formatter={(v:unknown) => typeof v==='number' ? v.toFixed(2)+'%' : String(v)} labelFormatter={(label:unknown, payload:any[]) => payload?.[0]?.payload?.full || String(label)}/>
+              <Tooltip formatter={(v:unknown) => typeof v==='number' ? v.toFixed(2)+'%' : String(v)} labelFormatter={(label:unknown) => String(label)}/>
               <ReferenceLine x={97} stroke="#fbbf24" strokeDasharray="4 4"/>
               <Bar dataKey="overall" radius={[0,4,4,0]}>
                 {ranked.map((r) => (
