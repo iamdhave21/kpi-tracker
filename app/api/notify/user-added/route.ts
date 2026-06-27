@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 
 function getSupabase() {
   return createClient(
@@ -13,14 +13,19 @@ export async function POST(req: NextRequest) {
   try {
     const { newUsername, newRole, addedBy } = await req.json()
 
-    if (!process.env.RESEND_API_KEY) {
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
       return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
     }
 
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    const supabase = getSupabase()
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_PASS,
+      },
+    })
 
-    // Get all managers, team leads, and super admins to notify
+    const supabase = getSupabase()
     const { data: recipients } = await supabase
       .from('app_users')
       .select('email, username, role')
@@ -28,7 +33,7 @@ export async function POST(req: NextRequest) {
       .eq('active', true)
 
     if (!recipients || recipients.length === 0) {
-      return NextResponse.json({ success: true, message: 'No recipients found' })
+      return NextResponse.json({ success: true, message: 'No recipients' })
     }
 
     const roleLabels: Record<string, string> = {
@@ -42,10 +47,10 @@ export async function POST(req: NextRequest) {
       .map(r => r.email || `${r.username}@ab-businesssupport.com`)
       .filter(Boolean)
 
-    await resend.emails.send({
-      from: 'AB BSS Portal <onboarding@resend.dev>',
-      to: toEmails,
-      subject: `New User Added — AB BSS Operations Portal`,
+    await transporter.sendMail({
+      from: `"AB BSS Operations Portal" <${process.env.GMAIL_USER}>`,
+      to: toEmails.join(', '),
+      subject: 'New User Added — AB BSS Operations Portal',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
           <div style="background: #1e3a5f; padding: 24px; border-radius: 12px 12px 0 0;">
@@ -76,7 +81,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (err: unknown) {
-    console.error('Email notification error:', err)
-    return NextResponse.json({ error: 'Failed to send notification' }, { status: 500 })
+    console.error('Email error:', err)
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed' }, { status: 500 })
   }
 }
