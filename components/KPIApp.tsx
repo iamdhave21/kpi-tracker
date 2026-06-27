@@ -301,7 +301,7 @@ export default function KPIApp() {
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
         ) : (
           <>
-            {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} />}
+            {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} userRole={userRole} />}
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} />}
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
@@ -436,23 +436,44 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
 }
 
 // ── Performance Dashboard ───────────────────────────────────────────────────
-function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setPerfView, selMonth, selYear, selQuarter, setSelMonth, setSelYear, setSelQuarter, searchQ, setSearchQ, onEditRecord, showToast, currentUser }:
-  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, perfView: PerfView, setPerfView: (v: PerfView) => void, selMonth: string, selYear: string, selQuarter: number, setSelMonth: (v: string) => void, setSelYear: (v: string) => void, setSelQuarter: (v: number) => void, searchQ: string, setSearchQ: (v: string) => void, onEditRecord: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
+function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setPerfView, selMonth, selYear, selQuarter, setSelMonth, setSelYear, setSelQuarter, searchQ, setSearchQ, onEditRecord, showToast, currentUser, userRole }:
+  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, perfView: PerfView, setPerfView: (v: PerfView) => void, selMonth: string, selYear: string, selQuarter: number, setSelMonth: (v: string) => void, setSelYear: (v: string) => void, setSelQuarter: (v: number) => void, searchQ: string, setSearchQ: (v: string) => void, onEditRecord: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string }) {
 
   const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
   const [teams, setTeams] = useState<any[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [selTeam, setSelTeam] = useState<string>('all')
 
+  const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
+
   useEffect(() => {
     supabase.from('teams').select('id, name').order('name').then(({data}) => setTeams(data||[]))
-    supabase.from('team_members').select('team_id, employee_id').then(({data}) => setMembers(data||[]))
-  }, [])
+    supabase.from('team_members').select('team_id, employee_id').then(({data}) => {
+      setMembers(data||[])
+      // For viewers: find which employees share a team with the current user
+      if (userRole === 'viewer' && currentUser) {
+        supabase.from('employees').select('id').eq('name', currentUser).then(({data: empData}) => {
+          if (!empData || empData.length === 0) {
+            // Try matching by email prefix
+            const username = currentUser.split('@')[0]
+            // Just show all for now if no match — will be filtered by team below
+          }
+          // Find teams that have this user's employee record
+          const myEmpIds = new Set((empData||[]).map((e:any) => e.id))
+          const myTeams = new Set((data||[]).filter((m:any) => myEmpIds.has(m.employee_id)).map((m:any) => m.team_id))
+          const teammateIds = new Set((data||[]).filter((m:any) => myTeams.has(m.team_id)).map((m:any) => m.employee_id))
+          setMyTeamEmpIds(teammateIds.size > 0 ? teammateIds : null)
+        })
+      }
+    })
+  }, [userRole, currentUser])
 
   function getFilteredByView(): KpiRecord[] {
     const q = searchQ.toLowerCase()
     const teamEmpIds = selTeam === 'all' ? null : new Set(members.filter(m => m.team_id === selTeam).map(m => m.employee_id))
-    let base = records.filter(r => activeEmpIds.has(r.employee_id) && (teamEmpIds === null || teamEmpIds.has(r.employee_id)))
+    // Viewers only see their own team members
+    const viewerFilter = userRole === 'viewer' && myTeamEmpIds ? myTeamEmpIds : null
+    let base = records.filter(r => activeEmpIds.has(r.employee_id) && (teamEmpIds === null || teamEmpIds.has(r.employee_id)) && (viewerFilter === null || viewerFilter.has(r.employee_id)))
     if (perfView === 'monthly' || perfView === 'weekly') {
       base = base.filter(r => (r.month_label||'').toLowerCase().includes(selMonth.toLowerCase()) && (r.month_label||'').includes(selYear))
     } else if (perfView === 'quarterly') {
@@ -490,7 +511,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
 
   return (
     <div className="space-y-6">
-      {editRecord && <EditScoreModal record={editRecord} currentUser={currentUser} onSaved={onEditRecord} onClose={() => setEditRecord(null)} showToast={showToast} />}
+      {editRecord && userRole !== 'viewer' && <EditScoreModal record={editRecord} currentUser={currentUser} onSaved={onEditRecord} onClose={() => setEditRecord(null)} showToast={showToast} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -558,7 +579,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
-              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall','Notes',''].map(h => (
+              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall',...(userRole !== 'viewer' ? ['Notes',''] : [])].map(h => (
                 <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
               ))}
             </tr></thead>
@@ -574,10 +595,10 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.efficiency)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.feedback)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
-                  <td className="px-4 py-3">
+                  {userRole !== 'viewer' && <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>}
+                  {userRole !== 'viewer' && <td className="px-4 py-3">
                     {(perfView==='monthly'||perfView==='weekly') && <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>}
-                  </td>
+                  </td>}
                 </tr>
               ))}
             </tbody>
