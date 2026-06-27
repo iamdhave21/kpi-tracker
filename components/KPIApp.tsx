@@ -512,7 +512,13 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
   { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, selEmployee: string, setSelEmployee: (v: string) => void }) {
   const emp = employees.find(e => e.id === selEmployee)
   const empRecords = records.filter(r => r.employee_id === selEmployee && r.overall_score !== null && (r.overall_score||0) > 0).sort((a,b) => a.month_label.localeCompare(b.month_label))
-  const chartData = empRecords.map(r => ({ month: r.month_label.substring(0,10), score: r.overall_score ? parseFloat((r.overall_score*100).toFixed(2)) : 0 }))
+  const chartData = empRecords.map(r => ({
+    month: r.month_label.substring(0,10),
+    score: r.overall_score ? parseFloat((r.overall_score*100).toFixed(2)) : 0,
+    attendance: r.attendance ? parseFloat((r.attendance*100).toFixed(2)) : 0,
+    accuracy: r.accuracy ? parseFloat((r.accuracy*100).toFixed(2)) : 0,
+    efficiency: r.efficiency ? parseFloat((r.efficiency*100).toFixed(2)) : 0,
+  }))
   const avgScore = empRecords.length ? empRecords.reduce((s,r) => s+(r.overall_score||0),0)/empRecords.length : 0
   const latest = empRecords[empRecords.length-1]
   const best = empRecords.reduce((b,r) => ((r.overall_score||0)>(b?.overall_score||0)?r:b), empRecords[0])
@@ -536,17 +542,26 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
         </div>
         {chartData.length > 1 && (
           <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h4 className="font-semibold text-gray-700 mb-4 text-sm">Overall Score Trend</h4>
-            <ResponsiveContainer width="100%" height={220}>
+            <h4 className="font-semibold text-gray-700 mb-1 text-sm">Performance Trend</h4>
+            <p className="text-xs text-gray-400 mb-4">Attendance · Accuracy · Efficiency · Overall Score</p>
+            <ResponsiveContainer width="100%" height={260}>
               <LineChart data={chartData} margin={{top:5,right:10,left:-20,bottom:5}}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
                 <XAxis dataKey="month" tick={{fontSize:10}}/>
                 <YAxis domain={[80,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
-                <Tooltip formatter={(v:unknown)=>typeof v==='number'?v.toFixed(2)+'%':''}/>
-                <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4"/>
-                <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2} dot={{r:4,fill:'#3b82f6'}} name="Overall"/>
+                <Tooltip formatter={(v:unknown,name:unknown)=>typeof v==='number'?[v.toFixed(2)+'%',name]:[v,name]}/>
+                <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4" label={{value:'97%',position:'insideTopRight',fontSize:9,fill:'#d97706'}}/>
+                <Line type="monotone" dataKey="attendance" stroke="#10b981" strokeWidth={2} dot={{r:3,fill:'#10b981'}} name="Attendance"/>
+                <Line type="monotone" dataKey="accuracy" stroke="#3b82f6" strokeWidth={2} dot={{r:3,fill:'#3b82f6'}} name="Accuracy"/>
+                <Line type="monotone" dataKey="efficiency" stroke="#8b5cf6" strokeWidth={2} dot={{r:3,fill:'#8b5cf6'}} name="Efficiency"/>
+                <Line type="monotone" dataKey="score" stroke="#f59e0b" strokeWidth={2.5} dot={{r:4,fill:'#f59e0b'}} name="Overall" strokeDasharray="5 2"/>
               </LineChart>
             </ResponsiveContainer>
+            <div className="flex gap-5 mt-3 text-xs text-gray-500 flex-wrap">
+              {[['#10b981','Attendance'],['#3b82f6','Accuracy'],['#8b5cf6','Efficiency'],['#f59e0b','Overall (dashed)']].map(([c,l])=>(
+                <span key={l} className="flex items-center gap-1.5"><span className="w-4 h-0.5 inline-block rounded" style={{background:c}}/>{l}</span>
+              ))}
+            </div>
           </div>
         )}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
