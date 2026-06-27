@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
 
 export async function POST(req: NextRequest) {
   try {
     const { username, password } = await req.json()
     if (!username || !password) return NextResponse.json({ error: 'Username and password required' }, { status: 400 })
 
+    const supabase = getSupabase()
     const { data: user, error } = await supabase
       .from('app_users')
       .select('*')
