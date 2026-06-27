@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export async function POST(req: NextRequest) {
   try {
-    const { username, password } = await req.json()
+    const { username, password, role } = await req.json()
     if (!username || !password) return NextResponse.json({ error: 'Username and password required' }, { status: 400 })
     if (password.length < 6) return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
-    // Note: Adding users requires updating APP_USERS env var in Vercel and redeploying
-    // This endpoint validates the request and returns instructions
-    return NextResponse.json({ success: true, message: `User "${username}" queued. Update APP_USERS in Vercel to: existing_users,${username}:${password}` })
+
+    const { error } = await supabase.from('app_users').insert({ username: username.trim(), password_hash: password, role: role || 'viewer', active: true })
+    if (error) {
+      if (error.code === '23505') return NextResponse.json({ error: 'Username already exists' }, { status: 400 })
+      throw error
+    }
+
+    return NextResponse.json({ success: true })
   } catch {
-    return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+    return NextResponse.json({ error: 'Failed to add user' }, { status: 500 })
   }
 }
