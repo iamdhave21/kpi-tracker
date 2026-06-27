@@ -1149,7 +1149,7 @@ function TeamManager({ employees, showToast }:
 
 
 // ── User Manager ────────────────────────────────────────────────────────────
-function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string }) {
+function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string, currentUser: string | null }) {
   const [appUsers, setAppUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newUser, setNewUser] = useState('')
@@ -1178,6 +1178,8 @@ function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
       showToast(`User "${newUser}" added successfully!`)
+      // Send email notification to managers and team leads
+      fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: newUser.trim(), newRole, addedBy: currentUser || 'admin' }) }).catch(() => {})
       setNewUser(''); setNewPass(''); setNewRole('viewer')
       loadUsers()
     } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
@@ -1555,7 +1557,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>App User Management</h3>
-            <UserManager showToast={showToast} currentUserRole={userRole} />
+            <UserManager showToast={showToast} currentUserRole={userRole} currentUser={user} />
           </div>
 
         </div>
