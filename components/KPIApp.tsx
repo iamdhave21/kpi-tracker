@@ -467,17 +467,17 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
       setMembers(memberData||[])
       if (userRole === 'viewer' && currentUser) {
         // Get linked employee_id from app_users
-        supabase.from('app_users').select('employee_id').eq('email', currentUser).single()
-          .then(({data: userData}) => {
-            const myEmpId = userData?.employee_id
-            if (!myEmpId) { setMyTeamEmpIds(null); return }
-            // Find my teams
-            const myTeams = new Set((memberData||[]).filter((m:any) => m.employee_id === myEmpId).map((m:any) => m.team_id))
-            if (myTeams.size === 0) { setMyTeamEmpIds(null); return }
-            // Find all teammates
-            const teammateIds = new Set((memberData||[]).filter((m:any) => myTeams.has(m.team_id)).map((m:any) => m.employee_id))
-            setMyTeamEmpIds(teammateIds)
-          })
+        // Find employee by email match
+        supabase.from('employees').select('id').eq('email', currentUser).then(({data: empData}) => {
+          if (!empData || empData.length === 0) { setMyTeamEmpIds(null); return }
+          const myEmpId = empData[0].id
+          // Find my teams
+          const myTeams = new Set((memberData||[]).filter((m:any) => m.employee_id === myEmpId).map((m:any) => m.team_id))
+          if (myTeams.size === 0) { setMyTeamEmpIds(null); return }
+          // Find all teammates
+          const teammateIds = new Set((memberData||[]).filter((m:any) => myTeams.has(m.team_id)).map((m:any) => m.employee_id))
+          setMyTeamEmpIds(teammateIds)
+        })
       }
     })
   }, [userRole, currentUser])
@@ -883,25 +883,27 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
   const [newName, setNewName] = useState('')
   const [newDesig, setNewDesig] = useState('')
+  const [newEmail, setNewEmail] = useState('')
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
   const [editName, setEditName] = useState('')
   const [editDesig, setEditDesig] = useState('')
+  const [editEmail, setEditEmail] = useState('')
   const [searchQ, setSearchQ] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
 
   async function addEmployee() {
     if (!newName.trim()) return; setAdding(true)
-    const {error} = await supabase.from('employees').insert({name:newName.trim(),designation:newDesig.trim(),active:true})
+    const {error} = await supabase.from('employees').insert({name:newName.trim(),designation:newDesig.trim(),email:newEmail.trim()||null,active:true})
     if (error) showToast(error.message,'error')
-    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); onChanged() }
+    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); setNewEmail(''); onChanged() }
     setAdding(false)
   }
 
   async function saveEdit(id: string) {
     const emp = employees.find(e=>e.id===id)
-    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig}).eq('id',id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null}).eq('id',id)
     if (error) showToast(error.message,'error')
     else { await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Name/Designation',emp?.name||'',editName); setEditId(null); onChanged() }
   }
@@ -959,11 +961,12 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500"/>Add Employee / Role</h3>
         <div className="flex gap-3 flex-col sm:flex-row">
-          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name (Last, First)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <input value={newDesig} onChange={e=>setNewDesig(e.target.value)} placeholder="Designation / Project" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-          <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"><PlusCircle className="w-4 h-4"/>Add</button>
+          <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="email@ab-businesssupport.com" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"><PlusCircle className="w-4 h-4"/>Add</button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">To track the same person across multiple projects, add them again with a different designation.</p>
+        <p className="text-xs text-gray-400 mt-2">Email links this employee to their app login. Same person with multiple projects = add again with different designation.</p>
       </div>
 
       <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name or designation..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/></div>
@@ -1022,9 +1025,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                     <span className="text-gray-300 text-lg leading-none">{ei === emps.length-1 ? '└' : '├'}</span>
                   </div>
                   {editId === emp.id ? (
-                    <div className="flex-1 flex items-center gap-2">
-                      <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"/>
-                      <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"/>
+                    <div className="flex-1 flex items-center gap-2 flex-wrap">
+                      <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-36 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Name"/>
+                      <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Designation"/>
+                      <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="email@ab-businesssupport.com"/>
                       <button onClick={()=>saveEdit(emp.id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button>
                       <button onClick={()=>setEditId(null)} className="text-gray-400 p-1"><X className="w-4 h-4"/></button>
                     </div>
@@ -1034,7 +1038,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                         <span className={`text-sm ${emp.active ? 'text-gray-700' : 'text-gray-400'}`}>{emp.designation}</span>
                       </div>
                       <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                      <button onClick={()=>{setEditId(emp.id);setEditName(emp.name);setEditDesig(emp.designation)}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
+                      <button onClick={()=>{setEditId(emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'')}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
                       <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                     </>
                   )}
@@ -1145,7 +1149,7 @@ function TeamManager({ employees, showToast }:
 
 
 // ── User Manager ────────────────────────────────────────────────────────────
-function UserManager({ showToast, currentUserRole, employees }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string, employees: Employee[] }) {
+function UserManager({ showToast, currentUserRole }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string }) {
   const [appUsers, setAppUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [newUser, setNewUser] = useState('')
@@ -1247,24 +1251,7 @@ function UserManager({ showToast, currentUserRole, employees }: { showToast: (m:
                     <button onClick={() => deleteUser(u)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
                   )}
                 </div>
-                {/* Employee link */}
-                <div className="px-4 pb-2 flex items-center gap-2 bg-gray-50/50">
-                  <span className="text-xs text-gray-400 flex-shrink-0">Linked employee:</span>
-                  <select
-                    value={u.employee_id || ''}
-                    onChange={async e => {
-                      await supabase.from('app_users').update({ employee_id: e.target.value || null }).eq('id', u.id)
-                      loadUsers()
-                      showToast('Employee linked!')
-                    }}
-                    className="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-900 bg-white"
-                  >
-                    <option value="">— Not linked —</option>
-                    {employees.filter(e => e.active).map(e => (
-                      <option key={e.id} value={e.id}>{e.name} · {e.designation}</option>
-                    ))}
-                  </select>
-                </div>
+
                 {resetUserId === u.id && (
                   <div className="px-4 pb-3 flex gap-2 bg-orange-50 border-t border-orange-100">
                     <input type="password" value={resetPass} onChange={e=>setResetPass(e.target.value)} placeholder="New password" className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-400 mt-2" />
@@ -1568,7 +1555,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>App User Management</h3>
-            <UserManager showToast={showToast} currentUserRole={userRole} employees={employees} />
+            <UserManager showToast={showToast} currentUserRole={userRole} />
           </div>
 
         </div>
