@@ -506,7 +506,7 @@ function GameLeaderboard({ refreshKey }: { refreshKey: number }) {
 }
 
 // ── Main HomeScreen ─────────────────────────────────────────────────────────
-export function HomeScreen({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string }) {
   const [leaderboardKey, setLeaderboardKey] = useState(0)
   const userName = currentUser?.split('@')[0] || currentUser
 
@@ -518,26 +518,18 @@ export function HomeScreen({ currentUser, userRole, showToast }: { currentUser: 
         <p className="text-sm text-gray-500 mt-0.5">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Announcements - takes 2/3 */}
-        <div className="lg:col-span-2">
-          <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
-        </div>
-
-        {/* Game + Leaderboard - takes 1/3 */}
-        <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <BrickBreaker
-              userEmail={currentUser}
-              userName={userName}
-              onScoreSaved={() => setLeaderboardKey(k => k + 1)}
-            />
+      {activeTab === 'gaming-hub' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <BrickBreaker userEmail={currentUser} userName={userName} onScoreSaved={() => setLeaderboardKey(k => k + 1)} />
           </div>
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="bg-white border border-gray-200 rounded-xl p-6">
             <GameLeaderboard refreshKey={leaderboardKey} />
           </div>
         </div>
-      </div>
+      ) : (
+        <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
+      )}
     </div>
   )
 }
@@ -740,7 +732,13 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string
     <div className="flex-1 overflow-y-auto py-3">
 
       {/* HOME */}
-      <NavItem id="home" label="Home" icon={null} view={view} setView={setView} />
+      <SectionHeader sectionKey="home" label="Home" hasActive={['announcements','gaming-hub'].includes(view)} />
+      {!collapsed.home && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="announcements" label="Announcements" icon={<Bell className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="gaming-hub" label="Gaming Hub" icon={<Gamepad2 className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
 
       {/* PERFORMANCE */}
       <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee','dashboard-team'].includes(view)} />
@@ -925,7 +923,7 @@ export default function KPIApp() {
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
             {view === 'entry' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
-            {view === 'home' && <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} />}
+            {(view === 'announcements' || view === 'gaming-hub') && <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} />}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
             {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
