@@ -132,8 +132,7 @@ function BrickBreaker({ userEmail, userName, onScoreSaved }: { userEmail: string
   const startGame = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
     const W = canvas.width
     const H = canvas.height
 
