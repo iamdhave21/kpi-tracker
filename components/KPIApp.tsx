@@ -163,7 +163,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
   async function loadScores() {
     const now = new Date()
     const monthYear = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
-    const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url').eq('game_key','game_of_month').eq('month_year',monthYear).order('score',{ascending:false})
+    const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url,played_at').eq('game_key','game_of_month').eq('month_year',monthYear).order('score',{ascending:false})
     const best: Record<string,any> = {}
     data?.forEach((row:any) => { if (!best[row.user_email]||row.score>best[row.user_email].score) best[row.user_email]=row })
     setScores(Object.values(best).sort((a,b)=>b.score-a.score).slice(0,10))
@@ -241,7 +241,10 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
             <div key={s.user_email} className={`flex items-center gap-2 px-3 py-2 rounded-lg ${i===0?'bg-yellow-50 border border-yellow-200':i===1?'bg-gray-100':i===2?'bg-orange-50':'bg-gray-50'}`}>
               <span className="text-sm w-5">{medals[i]||`${i+1}.`}</span>
               <span className="text-sm text-gray-800 flex-1 font-medium truncate">{s.user_name||s.user_email.split('@')[0]}</span>
-              <span className="text-sm font-bold text-blue-900">{s.score.toLocaleString()}</span>
+              <div className="text-right">
+                <span className="text-sm font-bold text-blue-900 block">{s.score.toLocaleString()}</span>
+                {s.played_at && <span className="text-xs text-gray-400">{new Date(s.played_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>}
+              </div>
               {s.screenshot_url && <a href={s.screenshot_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600 transition" title="View screenshot">📸</a>}
             </div>
           ))
