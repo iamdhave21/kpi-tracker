@@ -224,7 +224,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold text-base text-gray-900">{bgUrl ? '' : '📢'} Announcements</h2>
+          <h2 className="font-semibold text-base text-gray-900">{bgUrl ? '' : ''} Announcements</h2>
           {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
         {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
@@ -234,7 +234,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
           <textarea value={form.body} onChange={e => setForm(p=>({...p,body:e.target.value}))} placeholder="Write your announcement..." rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">{uploading ? '⏳ Uploading...' : '📎 Attach'}</button>
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">{uploading ? ' Uploading...' : ' Attach'}</button>
             <span className="text-xs text-gray-400">Images, PDF, Word</span>
             <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleFileChange} className="hidden" />
           </div>
@@ -242,9 +242,9 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
             <div className="flex flex-wrap gap-2">
               {attachments.map((att, i) => (
                 <div key={i} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs">
-                  <span>{att.type==='image'?'🖼️':att.type==='pdf'?'📄':'📝'}</span>
+                  <span>{att.type==='image'?'IMG':att.type==='pdf'?'PDF':'DOC'}</span>
                   <span className="text-gray-700 max-w-xs truncate">{att.name}</span>
-                  <button onClick={() => setAttachments(prev => prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">✕</button>
+                  <button onClick={() => setAttachments(prev => prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">x</button>
                 </div>
               ))}
             </div>
@@ -265,7 +265,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag]||TAG_COLORS.Info}`}>{a.tag}</span>
               <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
             </div>
-            {canManage && <button onClick={() => deleteAnnouncement(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition">✕</button>}
+            {canManage && <button onClick={() => deleteAnnouncement(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition">x</button>}
           </div>
           <p className="text-sm text-gray-600 whitespace-pre-wrap">{a.body}</p>
           {a.attachments && a.attachments.length > 0 && (
@@ -273,7 +273,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
               <div className="flex flex-wrap gap-2">
                 {(a.attachments as any[]).filter((att:any)=>att.type!=='image').map((att:any,i:number) => (
                   <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
-                    <span>{att.type==='pdf'?'📄':'📝'}</span><span className="max-w-xs truncate">{att.name}</span>
+                    <span>{att.type==='pdf'?'PDF':'DOC'}</span><span className="max-w-xs truncate">{att.name}</span>
                   </a>
                 ))}
               </div>
