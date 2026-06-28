@@ -132,7 +132,8 @@ function BrickBreaker({ userEmail, userName, onScoreSaved }: { userEmail: string
   const startGame = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
     const W = canvas.width
     const H = canvas.height
 
@@ -161,11 +162,11 @@ function BrickBreaker({ userEmail, userName, onScoreSaved }: { userEmail: string
     }
 
     // Mouse/touch control
-    const onMouseMove = (e: MouseEvent) => {
+    const onMouseMove = (e: globalThis.MouseEvent) => {
       const rect = canvas.getBoundingClientRect()
       padX = Math.max(0, Math.min(W - PAD_W, e.clientX - rect.left - PAD_W / 2))
     }
-    const onTouchMove = (e: TouchEvent) => {
+    const onTouchMove = (e: globalThis.TouchEvent) => {
       e.preventDefault()
       const rect = canvas.getBoundingClientRect()
       padX = Math.max(0, Math.min(W - PAD_W, e.touches[0].clientX - rect.left - PAD_W / 2))
