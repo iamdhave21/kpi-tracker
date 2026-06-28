@@ -104,7 +104,7 @@ function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast:
     const url = urlData.publicUrl
     await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: url }, { onConflict: 'key' })
     setCurrentBg(url)
-    showToast('Theme background updated!', 'success')
+    showToast('Theme background updated! Refresh the page to see it.', 'success')
     setUploading(false)
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -223,18 +223,19 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const bgUrl = useAnnouncementBg()
 
   return (
-    <div className="relative rounded-2xl overflow-hidden">
-      {/* Background image */}
+    <div className="space-y-3">
+      {/* Background banner */}
       {bgUrl && (
-        <>
-          <div className="absolute inset-0 z-0" style={{backgroundImage:'url(' + bgUrl + ')',backgroundSize:'cover',backgroundPosition:'center',filter:'blur(4px) brightness(0.45)',transform:'scale(1.05)'}} />
-          <div className="absolute inset-0 z-0 bg-white/30" />
-        </>
+        <div className="relative h-32 rounded-2xl overflow-hidden">
+          <div className="absolute inset-0" style={{backgroundImage:'url(' + bgUrl + ')',backgroundSize:'cover',backgroundPosition:'center',filter:'blur(2px) brightness(0.6)'}} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p className="text-white font-bold text-xl drop-shadow-lg">📢 Announcements</p>
+          </div>
+        </div>
       )}
-      <div className={`relative z-10 space-y-3 ${bgUrl ? 'p-4' : ''}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold text-base text-gray-900">📢 Announcements</h2>
+          <h2 className="font-semibold text-base text-gray-900">{bgUrl ? '' : '📢'} Announcements</h2>
           {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
         {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
