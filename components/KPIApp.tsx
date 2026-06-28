@@ -287,7 +287,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
             </div>
           )}
           <div className="flex items-center justify-between pt-1">
-            <span className="text-xs text-gray-400">By {a.posted_by.split('@')[0]} · {new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
+            <span className="text-xs text-gray-400">By {a.posted_by.split('@')[0]} - {new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
             <div className="flex items-center gap-2">
               {canManage && <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">Compliance</button>}
               {!acks[a.id] ? (
@@ -305,7 +305,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
               ) : (
                 <div className="flex flex-wrap gap-1">
                     {ackDetails[a.id].map((ac:any) => (
-                      <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
+                      <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{ac.user_email.split('@')[0]} - {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
                     ))}
                   </div>
               )}
@@ -485,7 +485,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
       {/* Leaderboard */}
       <div className="space-y-2">
         <h3 className="font-semibold text-gray-800 text-sm">🏆 {getMonthLabel()} Leaderboard</h3>
-        <p className="text-xs text-gray-400">Subway Surfers · Top scores this month</p>
+        <p className="text-xs text-gray-400">Subway Surfers - Top scores this month</p>
         {scores.length===0
           ? <p className="text-xs text-gray-400 text-center py-4">No scores yet. Be the first! 🎮</p>
           : scores.map((s,i)=>(
@@ -1022,7 +1022,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
         </div>
         <div className="bg-gray-50 rounded-lg px-3 py-2">
           <p className="text-sm font-medium text-gray-900">{record.employee_name}</p>
-          <p className="text-xs text-gray-500">{record.designation} · {record.month_label}</p>
+          <p className="text-xs text-gray-500">{record.designation} - {record.month_label}</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           {[
@@ -1165,7 +1165,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
       {ranked.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h4 className="font-semibold text-gray-700 text-sm mb-1">Overall Score — {viewLabel}</h4>
-          <p className="text-xs text-gray-400 mb-4">Sorted by overall score · 97% threshold line</p>
+          <p className="text-xs text-gray-400 mb-4">Sorted by overall score - 97% threshold line</p>
           <ResponsiveContainer width="100%" height={Math.max(180, ranked.length * 28)}>
             <BarChart data={ranked.map(r => ({ name: r.employee_name?.split(',')[0] || '', overall: r.overall_score ? parseFloat((r.overall_score*100).toFixed(2)) : 0, full: r.employee_name }))} layout="vertical" margin={{top:0,right:40,left:80,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0"/>
@@ -1282,7 +1282,7 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
       {selectedTeam && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">{selectedTeam.name.charAt(0)}</div>
-          <div><h3 className="font-bold text-gray-900">{selectedTeam.name}</h3><p className="text-sm text-gray-500">{selectedTeam.department}{selectedTeam.team_lead?.name ? ` · Lead: ${selectedTeam.team_lead.name.split(',')[0]}` : ''}</p><p className="text-xs text-gray-400">{activeTeamMemberIds.length} active members</p></div>
+          <div><h3 className="font-bold text-gray-900">{selectedTeam.name}</h3><p className="text-sm text-gray-500">{selectedTeam.department}{selectedTeam.team_lead?.name ? ` - Lead: ${selectedTeam.team_lead.name.split(',')[0]}` : ''}</p><p className="text-xs text-gray-400">{activeTeamMemberIds.length} active members</p></div>
         </div>
       )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -1365,7 +1365,7 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
         {chartData.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h4 className="font-semibold text-gray-700 mb-1 text-sm">Performance Trend</h4>
-            <p className="text-xs text-gray-400 mb-4">Attendance · Accuracy · Efficiency · Overall Score</p>
+            <p className="text-xs text-gray-400 mb-4">Attendance - Accuracy - Efficiency - Overall Score</p>
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={chartData} margin={{top:5,right:10,left:-20,bottom:5}}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
@@ -1575,7 +1575,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Employee Management</h2>
-          <p className="text-sm text-gray-500">{uniquePeople} people · {activeCount} active records</p>
+          <p className="text-sm text-gray-500">{uniquePeople} people - {activeCount} active records</p>
         </div>
         <button onClick={()=>setShowInactive(!showInactive)} className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${showInactive?'bg-gray-800 text-white border-gray-800':'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{showInactive?'Hide Inactive':'Show Inactive'}</button>
       </div>
@@ -1610,7 +1610,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${someActive ? 'text-gray-900' : 'text-gray-400'}`}>{name}</p>
                   {!isExpanded && isMulti && (
-                    <p className="text-xs text-gray-500">{emps.map(e=>e.designation).join(' · ')}</p>
+                    <p className="text-xs text-gray-500">{emps.map(e=>e.designation).join(' - ')}</p>
                   )}
                   {!isMulti && <p className="text-xs text-gray-500">{emps[0].designation}</p>}
                 </div>
@@ -1737,7 +1737,7 @@ function TeamManager({ employees, showToast }:
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50"><h3 className="font-semibold text-gray-700 text-sm">All Teams</h3></div>
           {loading?<div className="p-8 text-center text-gray-400">Loading...</div>:teams.length===0?<div className="p-8 text-center text-gray-400 text-sm">No teams yet.</div>:teams.map((team,i)=>(
             <div key={team.id} onClick={()=>setSelTeam(team.id)} className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition ${i>0?'border-t border-gray-100':''} ${selTeam===team.id?'bg-blue-50':'hover:bg-gray-50'}`}>
-              <div className="flex-1 min-w-0"><p className="font-medium text-gray-900 text-sm">{team.name}</p><p className="text-xs text-gray-500">{team.department}{team.team_lead?.name?` · Lead: ${team.team_lead.name.split(',')[0]}`:' · No lead'}</p><p className="text-xs text-gray-400">{members.filter(m=>m.team_id===team.id).length} members</p></div>
+              <div className="flex-1 min-w-0"><p className="font-medium text-gray-900 text-sm">{team.name}</p><p className="text-xs text-gray-500">{team.department}{team.team_lead?.name?` - Lead: ${team.team_lead.name.split(',')[0]}`:' - No lead'}</p><p className="text-xs text-gray-400">{members.filter(m=>m.team_id===team.id).length} members</p></div>
               <button onClick={e=>{e.stopPropagation();deleteTeam(team.id)}} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
             </div>
           ))}
@@ -2127,7 +2127,7 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
         {avatarUrl && (
           <button onClick={removeAvatar} className="block text-xs text-red-500 hover:text-red-700">Remove photo</button>
         )}
-        <p className="text-xs text-gray-400">JPG, PNG or GIF · Max 2MB</p>
+        <p className="text-xs text-gray-400">JPG, PNG or GIF - Max 2MB</p>
       </div>
     </div>
   )
