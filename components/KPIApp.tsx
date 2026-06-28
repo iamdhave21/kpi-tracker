@@ -56,14 +56,6 @@ async function writeAuditLog(action: string, performedBy: string, employeeName: 
 }
 
 // ── HomeScreen Component ────────────────────────────────────────────────────
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
 const TAG_COLORS: Record<string, string> = {
   Urgent: 'bg-red-100 text-red-700 border border-red-200',
   Info: 'bg-blue-100 text-blue-700 border border-blue-200',
