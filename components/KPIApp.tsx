@@ -219,9 +219,48 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   }
 
   const unread = announcements.filter(a => !acks[a.id])
+  const [bgUrl, setBgUrl] = useState('')
+  const [editingBg, setEditingBg] = useState(false)
+  const [bgInput, setBgInput] = useState('')
+  const canChangeBg = ['super_admin','admin','team_lead'].includes(userRole)
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
+      .then(({ data }) => { if (data?.value) { setBgUrl(data.value); setBgInput(data.value) } })
+  }, [])
+
+  async function saveBg() {
+    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: bgInput.trim() }, { onConflict: 'key' })
+    setBgUrl(bgInput.trim())
+    setEditingBg(false)
+    showToast('Background updated!', 'success')
+  }
 
   return (
     <div className="space-y-3">
+      {bgUrl ? (
+        <div className="relative h-36 rounded-2xl overflow-hidden">
+          <img src={bgUrl} alt="bg" className="absolute inset-0 w-full h-full object-cover" style={{filter:'blur(3px) brightness(0.5)',transform:'scale(1.05)'}} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p className="text-white font-bold text-2xl drop-shadow-lg">Announcements</p>
+          </div>
+          {canChangeBg && (
+            <button onClick={() => setEditingBg(!editingBg)} className="absolute top-2 right-2 bg-white/20 hover:bg-white/40 text-white text-xs px-2 py-1 rounded-lg transition">Change photo</button>
+          )}
+        </div>
+      ) : canChangeBg ? (
+        <div className="border-2 border-dashed border-gray-200 rounded-2xl p-4 text-center">
+          <p className="text-xs text-gray-500 mb-2">Add a monthly theme photo</p>
+          <button onClick={() => setEditingBg(true)} className="text-xs bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">+ Add photo URL</button>
+        </div>
+      ) : null}
+      {editingBg && canChangeBg && (
+        <div className="flex gap-2 items-center">
+          <input value={bgInput} onChange={e => setBgInput(e.target.value)} placeholder="Paste image URL here..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <button onClick={saveBg} className="bg-blue-900 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-800 transition">Save</button>
+          <button onClick={() => setEditingBg(false)} className="text-gray-400 hover:text-gray-600 text-sm px-2">Cancel</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="font-semibold text-base text-gray-900">Announcements</h2>
