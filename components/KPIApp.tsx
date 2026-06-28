@@ -224,7 +224,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold text-base text-gray-900">{bgUrl ? '' : ''} Announcements</h2>
+          <h2 className="font-semibold text-base text-gray-900">Announcements</h2>
           {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
         {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
