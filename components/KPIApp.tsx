@@ -313,13 +313,9 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           )}
         </div>
       ))}
-      </div>
     </div>
   )
 }
-
-
-
 
 
 // -- Game of the Month -------------------------------------------------------
