@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key } from 'lucide-react'
@@ -198,9 +198,7 @@ function BrickBreaker({ userEmail, userName, onScoreSaved }: { userEmail: string
         if (!b.alive) return
         allGone = false
         ctx.fillStyle = b.color
-        ctx.beginPath()
-        ctx.roundRect(b.x + 2, b.y, BRICK_W - 4, BRICK_H, 4)
-        ctx.fill()
+        ctx.fillRect(b.x + 2, b.y, BRICK_W - 4, BRICK_H)
       })
 
       if (allGone) {
@@ -215,9 +213,7 @@ function BrickBreaker({ userEmail, userName, onScoreSaved }: { userEmail: string
 
       // Paddle
       ctx.fillStyle = '#3b82f6'
-      ctx.beginPath()
-      ctx.roundRect(padX, H - 20, PAD_W, PAD_H, 5)
-      ctx.fill()
+      ctx.fillRect(padX, H - 20, PAD_W, PAD_H)
 
       // Ball
       ctx.fillStyle = '#ffffff'
