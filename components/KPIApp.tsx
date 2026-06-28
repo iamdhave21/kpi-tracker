@@ -89,7 +89,6 @@ function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast:
   const canUpload = ['super_admin','admin','team_lead'].includes(userRole)
 
   useEffect(() => {
-    setTimeout(() => setBgLoaded(true), 2000)
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
       .then(({ data }) => { if (data?.value) setCurrentBg(data.value) })
   }, [])
@@ -221,7 +220,6 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
 
   const unread = announcements.filter(a => !acks[a.id])
   const [bgUrl, setBgUrl] = useState<string|null>(null)
-  const [bgLoaded, setBgLoaded] = useState(false)
   const [editingBg, setEditingBg] = useState(false)
   const [bgInput, setBgInput] = useState('')
   const canChangeBg = ['super_admin','admin','team_lead'].includes(userRole)
@@ -231,7 +229,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       .then(({ data }) => {
         if (data?.value) { setBgUrl(data.value); setBgInput(data.value) }
       })
-      .finally(() => setBgLoaded(true))
+      .finally(() => )
   }, [])
 
   async function saveBg() {
@@ -243,7 +241,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
 
   return (
     <div className="space-y-3">
-      {bgLoaded && bgUrl && (
+      {bgUrl && (
         <div className="relative h-36 rounded-2xl overflow-hidden">
           <img src={bgUrl} alt="bg" className="absolute inset-0 w-full h-full object-cover" style={{filter:'blur(3px) brightness(0.5)',transform:'scale(1.05)'}} />
           <div className="absolute inset-0 flex items-center justify-center">
@@ -254,7 +252,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           )}
         </div>
       )}
-      {bgLoaded && !bgUrl && canChangeBg && (
+      {!bgUrl && canChangeBg && (
         <div className="border-2 border-dashed border-gray-200 rounded-2xl p-4 text-center">
           <p className="text-xs text-gray-500 mb-2">Add a monthly theme photo</p>
           <button onClick={() => setEditingBg(true)} className="text-xs bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">+ Add photo URL</button>
