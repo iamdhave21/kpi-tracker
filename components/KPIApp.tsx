@@ -138,11 +138,20 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const [acks, setAcks] = useState<Record<string, boolean>>({})
   const [ackDetails, setAckDetails] = useState<Record<string, any[]>>({})
   const [showForm, setShowForm] = useState(false)
-  const [showAcks, setShowAcks] = useState<string | null>(null)
+  const [showAcks, setShowAcks] = useState<string|null>(null)
   const [form, setForm] = useState({ title: '', body: '', tag: 'Info' })
+  const [attachments, setAttachments] = useState<{name:string,url:string,type:string}[]>([])
+  const [uploading, setUploading] = useState(false)
   const [posting, setPosting] = useState(false)
-  const canPost = ['super_admin', 'admin', 'team_lead'].includes(userRole)
-  const canManage = ['super_admin', 'admin'].includes(userRole)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const canPost = ['super_admin','admin','team_lead'].includes(userRole)
+  const canManage = ['super_admin','admin'].includes(userRole)
+  const TAG_COLORS: Record<string,string> = {
+    Urgent:'bg-red-100 text-red-700 border border-red-200',
+    Info:'bg-blue-100 text-blue-700 border border-blue-200',
+    Reminder:'bg-yellow-100 text-yellow-700 border border-yellow-200',
+    Policy:'bg-purple-100 text-purple-700 border border-purple-200',
+  }
 
   useEffect(() => { loadAnnouncements() }, [])
 
@@ -150,20 +159,46 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
     const { data } = await supabase.from('announcements').select('*').eq('active', true).order('created_at', { ascending: false })
     if (data) {
       setAnnouncements(data)
-      // Load my acks
-      const ids = data.map((a: any) => a.id)
+      const ids = data.map((a:any) => a.id)
       if (ids.length > 0) {
         const { data: myAcks } = await supabase.from('announcement_acknowledgements').select('announcement_id').eq('user_email', userEmail).in('announcement_id', ids)
-        const ackMap: Record<string, boolean> = {}
-        myAcks?.forEach((a: any) => { ackMap[a.announcement_id] = true })
+        const ackMap: Record<string,boolean> = {}
+        myAcks?.forEach((a:any) => { ackMap[a.announcement_id] = true })
         setAcks(ackMap)
       }
     }
   }
 
+  async function uploadFile(file: File) {
+    setUploading(true)
+    const path = `announcements/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const isImage = file.type.startsWith('image/')
+    const fileType = isImage ? 'image' : file.type.includes('pdf') ? 'pdf' : 'doc'
+    setAttachments(prev => [...prev, { name: file.name, url: urlData.publicUrl, type: fileType }])
+    setUploading(false)
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files) return
+    for (const file of Array.from(files)) { await uploadFile(file) }
+  }
+
+  async function postAnnouncement() {
+    if (!form.title.trim() || !form.body.trim()) return
+    setPosting(true)
+    const { error } = await supabase.from('announcements').insert({ title: form.title.trim(), body: form.body.trim(), tag: form.tag, posted_by: userEmail, attachments })
+    if (error) showToast(error.message, 'error')
+    else { setForm({ title:'', body:'', tag:'Info' }); setAttachments([]); setShowForm(false); showToast('Posted!','success'); loadAnnouncements() }
+    setPosting(false)
+  }
+
   async function acknowledge(id: string) {
-    const { error } = await supabase.from('announcement_acknowledgements').insert({ announcement_id: id, user_email: userEmail })
-    if (!error) { setAcks(prev => ({ ...prev, [id]: true })); showToast('Acknowledged!', 'success') }
+    await supabase.from('announcement_acknowledgements').insert({ announcement_id: id, user_email: userEmail })
+    setAcks(prev => ({ ...prev, [id]: true })); showToast('Acknowledged!','success')
   }
 
   async function loadAckDetails(id: string) {
@@ -175,44 +210,49 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   async function deleteAnnouncement(id: string) {
     await supabase.from('announcements').update({ active: false }).eq('id', id)
     setAnnouncements(prev => prev.filter(a => a.id !== id))
-    showToast('Announcement removed', 'success')
+    showToast('Removed','success')
   }
 
-  async function postAnnouncement() {
-    if (!form.title.trim() || !form.body.trim()) return
-    setPosting(true)
-    const { error } = await supabase.from('announcements').insert({ title: form.title.trim(), body: form.body.trim(), tag: form.tag, posted_by: userEmail })
-    if (error) showToast(error.message, 'error')
-    else { setForm({ title: '', body: '', tag: 'Info' }); setShowForm(false); showToast('Posted!', 'success'); loadAnnouncements() }
-    setPosting(false)
-  }
-
-  const unacknowledged = announcements.filter(a => !acks[a.id])
+  const unread = announcements.filter(a => !acks[a.id])
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="font-semibold text-gray-800 text-base">📢 Announcements</h2>
-          {unacknowledged.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unacknowledged.length}</span>}
+          {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
-        {canPost && (
-          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">
-            {showForm ? 'Cancel' : '+ Post'}
-          </button>
-        )}
+        {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
       </div>
 
       {showForm && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-          <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Announcement title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          <textarea value={form.body} onChange={e => setForm(p => ({ ...p, body: e.target.value }))} placeholder="Write your announcement..." rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+          <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <textarea value={form.body} onChange={e => setForm(p=>({...p,body:e.target.value}))} placeholder="Write your announcement..." rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">
+              {uploading ? '⏳ Uploading...' : '📎 Attach'}
+            </button>
+            <span className="text-xs text-gray-400">Images, PDF, Word</span>
+            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleFileChange} className="hidden" />
+          </div>
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((att, i) => (
+                <div key={i} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs">
+                  <span>{att.type==='image'?'🖼️':att.type==='pdf'?'📄':'📝'}</span>
+                  <span className="text-gray-700 max-w-xs truncate">{att.name}</span>
+                  <button onClick={() => setAttachments(prev => prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-3">
-            <select value={form.tag} onChange={e => setForm(p => ({ ...p, tag: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none">
+            <select value={form.tag} onChange={e => setForm(p=>({...p,tag:e.target.value}))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
               <option>Info</option><option>Urgent</option><option>Reminder</option><option>Policy</option>
             </select>
-            <button onClick={postAnnouncement} disabled={posting} className="ml-auto bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">
-              {posting ? 'Posting...' : 'Post Announcement'}
+            <button onClick={postAnnouncement} disabled={posting||uploading} className="ml-auto bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">
+              {posting ? 'Posting...' : 'Post'}
             </button>
           </div>
         </div>
@@ -221,47 +261,53 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       {announcements.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No announcements yet.</div>}
 
       {announcements.map(a => (
-        <div key={a.id} className={`bg-white border rounded-xl p-4 space-y-2 ${a.tag === 'Urgent' ? 'border-red-300' : 'border-gray-200'}`}>
+        <div key={a.id} className={`bg-white border rounded-xl p-4 space-y-2 ${a.tag==='Urgent'?'border-red-300':'border-gray-200'}`}>
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag] || TAG_COLORS.Info}`}>{a.tag}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag]||TAG_COLORS.Info}`}>{a.tag}</span>
               <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
             </div>
-            {canManage && (
-              <button onClick={() => deleteAnnouncement(a.id)} className="text-gray-300 hover:text-red-500 text-xs flex-shrink-0 transition">✕</button>
-            )}
+            {canManage && <button onClick={() => deleteAnnouncement(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition">✕</button>}
           </div>
           <p className="text-sm text-gray-600 whitespace-pre-wrap">{a.body}</p>
+          {a.attachments && a.attachments.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {(a.attachments as any[]).filter((att:any)=>att.type!=='image').map((att:any,i:number) => (
+                  <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
+                    <span>{att.type==='pdf'?'📄':'📝'}</span><span className="max-w-xs truncate">{att.name}</span>
+                  </a>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(a.attachments as any[]).filter((att:any)=>att.type==='image').map((att:any,i:number) => (
+                  <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
+                    <img src={att.url} alt={att.name} className="h-24 w-auto rounded-lg border border-gray-200 object-cover hover:opacity-90 transition" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between pt-1">
-            <span className="text-xs text-gray-400">Posted by {a.posted_by.split('@')[0]} · {new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+            <span className="text-xs text-gray-400">By {a.posted_by.split('@')[0]} · {new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
             <div className="flex items-center gap-2">
-              {canManage && (
-                <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">
-                  View compliance
-                </button>
-              )}
-              {!acks[a.id] ? (
-                <button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">
-                  ✓ Acknowledge
-                </button>
-              ) : (
-                <span className="text-xs text-green-600 font-medium">✓ Acknowledged</span>
-              )}
+              {canManage && <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">Compliance</button>}
+              {!acks[a.id]
+                ? <button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">✓ Acknowledge</button>
+                : <span className="text-xs text-green-600 font-medium">✓ Done</span>}
             </div>
           </div>
           {showAcks === a.id && ackDetails[a.id] && (
             <div className="mt-2 pt-2 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-600 mb-1">Acknowledged by ({ackDetails[a.id].length}):</p>
-              {ackDetails[a.id].length === 0
-                ? <p className="text-xs text-gray-400">No one yet</p>
+              <p className="text-xs font-medium text-gray-600 mb-1">Acknowledged ({ackDetails[a.id].length}):</p>
+              {ackDetails[a.id].length === 0 ? <p className="text-xs text-gray-400">No one yet</p>
                 : <div className="flex flex-wrap gap-1">
-                    {ackDetails[a.id].map((ac: any) => (
+                    {ackDetails[a.id].map((ac:any) => (
                       <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">
                         {ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}
                       </span>
                     ))}
-                  </div>
-              }
+                  </div>}
             </div>
           )}
         </div>
@@ -269,42 +315,100 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
     </div>
   )
 }
+// ── Game of the Month ───────────────────────────────────────────────────────
+function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
+  const GAME = { name: 'Subway Surfers', url: 'https://poki.com/en/g/subway-surfers', icon: '🏄', color: 'from-orange-400 to-pink-500' }
+  const [uploading, setUploading] = useState(false)
+  const [result, setResult] = useState<{score?:number,error?:string,timestamp?:string,isNewBest?:boolean}|null>(null)
+  const [todayBest, setTodayBest] = useState<number|null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { loadTodayBest() }, [])
+
+  async function loadTodayBest() {
+    const today = new Date().toISOString().split('T')[0]
+    const { data } = await supabase.from('game_scores').select('score').eq('user_email',userEmail).eq('game_key','game_of_month').gte('played_at',today).order('score',{ascending:false}).limit(1)
+    if (data?.[0]) setTodayBest(data[0].score)
+  }
+
+  async function handleScreenshot(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true); setResult(null)
+    try {
+      const now = new Date()
+      const monthYear = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('userEmail', userEmail)
+      fd.append('userName', userName)
+      fd.append('monthYear', monthYear)
+      const res = await fetch('/api/game/extract-score', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) setResult({ error: data.error })
+      else { setResult({ score: data.score, timestamp: data.timestampText, isNewBest: data.isNewBest }); if (data.isNewBest) setTodayBest(data.score); onScoreSaved() }
+    } catch { setResult({ error: 'Upload failed. Please try again.' }) }
+    setUploading(false)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className={`bg-gradient-to-br ${GAME.color} rounded-xl p-5 text-white text-center`}>
+        <div className="text-4xl mb-2">{GAME.icon}</div>
+        <h3 className="font-bold text-lg">{GAME.name}</h3>
+        <p className="text-white/80 text-xs mb-3">Game of the Month — {getMonthLabel()}</p>
+        <a href={GAME.url} target="_blank" rel="noopener noreferrer" className="inline-block bg-white text-orange-500 font-bold px-5 py-2 rounded-lg text-sm hover:bg-orange-50 transition">🎮 Play Now</a>
+      </div>
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+        <p className="text-sm font-medium text-gray-700">📸 Submit Your Score</p>
+        <p className="text-xs text-gray-500 leading-relaxed">Play, then screenshot your high score. <strong>Make sure your device clock showing date and time is visible!</strong></p>
+        {todayBest !== null && <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">🏆 Today&apos;s best: <strong>{todayBest.toLocaleString()}</strong></div>}
+        <button onClick={() => fileRef.current?.click()} disabled={uploading} className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-xl py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-50">
+          {uploading ? '⏳ Claude is reading your score...' : '📤 Upload screenshot'}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleScreenshot} className="hidden" />
+        {result && (
+          <div className={`rounded-lg px-4 py-3 text-sm ${result.error ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
+            {result.error
+              ? <p className="font-medium">❌ {result.error}</p>
+              : <div className="space-y-1">
+                  <p className="font-bold text-base">✅ Score: {result.score?.toLocaleString()}</p>
+                  {result.timestamp && <p className="text-xs">🕐 {result.timestamp}</p>}
+                  <p className="text-xs font-medium">{result.isNewBest ? '🏆 New best! Added to leaderboard.' : 'Score recorded!'}</p>
+                </div>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 // ── Monthly Leaderboard ─────────────────────────────────────────────────────
 function GameLeaderboard({ refreshKey }: { refreshKey: number }) {
   const [scores, setScores] = useState<any[]>([])
-
   useEffect(() => { loadScores() }, [refreshKey])
-
   async function loadScores() {
-    const monthYear = getMonthYear()
-    const { data } = await supabase
-      .from('game_scores')
-      .select('user_name, user_email, score')
-      .eq('game_key', 'game_of_month')
-      .eq('month_year', monthYear)
-      .order('score', { ascending: false })
-
-    // Keep only best score per user
-    const best: Record<string, any> = {}
-    data?.forEach((row: any) => {
-      if (!best[row.user_email] || row.score > best[row.user_email].score) best[row.user_email] = row
-    })
-    setScores(Object.values(best).sort((a, b) => b.score - a.score).slice(0, 10))
+    const now = new Date()
+    const monthYear = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+    const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url').eq('game_key','game_of_month').eq('month_year',monthYear).order('score',{ascending:false})
+    const best: Record<string,any> = {}
+    data?.forEach((row:any) => { if (!best[row.user_email]||row.score>best[row.user_email].score) best[row.user_email]=row })
+    setScores(Object.values(best).sort((a,b)=>b.score-a.score).slice(0,10))
   }
-
-  const medals = ['🥇', '🥈', '🥉']
-
+  const medals = ['🥇','🥈','🥉']
   return (
     <div className="space-y-2">
       <h3 className="font-semibold text-gray-800 text-sm">🏆 {getMonthLabel()} Leaderboard</h3>
-      {scores.length === 0
-        ? <p className="text-xs text-gray-400 text-center py-4">No scores yet this month. Be the first!</p>
-        : scores.map((s, i) => (
-          <div key={s.user_email} className={`flex items-center gap-2 px-3 py-2 rounded-lg ${i === 0 ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50'}`}>
-            <span className="text-sm w-5">{medals[i] || `${i + 1}.`}</span>
-            <span className="text-sm text-gray-800 flex-1 font-medium">{s.user_name || s.user_email.split('@')[0]}</span>
+      <p className="text-xs text-gray-400">Subway Surfers · Top scores this month</p>
+      {scores.length===0
+        ? <p className="text-xs text-gray-400 text-center py-4">No scores yet. Be the first! 🎮</p>
+        : scores.map((s,i)=>(
+          <div key={s.user_email} className={`flex items-center gap-2 px-3 py-2 rounded-lg ${i===0?'bg-yellow-50 border border-yellow-200':i===1?'bg-gray-100':i===2?'bg-orange-50':'bg-gray-50'}`}>
+            <span className="text-sm w-5">{medals[i]||`${i+1}.`}</span>
+            <span className="text-sm text-gray-800 flex-1 font-medium truncate">{s.user_name||s.user_email.split('@')[0]}</span>
             <span className="text-sm font-bold text-blue-900">{s.score.toLocaleString()}</span>
+            {s.screenshot_url && <a href={s.screenshot_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600 transition" title="View screenshot">📸</a>}
           </div>
         ))
       }
@@ -312,7 +416,6 @@ function GameLeaderboard({ refreshKey }: { refreshKey: number }) {
   )
 }
 
-// ── Main HomeScreen ─────────────────────────────────────────────────────────
 export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string }) {
   const [leaderboardKey, setLeaderboardKey] = useState(0)
   const userName = currentUser?.split('@')[0] || currentUser
