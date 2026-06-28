@@ -323,6 +323,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           )}
         </div>
       ))}
+      </div>
     </div>
   )
 }
