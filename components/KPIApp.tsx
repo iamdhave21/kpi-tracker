@@ -55,7 +55,7 @@ async function writeAuditLog(action: string, performedBy: string, employeeName: 
   await supabase.from('audit_log').insert({ action, performed_by: performedBy, employee_name: employeeName, month_label: monthLabel, field_changed: fieldChanged, old_value: oldValue, new_value: newValue })
 }
 
-// ── HomeScreen Component ────────────────────────────────────────────────────
+// -- HomeScreen Component ----------------------------------------------------
 const TAG_COLORS: Record<string, string> = {
   Urgent: 'bg-red-100 text-red-700 border border-red-200',
   Info: 'bg-blue-100 text-blue-700 border border-blue-200',
@@ -72,7 +72,7 @@ function getMonthLabel() {
 }
 
 
-// ── Theme Background ─────────────────────────────────────────────────────────
+// -- Theme Background ---------------------------------------------------------
 function useAnnouncementBg() {
   const [bgUrl, setBgUrl] = useState<string|null>(null)
   useEffect(() => {
@@ -137,7 +137,7 @@ function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast:
 
 
 
-// ── Announcements ───────────────────────────────────────────────────────────
+// -- Announcements -----------------------------------------------------------
 function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [acks, setAcks] = useState<Record<string, boolean>>({})
@@ -322,7 +322,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
 
 
 
-// ── Game of the Month ───────────────────────────────────────────────────────
+// -- Game of the Month -------------------------------------------------------
 function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
   const GAME = { name: 'Subway Surfers', url: 'https://poki.com/en/g/subway-surfers', icon: '🏄', color: 'from-orange-400 to-pink-500' }
   const [uploading, setUploading] = useState(false)
@@ -402,7 +402,7 @@ function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string,
 }
 
 
-// ── Monthly Leaderboard ─────────────────────────────────────────────────────
+// -- Monthly Leaderboard -----------------------------------------------------
 function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: number, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
   const [scores, setScores] = useState<any[]>([])
   const [pending, setPending] = useState<any[]>([])
@@ -693,7 +693,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
 
 
 
-// ── Collapsible Sidebar ─────────────────────────────────────────────────────
+// -- Collapsible Sidebar -----------------------------------------------------
 function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, dir: false, sys: false
@@ -944,7 +944,7 @@ export default function KPIApp() {
 
 
 
-// ── User Avatar (loads from DB) ─────────────────────────────────────────────
+// -- User Avatar (loads from DB) ---------------------------------------------
 function UserAvatar({ username, size = 'md' }: { username: string, size?: 'sm'|'md'|'lg' }) {
   const [avatarUrl, setAvatarUrl] = useState<string|null>(null)
   useEffect(() => {
@@ -955,7 +955,7 @@ function UserAvatar({ username, size = 'md' }: { username: string, size?: 'sm'|'
   return <Avatar name={username} avatarUrl={avatarUrl} size={size} />
 }
 
-// ── Expandable Note ─────────────────────────────────────────────────────────
+// -- Expandable Note ---------------------------------------------------------
 function ExpandableNote({ note }: { note: string | null }) {
   const [expanded, setExpanded] = useState(false)
   if (!note) return <span className="text-gray-400">N/A</span>
@@ -972,7 +972,7 @@ function ExpandableNote({ note }: { note: string | null }) {
   )
 }
 
-// ── Edit Score Modal ────────────────────────────────────────────────────────
+// -- Edit Score Modal --------------------------------------------------------
 function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { record: KpiRecord, currentUser: string, onSaved: () => void, onClose: () => void, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [att, setAtt] = useState(record.attendance !== null ? (record.attendance * 100).toFixed(2) : '')
   const [acc, setAcc] = useState(record.accuracy !== null ? (record.accuracy * 100).toFixed(2) : '')
@@ -1053,7 +1053,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
   )
 }
 
-// ── Performance Dashboard ───────────────────────────────────────────────────
+// -- Performance Dashboard ---------------------------------------------------
 function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setPerfView, selMonth, selYear, selQuarter, setSelMonth, setSelYear, setSelQuarter, searchQ, setSearchQ, onEditRecord, showToast, currentUser, userRole }:
   { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, perfView: PerfView, setPerfView: (v: PerfView) => void, selMonth: string, selYear: string, selQuarter: number, setSelMonth: (v: string) => void, setSelYear: (v: string) => void, setSelQuarter: (v: number) => void, searchQ: string, setSearchQ: (v: string) => void, onEditRecord: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string }) {
 
@@ -1226,7 +1226,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
   )
 }
 
-// ── Team Dashboard ──────────────────────────────────────────────────────────
+// -- Team Dashboard ----------------------------------------------------------
 function TeamDashboard({ records, employees, activeEmpIds, showToast }:
   { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [teams, setTeams] = useState<any[]>([])
@@ -1329,7 +1329,7 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
   )
 }
 
-// ── Employee Dashboard ──────────────────────────────────────────────────────
+// -- Employee Dashboard ------------------------------------------------------
 function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setSelEmployee }:
   { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, selEmployee: string, setSelEmployee: (v: string) => void }) {
   const emp = employees.find(e => e.id === selEmployee)
@@ -1417,7 +1417,7 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
   )
 }
 
-// ── KPI Entry ───────────────────────────────────────────────────────────────
+// -- KPI Entry ---------------------------------------------------------------
 function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
   { employees: Employee[], records: KpiRecord[], onSaved: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
   const [empId, setEmpId] = useState(employees.find(e=>e.active)?.id||'')
@@ -1481,7 +1481,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
   )
 }
 
-// ── Employee Manager ────────────────────────────────────────────────────────
+// -- Employee Manager --------------------------------------------------------
 function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
   const [newName, setNewName] = useState('')
@@ -1644,7 +1644,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
               {isExpanded && isMulti && emps.map((emp, ei) => (
                 <div key={emp.id} className="flex items-center gap-3 pl-14 pr-4 py-2.5 border-t border-gray-100 bg-gray-50/50 hover:bg-gray-50">
                   <div className="flex-shrink-0 w-3 h-3 flex items-center justify-center">
-                    <span className="text-gray-300 text-lg leading-none">{ei === emps.length-1 ? '└' : '├'}</span>
+                    <span className="text-gray-300 text-lg leading-none">{ei === emps.length-1 ? '+' : '├'}</span>
                   </div>
                   {editId === emp.id ? (
                     <div className="flex-1 flex items-center gap-2 flex-wrap">
@@ -1674,7 +1674,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   )
 }
 
-// ── Team Manager ────────────────────────────────────────────────────────────
+// -- Team Manager ------------------------------------------------------------
 function TeamManager({ employees, showToast }:
   { employees: Employee[], showToast: (m: string, t?: 'success'|'error') => void }) {
   const [teams, setTeams] = useState<any[]>([])
@@ -1770,7 +1770,7 @@ function TeamManager({ employees, showToast }:
 }
 
 
-// ── User Manager ────────────────────────────────────────────────────────────
+// -- User Manager ------------------------------------------------------------
 function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string, currentUser: string | null }) {
   const [appUsers, setAppUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -1895,7 +1895,7 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
 
 
 
-// ── Directory Links ─────────────────────────────────────────────────────────
+// -- Directory Links ---------------------------------------------------------
 function DirectoryLinks() {
   const links = [
     { name: 'ClockSmart', url: 'https://eportal.clocksmart.ph/', description: 'Employee time tracking portal', icon: '🕐', color: 'border-blue-400' },
@@ -1925,7 +1925,7 @@ function DirectoryLinks() {
   )
 }
 
-// ── Coming Soon ─────────────────────────────────────────────────────────────
+// -- Coming Soon -------------------------------------------------------------
 function ComingSoon({ title, description, icon }: { title: string, description: string, icon: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -1937,7 +1937,7 @@ function ComingSoon({ title, description, icon }: { title: string, description: 
   )
 }
 
-// ── Observations Panel ──────────────────────────────────────────────────────
+// -- Observations Panel ------------------------------------------------------
 function ObservationsPanel({ employees, currentUser, showToast }:
   { employees: Employee[], currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [obs, setObs] = useState<any[]>([])
@@ -2072,7 +2072,7 @@ function ObservationsPanel({ employees, currentUser, showToast }:
 }
 
 
-// ── Profile Picture Upload ──────────────────────────────────────────────────
+// -- Profile Picture Upload --------------------------------------------------
 function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [avatarUrl, setAvatarUrl] = useState<string|null>(null)
   const [uploading, setUploading] = useState(false)
@@ -2133,7 +2133,7 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
   )
 }
 
-// ── Settings Panel ──────────────────────────────────────────────────────────
+// -- Settings Panel ----------------------------------------------------------
 function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>(userRole === 'viewer' ? 'password' : 'users')
   const [oldPassword, setOldPassword] = useState('')
