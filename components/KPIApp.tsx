@@ -696,7 +696,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
 // ── Collapsible Sidebar ─────────────────────────────────────────────────────
 function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
-    perf: false, people: false, ops: false, tltools: false, dir: false, sys: false
+    home: false, perf: false, people: false, ops: false, tltools: false, dir: false, sys: false
   })
 
   function toggle(key: string) {
