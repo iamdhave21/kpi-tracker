@@ -76,6 +76,7 @@ function getMonthLabel() {
 function useAnnouncementBg() {
   const [bgUrl, setBgUrl] = useState<string|null>(null)
   useEffect(() => {
+    setTimeout(() => setBgLoaded(true), 2000)
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
       .then(({ data }) => { if (data?.value) setBgUrl(data.value) })
   }, [])
@@ -89,6 +90,7 @@ function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast:
   const canUpload = ['super_admin','admin','team_lead'].includes(userRole)
 
   useEffect(() => {
+    setTimeout(() => setBgLoaded(true), 2000)
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
       .then(({ data }) => { if (data?.value) setCurrentBg(data.value) })
   }, [])
@@ -226,12 +228,12 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const canChangeBg = ['super_admin','admin','team_lead'].includes(userRole)
 
   useEffect(() => {
+    setTimeout(() => setBgLoaded(true), 2000)
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
       .then(({ data }) => {
         if (data?.value) { setBgUrl(data.value); setBgInput(data.value) }
         setBgLoaded(true)
       })
-      .catch(() => setBgLoaded(true))
   }, [])
 
   async function saveBg() {
