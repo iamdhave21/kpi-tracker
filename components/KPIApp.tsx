@@ -71,6 +71,261 @@ function getMonthLabel() {
   return new Date().toLocaleString('default', { month: 'long', year: 'numeric' })
 }
 
+
+// ── Theme Background ─────────────────────────────────────────────────────────
+function useAnnouncementBg() {
+  const [bgUrl, setBgUrl] = useState<string|null>(null)
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
+      .then(({ data }) => { if (data?.value) setBgUrl(data.value) })
+  }, [])
+  return bgUrl
+}
+
+function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [currentBg, setCurrentBg] = useState<string|null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const canUpload = ['super_admin','admin','team_lead'].includes(userRole)
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
+      .then(({ data }) => { if (data?.value) setCurrentBg(data.value) })
+  }, [])
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const path = `themes/announcement-bg-${Date.now()}.${file.name.split('.').pop()}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const url = urlData.publicUrl
+    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: url }, { onConflict: 'key' })
+    setCurrentBg(url)
+    showToast('Theme background updated!', 'success')
+    setUploading(false)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function removeBg() {
+    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: '' }, { onConflict: 'key' })
+    setCurrentBg(null)
+    showToast('Background removed', 'success')
+  }
+
+  if (!canUpload) return null
+
+  return (
+    <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm border border-white/50 rounded-xl px-4 py-3">
+      <div className="flex-1">
+        <p className="text-xs font-medium text-gray-700">🎨 Monthly Theme Background</p>
+        <p className="text-xs text-gray-400">Upload a photo to set this monthly vibe</p>
+      </div>
+      {currentBg && (
+        <img src={currentBg} alt="Current bg" className="h-8 w-12 object-cover rounded-lg border border-gray-200" />
+      )}
+      <button onClick={() => fileRef.current?.click()} disabled={uploading} className="text-xs bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 disabled:opacity-50 transition">
+        {uploading ? '⏳' : '📸 Change'}
+      </button>
+      {currentBg && <button onClick={removeBg} className="text-xs text-gray-400 hover:text-red-500 transition">✕</button>}
+      <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+    </div>
+  )
+}
+
+
+
+// ── Announcements ───────────────────────────────────────────────────────────
+function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const [announcements, setAnnouncements] = useState<any[]>([])
+  const [acks, setAcks] = useState<Record<string, boolean>>({})
+  const [ackDetails, setAckDetails] = useState<Record<string, any[]>>({})
+  const [showForm, setShowForm] = useState(false)
+  const [showAcks, setShowAcks] = useState<string|null>(null)
+  const [form, setForm] = useState({ title: '', body: '', tag: 'Info' })
+  const [attachments, setAttachments] = useState<{name:string,url:string,type:string}[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const canPost = ['super_admin','admin','team_lead'].includes(userRole)
+  const canManage = ['super_admin','admin'].includes(userRole)
+  const TAG_COLORS: Record<string,string> = {
+    Urgent:'bg-red-100 text-red-700 border border-red-200',
+    Info:'bg-blue-100 text-blue-700 border border-blue-200',
+    Reminder:'bg-yellow-100 text-yellow-700 border border-yellow-200',
+    Policy:'bg-purple-100 text-purple-700 border border-purple-200',
+  }
+
+  useEffect(() => { loadAnnouncements() }, [])
+
+  async function loadAnnouncements() {
+    const { data } = await supabase.from('announcements').select('*').eq('active', true).order('created_at', { ascending: false })
+    if (data) {
+      setAnnouncements(data)
+      const ids = data.map((a:any) => a.id)
+      if (ids.length > 0) {
+        const { data: myAcks } = await supabase.from('announcement_acknowledgements').select('announcement_id').eq('user_email', userEmail).in('announcement_id', ids)
+        const ackMap: Record<string,boolean> = {}
+        myAcks?.forEach((a:any) => { ackMap[a.announcement_id] = true })
+        setAcks(ackMap)
+      }
+    }
+  }
+
+  async function uploadFile(file: File) {
+    setUploading(true)
+    const path = `announcements/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const isImage = file.type.startsWith('image/')
+    const fileType = isImage ? 'image' : file.type.includes('pdf') ? 'pdf' : 'doc'
+    setAttachments(prev => [...prev, { name: file.name, url: urlData.publicUrl, type: fileType }])
+    setUploading(false)
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files) return
+    for (const file of Array.from(files)) { await uploadFile(file) }
+  }
+
+  async function postAnnouncement() {
+    if (!form.title.trim() || !form.body.trim()) return
+    setPosting(true)
+    const { error } = await supabase.from('announcements').insert({ title: form.title.trim(), body: form.body.trim(), tag: form.tag, posted_by: userEmail, attachments })
+    if (error) showToast(error.message, 'error')
+    else { setForm({ title:'', body:'', tag:'Info' }); setAttachments([]); setShowForm(false); showToast('Posted!','success'); loadAnnouncements() }
+    setPosting(false)
+  }
+
+  async function acknowledge(id: string) {
+    await supabase.from('announcement_acknowledgements').insert({ announcement_id: id, user_email: userEmail })
+    setAcks(prev => ({ ...prev, [id]: true })); showToast('Acknowledged!','success')
+  }
+
+  async function loadAckDetails(id: string) {
+    const { data } = await supabase.from('announcement_acknowledgements').select('*').eq('announcement_id', id).order('acknowledged_at')
+    setAckDetails(prev => ({ ...prev, [id]: data || [] }))
+    setShowAcks(showAcks === id ? null : id)
+  }
+
+  async function deleteAnnouncement(id: string) {
+    await supabase.from('announcements').update({ active: false }).eq('id', id)
+    setAnnouncements(prev => prev.filter(a => a.id !== id))
+    showToast('Removed','success')
+  }
+
+  const unread = announcements.filter(a => !acks[a.id])
+
+  const bgUrl = useAnnouncementBg()
+
+  return (
+    <div className="relative rounded-2xl overflow-hidden">
+      {/* Background image */}
+      {bgUrl && (
+        <>
+          <div className="absolute inset-0 z-0" style={{backgroundImage:'url(' + bgUrl + ')',backgroundSize:'cover',backgroundPosition:'center',filter:'blur(4px) brightness(0.45)',transform:'scale(1.05)'}} />
+          <div className="absolute inset-0 z-0 bg-white/30" />
+        </>
+      )}
+      <div className={`relative z-10 space-y-3 ${bgUrl ? 'p-4' : ''}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className={`font-semibold text-base ${bgUrl ? 'text-white drop-shadow' : 'text-gray-800'}`}>📢 Announcements</h2>
+          {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
+        </div>
+        {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
+      </div>
+      {showForm && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <textarea value={form.body} onChange={e => setForm(p=>({...p,body:e.target.value}))} placeholder="Write your announcement..." rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">{uploading ? '⏳ Uploading...' : '📎 Attach'}</button>
+            <span className="text-xs text-gray-400">Images, PDF, Word</span>
+            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleFileChange} className="hidden" />
+          </div>
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((att, i) => (
+                <div key={i} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs">
+                  <span>{att.type==='image'?'🖼️':att.type==='pdf'?'📄':'📝'}</span>
+                  <span className="text-gray-700 max-w-xs truncate">{att.name}</span>
+                  <button onClick={() => setAttachments(prev => prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <select value={form.tag} onChange={e => setForm(p=>({...p,tag:e.target.value}))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+              <option>Info</option><option>Urgent</option><option>Reminder</option><option>Policy</option>
+            </select>
+            <button onClick={postAnnouncement} disabled={posting||uploading} className="ml-auto bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Posting...' : 'Post'}</button>
+          </div>
+        </div>
+      )}
+      {announcements.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No announcements yet.</div>}
+      {announcements.map(a => (
+        <div key={a.id} className={`bg-white border rounded-xl p-4 space-y-2 ${a.tag==='Urgent'?'border-red-300':'border-gray-200'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag]||TAG_COLORS.Info}`}>{a.tag}</span>
+              <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
+            </div>
+            {canManage && <button onClick={() => deleteAnnouncement(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition">✕</button>}
+          </div>
+          <p className="text-sm text-gray-600 whitespace-pre-wrap">{a.body}</p>
+          {a.attachments && a.attachments.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {(a.attachments as any[]).filter((att:any)=>att.type!=='image').map((att:any,i:number) => (
+                  <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
+                    <span>{att.type==='pdf'?'📄':'📝'}</span><span className="max-w-xs truncate">{att.name}</span>
+                  </a>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(a.attachments as any[]).filter((att:any)=>att.type==='image').map((att:any,i:number) => (
+                  <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
+                    <img src={att.url} alt={att.name} className="h-24 w-auto rounded-lg border border-gray-200 object-cover hover:opacity-90 transition" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-gray-400">By {a.posted_by.split('@')[0]} · {new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
+            <div className="flex items-center gap-2">
+              {canManage && <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">Compliance</button>}
+              {!acks[a.id]
+                ? <button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">✓ Acknowledge</button>
+                : <span className="text-xs text-green-600 font-medium">✓ Done</span>}
+            </div>
+          </div>
+          {showAcks === a.id && ackDetails[a.id] && (
+            <div className="mt-2 pt-2 border-t border-gray-100">
+              <p className="text-xs font-medium text-gray-600 mb-1">Acknowledged ({ackDetails[a.id].length}):</p>
+              {ackDetails[a.id].length === 0 ? <p className="text-xs text-gray-400">No one yet</p>
+                : <div className="flex flex-wrap gap-1">
+                    {ackDetails[a.id].map((ac:any) => (
+                      <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
+                    ))}
+                  </div>}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
+
+
+
 // ── Game of the Month ───────────────────────────────────────────────────────
 function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
   const GAME = { name: 'Subway Surfers', url: 'https://poki.com/en/g/subway-surfers', icon: '🏄', color: 'from-orange-400 to-pink-500' }
@@ -1992,255 +2247,3 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
     </div>
   )
 }
-
-// ── Theme Background ─────────────────────────────────────────────────────────
-function useAnnouncementBg() {
-  const [bgUrl, setBgUrl] = useState<string|null>(null)
-  useEffect(() => {
-    supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
-      .then(({ data }) => { if (data?.value) setBgUrl(data.value) })
-  }, [])
-  return bgUrl
-}
-
-function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
-  const [uploading, setUploading] = useState(false)
-  const [currentBg, setCurrentBg] = useState<string|null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const canUpload = ['super_admin','admin','team_lead'].includes(userRole)
-
-  useEffect(() => {
-    supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
-      .then(({ data }) => { if (data?.value) setCurrentBg(data.value) })
-  }, [])
-
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    const path = `themes/announcement-bg-${Date.now()}.${file.name.split('.').pop()}`
-    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
-    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
-    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
-    const url = urlData.publicUrl
-    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: url }, { onConflict: 'key' })
-    setCurrentBg(url)
-    showToast('Theme background updated!', 'success')
-    setUploading(false)
-    if (fileRef.current) fileRef.current.value = ''
-  }
-
-  async function removeBg() {
-    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: '' }, { onConflict: 'key' })
-    setCurrentBg(null)
-    showToast('Background removed', 'success')
-  }
-
-  if (!canUpload) return null
-
-  return (
-    <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm border border-white/50 rounded-xl px-4 py-3">
-      <div className="flex-1">
-        <p className="text-xs font-medium text-gray-700">🎨 Monthly Theme Background</p>
-        <p className="text-xs text-gray-400">Upload a photo to set this monthly vibe</p>
-      </div>
-      {currentBg && (
-        <img src={currentBg} alt="Current bg" className="h-8 w-12 object-cover rounded-lg border border-gray-200" />
-      )}
-      <button onClick={() => fileRef.current?.click()} disabled={uploading} className="text-xs bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 disabled:opacity-50 transition">
-        {uploading ? '⏳' : '📸 Change'}
-      </button>
-      {currentBg && <button onClick={removeBg} className="text-xs text-gray-400 hover:text-red-500 transition">✕</button>}
-      <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
-    </div>
-  )
-}
-
-
-// ── Announcements ───────────────────────────────────────────────────────────
-function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
-  const [announcements, setAnnouncements] = useState<any[]>([])
-  const [acks, setAcks] = useState<Record<string, boolean>>({})
-  const [ackDetails, setAckDetails] = useState<Record<string, any[]>>({})
-  const [showForm, setShowForm] = useState(false)
-  const [showAcks, setShowAcks] = useState<string|null>(null)
-  const [form, setForm] = useState({ title: '', body: '', tag: 'Info' })
-  const [attachments, setAttachments] = useState<{name:string,url:string,type:string}[]>([])
-  const [uploading, setUploading] = useState(false)
-  const [posting, setPosting] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const canPost = ['super_admin','admin','team_lead'].includes(userRole)
-  const canManage = ['super_admin','admin'].includes(userRole)
-  const TAG_COLORS: Record<string,string> = {
-    Urgent:'bg-red-100 text-red-700 border border-red-200',
-    Info:'bg-blue-100 text-blue-700 border border-blue-200',
-    Reminder:'bg-yellow-100 text-yellow-700 border border-yellow-200',
-    Policy:'bg-purple-100 text-purple-700 border border-purple-200',
-  }
-
-  useEffect(() => { loadAnnouncements() }, [])
-
-  async function loadAnnouncements() {
-    const { data } = await supabase.from('announcements').select('*').eq('active', true).order('created_at', { ascending: false })
-    if (data) {
-      setAnnouncements(data)
-      const ids = data.map((a:any) => a.id)
-      if (ids.length > 0) {
-        const { data: myAcks } = await supabase.from('announcement_acknowledgements').select('announcement_id').eq('user_email', userEmail).in('announcement_id', ids)
-        const ackMap: Record<string,boolean> = {}
-        myAcks?.forEach((a:any) => { ackMap[a.announcement_id] = true })
-        setAcks(ackMap)
-      }
-    }
-  }
-
-  async function uploadFile(file: File) {
-    setUploading(true)
-    const path = `announcements/${Date.now()}-${file.name}`
-    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
-    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
-    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
-    const isImage = file.type.startsWith('image/')
-    const fileType = isImage ? 'image' : file.type.includes('pdf') ? 'pdf' : 'doc'
-    setAttachments(prev => [...prev, { name: file.name, url: urlData.publicUrl, type: fileType }])
-    setUploading(false)
-  }
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files
-    if (!files) return
-    for (const file of Array.from(files)) { await uploadFile(file) }
-  }
-
-  async function postAnnouncement() {
-    if (!form.title.trim() || !form.body.trim()) return
-    setPosting(true)
-    const { error } = await supabase.from('announcements').insert({ title: form.title.trim(), body: form.body.trim(), tag: form.tag, posted_by: userEmail, attachments })
-    if (error) showToast(error.message, 'error')
-    else { setForm({ title:'', body:'', tag:'Info' }); setAttachments([]); setShowForm(false); showToast('Posted!','success'); loadAnnouncements() }
-    setPosting(false)
-  }
-
-  async function acknowledge(id: string) {
-    await supabase.from('announcement_acknowledgements').insert({ announcement_id: id, user_email: userEmail })
-    setAcks(prev => ({ ...prev, [id]: true })); showToast('Acknowledged!','success')
-  }
-
-  async function loadAckDetails(id: string) {
-    const { data } = await supabase.from('announcement_acknowledgements').select('*').eq('announcement_id', id).order('acknowledged_at')
-    setAckDetails(prev => ({ ...prev, [id]: data || [] }))
-    setShowAcks(showAcks === id ? null : id)
-  }
-
-  async function deleteAnnouncement(id: string) {
-    await supabase.from('announcements').update({ active: false }).eq('id', id)
-    setAnnouncements(prev => prev.filter(a => a.id !== id))
-    showToast('Removed','success')
-  }
-
-  const unread = announcements.filter(a => !acks[a.id])
-
-  const bgUrl = useAnnouncementBg()
-
-  return (
-    <div className="relative rounded-2xl overflow-hidden">
-      {/* Background image */}
-      {bgUrl && (
-        <>
-          <div className="absolute inset-0 z-0" style={{backgroundImage:'url(' + bgUrl + ')',backgroundSize:'cover',backgroundPosition:'center',filter:'blur(4px) brightness(0.45)',transform:'scale(1.05)'}} />
-          <div className="absolute inset-0 z-0 bg-white/30" />
-        </>
-      )}
-      <div className={`relative z-10 space-y-3 ${bgUrl ? 'p-4' : ''}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h2 className={`font-semibold text-base ${bgUrl ? 'text-white drop-shadow' : 'text-gray-800'}`}>📢 Announcements</h2>
-          {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
-        </div>
-        {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
-      </div>
-      {showForm && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-          <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          <textarea value={form.body} onChange={e => setForm(p=>({...p,body:e.target.value}))} placeholder="Write your announcement..." rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">{uploading ? '⏳ Uploading...' : '📎 Attach'}</button>
-            <span className="text-xs text-gray-400">Images, PDF, Word</span>
-            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleFileChange} className="hidden" />
-          </div>
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {attachments.map((att, i) => (
-                <div key={i} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs">
-                  <span>{att.type==='image'?'🖼️':att.type==='pdf'?'📄':'📝'}</span>
-                  <span className="text-gray-700 max-w-xs truncate">{att.name}</span>
-                  <button onClick={() => setAttachments(prev => prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center gap-3">
-            <select value={form.tag} onChange={e => setForm(p=>({...p,tag:e.target.value}))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
-              <option>Info</option><option>Urgent</option><option>Reminder</option><option>Policy</option>
-            </select>
-            <button onClick={postAnnouncement} disabled={posting||uploading} className="ml-auto bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Posting...' : 'Post'}</button>
-          </div>
-        </div>
-      )}
-      {announcements.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No announcements yet.</div>}
-      {announcements.map(a => (
-        <div key={a.id} className={`bg-white border rounded-xl p-4 space-y-2 ${a.tag==='Urgent'?'border-red-300':'border-gray-200'}`}>
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag]||TAG_COLORS.Info}`}>{a.tag}</span>
-              <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
-            </div>
-            {canManage && <button onClick={() => deleteAnnouncement(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition">✕</button>}
-          </div>
-          <p className="text-sm text-gray-600 whitespace-pre-wrap">{a.body}</p>
-          {a.attachments && a.attachments.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-2">
-                {(a.attachments as any[]).filter((att:any)=>att.type!=='image').map((att:any,i:number) => (
-                  <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
-                    <span>{att.type==='pdf'?'📄':'📝'}</span><span className="max-w-xs truncate">{att.name}</span>
-                  </a>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(a.attachments as any[]).filter((att:any)=>att.type==='image').map((att:any,i:number) => (
-                  <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
-                    <img src={att.url} alt={att.name} className="h-24 w-auto rounded-lg border border-gray-200 object-cover hover:opacity-90 transition" />
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-xs text-gray-400">By {a.posted_by.split('@')[0]} · {new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
-            <div className="flex items-center gap-2">
-              {canManage && <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">Compliance</button>}
-              {!acks[a.id]
-                ? <button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">✓ Acknowledge</button>
-                : <span className="text-xs text-green-600 font-medium">✓ Done</span>}
-            </div>
-          </div>
-          {showAcks === a.id && ackDetails[a.id] && (
-            <div className="mt-2 pt-2 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-600 mb-1">Acknowledged ({ackDetails[a.id].length}):</p>
-              {ackDetails[a.id].length === 0 ? <p className="text-xs text-gray-400">No one yet</p>
-                : <div className="flex flex-wrap gap-1">
-                    {ackDetails[a.id].map((ac:any) => (
-                      <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
-                    ))}
-                  </div>}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-
-
