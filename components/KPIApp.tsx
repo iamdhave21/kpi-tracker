@@ -2147,7 +2147,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       {/* Background image */}
       {bgUrl && (
         <>
-          <div className="absolute inset-0 z-0" style={{backgroundImage:`url('${bgUrl}')`,backgroundSize:'cover',backgroundPosition:'center',filter:'blur(4px) brightness(0.45)',transform:'scale(1.05)'}} />
+          <div className="absolute inset-0 z-0" style={{backgroundImage:'url(' + bgUrl + ')',backgroundSize:'cover',backgroundPosition:'center',filter:'blur(4px) brightness(0.45)',transform:'scale(1.05)'}} />
           <div className="absolute inset-0 z-0 bg-white/30" />
         </>
       )}
