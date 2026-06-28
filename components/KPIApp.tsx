@@ -277,7 +277,7 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { cu
           </div>
         </div>
       ) : (
-        <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
+        <div className="space-y-3"><ThemeBgUploader userRole={userRole} showToast={showToast} /><AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} /></div>
       )}
     </div>
   )
@@ -1993,6 +1993,70 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
   )
 }
 
+// ── Theme Background ─────────────────────────────────────────────────────────
+function useAnnouncementBg() {
+  const [bgUrl, setBgUrl] = useState<string|null>(null)
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
+      .then(({ data }) => { if (data?.value) setBgUrl(data.value) })
+  }, [])
+  return bgUrl
+}
+
+function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [currentBg, setCurrentBg] = useState<string|null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const canUpload = ['super_admin','admin','team_lead'].includes(userRole)
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
+      .then(({ data }) => { if (data?.value) setCurrentBg(data.value) })
+  }, [])
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const path = `themes/announcement-bg-${Date.now()}.${file.name.split('.').pop()}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const url = urlData.publicUrl
+    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: url }, { onConflict: 'key' })
+    setCurrentBg(url)
+    showToast('Theme background updated!', 'success')
+    setUploading(false)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function removeBg() {
+    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: '' }, { onConflict: 'key' })
+    setCurrentBg(null)
+    showToast('Background removed', 'success')
+  }
+
+  if (!canUpload) return null
+
+  return (
+    <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm border border-white/50 rounded-xl px-4 py-3">
+      <div className="flex-1">
+        <p className="text-xs font-medium text-gray-700">🎨 Monthly Theme Background</p>
+        <p className="text-xs text-gray-400">Upload a photo to set this month&apos;s vibe</p>
+      </div>
+      {currentBg && (
+        <img src={currentBg} alt="Current bg" className="h-8 w-12 object-cover rounded-lg border border-gray-200" />
+      )}
+      <button onClick={() => fileRef.current?.click()} disabled={uploading} className="text-xs bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 disabled:opacity-50 transition">
+        {uploading ? '⏳' : '📸 Change'}
+      </button>
+      {currentBg && <button onClick={removeBg} className="text-xs text-gray-400 hover:text-red-500 transition">✕</button>}
+      <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+    </div>
+  )
+}
+
+
 // ── Announcements ───────────────────────────────────────────────────────────
 function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
   const [announcements, setAnnouncements] = useState<any[]>([])
@@ -2076,11 +2140,21 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
 
   const unread = announcements.filter(a => !acks[a.id])
 
+  const bgUrl = useAnnouncementBg()
+
   return (
-    <div className="space-y-3">
+    <div className="relative rounded-2xl overflow-hidden">
+      {/* Background image */}
+      {bgUrl && (
+        <>
+          <div className="absolute inset-0 z-0" style={{backgroundImage:`url('${bgUrl}')`,backgroundSize:'cover',backgroundPosition:'center',filter:'blur(4px) brightness(0.45)',transform:'scale(1.05)'}} />
+          <div className="absolute inset-0 z-0 bg-white/30" />
+        </>
+      )}
+      <div className={`relative z-10 space-y-3 ${bgUrl ? 'p-4' : ''}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold text-gray-800 text-base">📢 Announcements</h2>
+          <h2 className={`font-semibold text-base ${bgUrl ? 'text-white drop-shadow' : 'text-gray-800'}`}>📢 Announcements</h2>
           {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
         {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
