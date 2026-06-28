@@ -71,110 +71,62 @@ function getMonthLabel() {
   return new Date().toLocaleString('default', { month: 'long', year: 'numeric' })
 }
 
-// ── Brick Breaker Game ──────────────────────────────────────────────────────
-function BrickBreaker({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const runningRef = useRef(false)
-  const animRef = useRef(0)
-  const [gameState, setGameState] = useState<'idle'|'playing'|'over'|'won'>('idle')
-  const [score, setScore] = useState(0)
+// ── Game of the Month ───────────────────────────────────────────────────────
+function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
+  const GAME = { name: 'Subway Surfers', url: 'https://poki.com/en/g/subway-surfers', icon: '🏄', color: 'from-orange-400 to-pink-500' }
+  const [score, setScore] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
   const [todayBest, setTodayBest] = useState<number|null>(null)
-  const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#a855f7']
 
   useEffect(() => { loadTodayBest() }, [])
 
   async function loadTodayBest() {
     const today = new Date().toISOString().split('T')[0]
-    const { data } = await supabase.from('game_scores').select('score').eq('user_email', userEmail).eq('game_key','brick_breaker').gte('played_at', today).order('score',{ascending:false}).limit(1)
+    const { data } = await supabase.from('game_scores').select('score').eq('user_email', userEmail).eq('game_key','game_of_month').gte('played_at', today).order('score',{ascending:false}).limit(1)
     if (data?.[0]) setTodayBest(data[0].score)
   }
 
-  async function saveScore(finalScore: number) {
-    if (finalScore === 0) return
+  async function submitScore() {
+    const val = parseInt(score)
+    if (!val || val <= 0) return
+    setSubmitting(true)
     const today = new Date().toISOString().split('T')[0]
-    const { data: existing } = await supabase.from('game_scores').select('score').eq('user_email',userEmail).eq('game_key','brick_breaker').gte('played_at',today).order('score',{ascending:false}).limit(1)
+    const { data: existing } = await supabase.from('game_scores').select('score').eq('user_email',userEmail).eq('game_key','game_of_month').gte('played_at',today).order('score',{ascending:false}).limit(1)
     const currentBest = existing?.[0]?.score || 0
-    if (finalScore > currentBest) {
-      await supabase.from('game_scores').insert({ user_email: userEmail, user_name: userName, game_key: 'brick_breaker', score: finalScore, month_year: getMonthYear() })
-      setTodayBest(finalScore)
+    if (val > currentBest) {
+      await supabase.from('game_scores').insert({ user_email: userEmail, user_name: userName, game_key: 'game_of_month', score: val, month_year: getMonthYear() })
+      setTodayBest(val)
     }
+    setSubmitting(false)
+    setSubmitted(true)
+    setScore('')
     onScoreSaved()
+    setTimeout(() => setSubmitted(false), 3000)
   }
-
-  function startGame() {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    const W = canvas.width, H = canvas.height
-    let ballX = W/2, ballY = H-60, ballDX = 3.5, ballDY = -3.5
-    const BALL_R = 7, PAD_W = 80, PAD_H = 10
-    let padX = W/2 - PAD_W/2
-    let currentScore = 0, lives = 3
-    const COLS = 8, ROWS = 5
-    const BRICK_W = (W-20)/COLS, BRICK_H = 22
-    const bricks: {x:number,y:number,alive:boolean,color:string}[] = []
-    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) bricks.push({x:10+c*BRICK_W,y:40+r*(BRICK_H+4),alive:true,color:COLORS[r%COLORS.length]})
-
-    const onMove = (e: globalThis.MouseEvent) => { const rect = canvas.getBoundingClientRect(); padX = Math.max(0, Math.min(W-PAD_W, e.clientX-rect.left-PAD_W/2)) }
-    const onTouch = (e: globalThis.TouchEvent) => { e.preventDefault(); const rect = canvas.getBoundingClientRect(); padX = Math.max(0, Math.min(W-PAD_W, e.touches[0].clientX-rect.left-PAD_W/2)) }
-    canvas.addEventListener('mousemove', onMove)
-    canvas.addEventListener('touchmove', onTouch, {passive:false})
-
-    runningRef.current = true
-    setGameState('playing')
-    setScore(0)
-
-    function cleanup() { canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('touchmove', onTouch) }
-
-    function draw() {
-      if (!runningRef.current) return
-      ctx.clearRect(0,0,W,H)
-      ctx.fillStyle='#0f172a'; ctx.fillRect(0,0,W,H)
-      let allGone = true
-      bricks.forEach(b => {
-        if (!b.alive) return
-        allGone = false
-        ctx.fillStyle = b.color
-        ctx.fillRect(b.x+2, b.y, BRICK_W-4, BRICK_H)
-      })
-      if (allGone) { runningRef.current=false; cleanup(); setGameState('won'); setScore(currentScore); saveScore(currentScore); return }
-      ctx.fillStyle='#3b82f6'; ctx.fillRect(padX, H-20, PAD_W, PAD_H)
-      ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(ballX,ballY,BALL_R,0,Math.PI*2); ctx.fill()
-      ctx.fillStyle='#94a3b8'; ctx.font='13px sans-serif'
-      ctx.fillText('Score: '+currentScore, 10, 20)
-      ctx.fillText('Lives: '+lives, W-60, 20)
-      ballX+=ballDX; ballY+=ballDY
-      if (ballX-BALL_R<0){ballX=BALL_R;ballDX=Math.abs(ballDX)}
-      if (ballX+BALL_R>W){ballX=W-BALL_R;ballDX=-Math.abs(ballDX)}
-      if (ballY-BALL_R<0){ballY=BALL_R;ballDY=Math.abs(ballDY)}
-      if (ballY+BALL_R>H-20&&ballY+BALL_R<H-10&&ballX>padX&&ballX<padX+PAD_W){ballDY=-Math.abs(ballDY);ballDX=(((ballX-padX)/PAD_W)-0.5)*8}
-      if (ballY+BALL_R>H){lives--;if(lives<=0){runningRef.current=false;cleanup();setGameState('over');setScore(currentScore);saveScore(currentScore);return}ballX=W/2;ballY=H-60;ballDX=3.5;ballDY=-3.5}
-      bricks.forEach(b=>{if(!b.alive)return;if(ballX+BALL_R>b.x&&ballX-BALL_R<b.x+BRICK_W-4&&ballY+BALL_R>b.y&&ballY-BALL_R<b.y+BRICK_H){b.alive=false;ballDY=-ballDY;currentScore+=10;setScore(currentScore)}})
-      animRef.current = requestAnimationFrame(draw)
-    }
-    draw()
-  }
-
-  function stopGame() { runningRef.current=false; cancelAnimationFrame(animRef.current); setGameState('idle') }
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="flex items-center gap-4 text-sm text-gray-600">
-        <span>🎮 <strong>Brick Breaker</strong> — {getMonthLabel()}</span>
-        {todayBest !== null && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-medium">Best today: {todayBest}</span>}
+    <div className="flex flex-col gap-4">
+      <div className={`bg-gradient-to-br ${GAME.color} rounded-xl p-5 text-white text-center`}>
+        <div className="text-4xl mb-2">{GAME.icon}</div>
+        <h3 className="font-bold text-lg">{GAME.name}</h3>
+        <p className="text-white/80 text-xs mb-3">Game of the Month — {getMonthLabel()}</p>
+        <a href={GAME.url} target="_blank" rel="noopener noreferrer" className="inline-block bg-white text-orange-500 font-bold px-5 py-2 rounded-lg text-sm hover:bg-orange-50 transition">
+          🎮 Play Now
+        </a>
       </div>
-      <canvas ref={canvasRef} width={360} height={320} className="rounded-xl border border-gray-200" style={{background:'#0f172a'}} />
-      {gameState==='idle' && <button onClick={startGame} className="bg-blue-900 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition">▶ Start Game</button>}
-      {gameState==='playing' && <div className="flex items-center gap-3"><span className="text-lg font-bold text-gray-800">Score: {score}</span><button onClick={stopGame} className="text-sm text-gray-400 hover:text-gray-600">Quit</button></div>}
-      {(gameState==='over'||gameState==='won') && (
-        <div className="text-center space-y-2">
-          <p className="font-bold text-gray-800">{gameState==='won'?'🎉 Board cleared!':'💥 Game Over!'}</p>
-          <p className="text-gray-600 text-sm">Score: <strong>{score}</strong></p>
-          <button onClick={startGame} className="bg-blue-900 text-white px-5 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-800 transition">Play Again</button>
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+        <p className="text-sm font-medium text-gray-700">Submit your score</p>
+        {todayBest !== null && <p className="text-xs text-blue-600 bg-blue-50 px-3 py-1 rounded-full inline-block">Today&apos;s best: <strong>{todayBest.toLocaleString()}</strong></p>}
+        <div className="flex gap-2">
+          <input type="number" value={score} onChange={e => setScore(e.target.value)} placeholder="Enter your score..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <button onClick={submitScore} disabled={submitting || !score} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">
+            {submitting ? '...' : 'Submit'}
+          </button>
         </div>
-      )}
-      <p className="text-xs text-gray-400">Move mouse or touch to control paddle</p>
+        {submitted && <p className="text-xs text-green-600">✓ Score saved! Check the leaderboard.</p>}
+        <p className="text-xs text-gray-400">Play the game, then come back and enter your score. Only your daily best is saved.</p>
+      </div>
     </div>
   )
 }
@@ -329,7 +281,7 @@ function GameLeaderboard({ refreshKey }: { refreshKey: number }) {
     const { data } = await supabase
       .from('game_scores')
       .select('user_name, user_email, score')
-      .eq('game_key', 'brick_breaker')
+      .eq('game_key', 'game_of_month')
       .eq('month_year', monthYear)
       .order('score', { ascending: false })
 
@@ -376,7 +328,7 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { cu
       {activeTab === 'gaming-hub' ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white border border-gray-200 rounded-xl p-6">
-            <BrickBreaker userEmail={currentUser} userName={userName} onScoreSaved={() => setLeaderboardKey(k => k + 1)} />
+            <GameOfMonth userEmail={currentUser} userName={userName} onScoreSaved={() => setLeaderboardKey(k => k + 1)} />
           </div>
           <div className="bg-white border border-gray-200 rounded-xl p-6">
             <GameLeaderboard refreshKey={leaderboardKey} />
