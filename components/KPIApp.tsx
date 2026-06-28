@@ -300,20 +300,25 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
             <span className="text-xs text-gray-400">By {a.posted_by.split('@')[0]} · {new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
             <div className="flex items-center gap-2">
               {canManage && <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">Compliance</button>}
-              {!acks[a.id]
-                ? (<button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">✓ Acknowledge</button>)
-                : (<span className="text-xs text-green-600 font-medium">✓ Done</span>)}
+              {!acks[a.id] ? (
+                <button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">Acknowledge</button>
+              ) : (
+                <span className="text-xs text-green-600 font-medium">Done</span>
+              )}
             </div>
           </div>
           {showAcks === a.id && ackDetails[a.id] && (
             <div className="mt-2 pt-2 border-t border-gray-100">
               <p className="text-xs font-medium text-gray-600 mb-1">Acknowledged ({ackDetails[a.id].length}):</p>
-              {ackDetails[a.id].length === 0 ? <p className="text-xs text-gray-400">No one yet</p>
-                : <div className="flex flex-wrap gap-1">
+              {ackDetails[a.id].length === 0 ? (
+                <p className="text-xs text-gray-400">No one yet</p>
+              ) : (
+                <div className="flex flex-wrap gap-1">
                     {ackDetails[a.id].map((ac:any) => (
                       <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
                     ))}
-                  </div>}
+                  </div>
+              )}
             </div>
           )}
         </div>
