@@ -301,8 +301,8 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
             <div className="flex items-center gap-2">
               {canManage && <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">Compliance</button>}
               {!acks[a.id]
-                ? <button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">✓ Acknowledge</button>
-                : <span className="text-xs text-green-600 font-medium">✓ Done</span>}
+                ? (<button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">✓ Acknowledge</button>)
+                : (<span className="text-xs text-green-600 font-medium">✓ Done</span>)}
             </div>
           </div>
           {showAcks === a.id && ackDetails[a.id] && (
