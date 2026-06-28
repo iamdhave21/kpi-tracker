@@ -74,244 +74,111 @@ function getMonthLabel() {
 // ── Brick Breaker Game ──────────────────────────────────────────────────────
 function BrickBreaker({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const gameRef = useRef<any>({ running: false, animFrame: null })
-  const [gameState, setGameState] = useState<'idle' | 'playing' | 'over' | 'won'>('idle')
+  const runningRef = useRef(false)
+  const animRef = useRef(0)
+  const [gameState, setGameState] = useState<'idle'|'playing'|'over'|'won'>('idle')
   const [score, setScore] = useState(0)
-  const [todayBest, setTodayBest] = useState<number | null>(null)
-  const [saving, setSaving] = useState(false)
-
+  const [todayBest, setTodayBest] = useState<number|null>(null)
   const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#a855f7']
 
-  useEffect(() => {
-    loadTodayBest()
-  }, [])
+  useEffect(() => { loadTodayBest() }, [])
 
   async function loadTodayBest() {
     const today = new Date().toISOString().split('T')[0]
-    const { data } = await supabase
-      .from('game_scores')
-      .select('score')
-      .eq('user_email', userEmail)
-      .eq('game_key', 'brick_breaker')
-      .gte('played_at', today)
-      .order('score', { ascending: false })
-      .limit(1)
-    if (data && data[0]) setTodayBest(data[0].score)
+    const { data } = await supabase.from('game_scores').select('score').eq('user_email', userEmail).eq('game_key','brick_breaker').gte('played_at', today).order('score',{ascending:false}).limit(1)
+    if (data?.[0]) setTodayBest(data[0].score)
   }
 
   async function saveScore(finalScore: number) {
     if (finalScore === 0) return
-    setSaving(true)
-    const monthYear = getMonthYear()
-    // Only save if it's a new personal best for today
     const today = new Date().toISOString().split('T')[0]
-    const { data: existing } = await supabase
-      .from('game_scores')
-      .select('score')
-      .eq('user_email', userEmail)
-      .eq('game_key', 'brick_breaker')
-      .gte('played_at', today)
-      .order('score', { ascending: false })
-      .limit(1)
-
+    const { data: existing } = await supabase.from('game_scores').select('score').eq('user_email',userEmail).eq('game_key','brick_breaker').gte('played_at',today).order('score',{ascending:false}).limit(1)
     const currentBest = existing?.[0]?.score || 0
     if (finalScore > currentBest) {
-      await supabase.from('game_scores').insert({
-        user_email: userEmail,
-        user_name: userName,
-        game_key: 'brick_breaker',
-        score: finalScore,
-        month_year: monthYear
-      })
+      await supabase.from('game_scores').insert({ user_email: userEmail, user_name: userName, game_key: 'brick_breaker', score: finalScore, month_year: getMonthYear() })
       setTodayBest(finalScore)
     }
-    setSaving(false)
     onScoreSaved()
   }
 
-  const startGame = useCallback(() => {
+  function startGame() {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
-    const W = canvas.width
-    const H = canvas.height
-
-    // Game state
-    let ballX = W / 2, ballY = H - 60
-    let ballDX = 3.5, ballDY = -3.5
-    const BALL_R = 7
-    const PAD_W = 80, PAD_H = 10
-    let padX = W / 2 - PAD_W / 2
-    let currentScore = 0
-    let lives = 3
-
-    // Bricks
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const W = canvas.width, H = canvas.height
+    let ballX = W/2, ballY = H-60, ballDX = 3.5, ballDY = -3.5
+    const BALL_R = 7, PAD_W = 80, PAD_H = 10
+    let padX = W/2 - PAD_W/2
+    let currentScore = 0, lives = 3
     const COLS = 8, ROWS = 5
-    const BRICK_W = (W - 20) / COLS, BRICK_H = 22
-    const bricks: { x: number, y: number, alive: boolean, color: string }[] = []
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        bricks.push({
-          x: 10 + c * BRICK_W,
-          y: 40 + r * (BRICK_H + 4),
-          alive: true,
-          color: COLORS[r % COLORS.length]
-        })
-      }
-    }
+    const BRICK_W = (W-20)/COLS, BRICK_H = 22
+    const bricks: {x:number,y:number,alive:boolean,color:string}[] = []
+    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) bricks.push({x:10+c*BRICK_W,y:40+r*(BRICK_H+4),alive:true,color:COLORS[r%COLORS.length]})
 
-    // Mouse/touch control
-    const onMouseMove = (e: globalThis.MouseEvent) => {
-      const rect = canvas.getBoundingClientRect()
-      padX = Math.max(0, Math.min(W - PAD_W, e.clientX - rect.left - PAD_W / 2))
-    }
-    const onTouchMove = (e: globalThis.TouchEvent) => {
-      e.preventDefault()
-      const rect = canvas.getBoundingClientRect()
-      padX = Math.max(0, Math.min(W - PAD_W, e.touches[0].clientX - rect.left - PAD_W / 2))
-    }
-    canvas.addEventListener('mousemove', onMouseMove)
-    canvas.addEventListener('touchmove', onTouchMove, { passive: false })
+    const onMove = (e: globalThis.MouseEvent) => { const rect = canvas.getBoundingClientRect(); padX = Math.max(0, Math.min(W-PAD_W, e.clientX-rect.left-PAD_W/2)) }
+    const onTouch = (e: globalThis.TouchEvent) => { e.preventDefault(); const rect = canvas.getBoundingClientRect(); padX = Math.max(0, Math.min(W-PAD_W, e.touches[0].clientX-rect.left-PAD_W/2)) }
+    canvas.addEventListener('mousemove', onMove)
+    canvas.addEventListener('touchmove', onTouch, {passive:false})
 
-    gameRef.current.running = true
+    runningRef.current = true
     setGameState('playing')
     setScore(0)
 
+    function cleanup() { canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('touchmove', onTouch) }
+
     function draw() {
-      if (!gameRef.current.running) return
-
-      ctx.clearRect(0, 0, W, H)
-      ctx.fillStyle = '#0f172a'
-      ctx.fillRect(0, 0, W, H)
-
-      // Bricks
+      if (!runningRef.current) return
+      ctx.clearRect(0,0,W,H)
+      ctx.fillStyle='#0f172a'; ctx.fillRect(0,0,W,H)
       let allGone = true
       bricks.forEach(b => {
         if (!b.alive) return
         allGone = false
         ctx.fillStyle = b.color
-        ctx.fillRect(b.x + 2, b.y, BRICK_W - 4, BRICK_H)
+        ctx.fillRect(b.x+2, b.y, BRICK_W-4, BRICK_H)
       })
-
-      if (allGone) {
-        gameRef.current.running = false
-        canvas.removeEventListener('mousemove', onMouseMove)
-        canvas.removeEventListener('touchmove', onTouchMove)
-        setGameState('won')
-        setScore(currentScore)
-        saveScore(currentScore)
-        return
-      }
-
-      // Paddle
-      ctx.fillStyle = '#3b82f6'
-      ctx.fillRect(padX, H - 20, PAD_W, PAD_H)
-
-      // Ball
-      ctx.fillStyle = '#ffffff'
-      ctx.beginPath()
-      ctx.arc(ballX, ballY, BALL_R, 0, Math.PI * 2)
-      ctx.fill()
-
-      // Score & lives
-      ctx.fillStyle = '#94a3b8'
-      ctx.font = '13px sans-serif'
-      ctx.fillText(`Score: ${currentScore}`, 10, 20)
-      ctx.fillText(`Lives: ${'❤️'.repeat(lives)}`, W - 80, 20)
-
-      // Move ball
-      ballX += ballDX
-      ballY += ballDY
-
-      // Wall collisions
-      if (ballX - BALL_R < 0) { ballX = BALL_R; ballDX = Math.abs(ballDX) }
-      if (ballX + BALL_R > W) { ballX = W - BALL_R; ballDX = -Math.abs(ballDX) }
-      if (ballY - BALL_R < 0) { ballY = BALL_R; ballDY = Math.abs(ballDY) }
-
-      // Paddle collision
-      if (ballY + BALL_R > H - 20 && ballY + BALL_R < H - 10 && ballX > padX && ballX < padX + PAD_W) {
-        ballDY = -Math.abs(ballDY)
-        const hit = (ballX - padX) / PAD_W
-        ballDX = (hit - 0.5) * 8
-      }
-
-      // Out of bounds
-      if (ballY + BALL_R > H) {
-        lives--
-        if (lives <= 0) {
-          gameRef.current.running = false
-          canvas.removeEventListener('mousemove', onMouseMove)
-          canvas.removeEventListener('touchmove', onTouchMove)
-          setGameState('over')
-          setScore(currentScore)
-          saveScore(currentScore)
-          return
-        }
-        ballX = W / 2; ballY = H - 60
-        ballDX = 3.5; ballDY = -3.5
-      }
-
-      // Brick collisions
-      bricks.forEach(b => {
-        if (!b.alive) return
-        if (ballX + BALL_R > b.x && ballX - BALL_R < b.x + BRICK_W - 4 &&
-            ballY + BALL_R > b.y && ballY - BALL_R < b.y + BRICK_H) {
-          b.alive = false
-          ballDY = -ballDY
-          currentScore += 10
-          setScore(currentScore)
-        }
-      })
-
-      gameRef.current.animFrame = requestAnimationFrame(draw)
+      if (allGone) { runningRef.current=false; cleanup(); setGameState('won'); setScore(currentScore); saveScore(currentScore); return }
+      ctx.fillStyle='#3b82f6'; ctx.fillRect(padX, H-20, PAD_W, PAD_H)
+      ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(ballX,ballY,BALL_R,0,Math.PI*2); ctx.fill()
+      ctx.fillStyle='#94a3b8'; ctx.font='13px sans-serif'
+      ctx.fillText('Score: '+currentScore, 10, 20)
+      ctx.fillText('Lives: '+lives, W-60, 20)
+      ballX+=ballDX; ballY+=ballDY
+      if (ballX-BALL_R<0){ballX=BALL_R;ballDX=Math.abs(ballDX)}
+      if (ballX+BALL_R>W){ballX=W-BALL_R;ballDX=-Math.abs(ballDX)}
+      if (ballY-BALL_R<0){ballY=BALL_R;ballDY=Math.abs(ballDY)}
+      if (ballY+BALL_R>H-20&&ballY+BALL_R<H-10&&ballX>padX&&ballX<padX+PAD_W){ballDY=-Math.abs(ballDY);ballDX=(((ballX-padX)/PAD_W)-0.5)*8}
+      if (ballY+BALL_R>H){lives--;if(lives<=0){runningRef.current=false;cleanup();setGameState('over');setScore(currentScore);saveScore(currentScore);return}ballX=W/2;ballY=H-60;ballDX=3.5;ballDY=-3.5}
+      bricks.forEach(b=>{if(!b.alive)return;if(ballX+BALL_R>b.x&&ballX-BALL_R<b.x+BRICK_W-4&&ballY+BALL_R>b.y&&ballY-BALL_R<b.y+BRICK_H){b.alive=false;ballDY=-ballDY;currentScore+=10;setScore(currentScore)}})
+      animRef.current = requestAnimationFrame(draw)
     }
-
     draw()
-  }, [userEmail, userName])
-
-  function stopGame() {
-    gameRef.current.running = false
-    if (gameRef.current.animFrame) cancelAnimationFrame(gameRef.current.animFrame)
-    setGameState('idle')
   }
+
+  function stopGame() { runningRef.current=false; cancelAnimationFrame(animRef.current); setGameState('idle') }
 
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="flex items-center gap-4 text-sm text-gray-600">
         <span>🎮 <strong>Brick Breaker</strong> — {getMonthLabel()}</span>
-        {todayBest !== null && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-medium">Today's best: {todayBest}</span>}
+        {todayBest !== null && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-medium">Best today: {todayBest}</span>}
       </div>
-      <canvas
-        ref={canvasRef}
-        width={360}
-        height={320}
-        className="rounded-xl border border-gray-200 cursor-none"
-        style={{ background: '#0f172a' }}
-      />
-      {gameState === 'idle' && (
-        <button onClick={startGame} className="bg-blue-900 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition">
-          ▶ Start Game
-        </button>
-      )}
-      {gameState === 'playing' && (
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-bold text-gray-800">Score: {score}</span>
-          <button onClick={stopGame} className="text-sm text-gray-400 hover:text-gray-600">Quit</button>
-        </div>
-      )}
-      {(gameState === 'over' || gameState === 'won') && (
+      <canvas ref={canvasRef} width={360} height={320} className="rounded-xl border border-gray-200" style={{background:'#0f172a'}} />
+      {gameState==='idle' && <button onClick={startGame} className="bg-blue-900 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition">▶ Start Game</button>}
+      {gameState==='playing' && <div className="flex items-center gap-3"><span className="text-lg font-bold text-gray-800">Score: {score}</span><button onClick={stopGame} className="text-sm text-gray-400 hover:text-gray-600">Quit</button></div>}
+      {(gameState==='over'||gameState==='won') && (
         <div className="text-center space-y-2">
-          <p className="font-bold text-gray-800">{gameState === 'won' ? '🎉 You cleared the board!' : '💥 Game Over!'}</p>
-          <p className="text-gray-600 text-sm">Score: <strong>{score}</strong> {saving ? '(saving...)' : todayBest && score >= todayBest ? '🏆 New best!' : ''}</p>
-          <button onClick={startGame} className="bg-blue-900 text-white px-5 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-800 transition">
-            Play Again
-          </button>
+          <p className="font-bold text-gray-800">{gameState==='won'?'🎉 Board cleared!':'💥 Game Over!'}</p>
+          <p className="text-gray-600 text-sm">Score: <strong>{score}</strong></p>
+          <button onClick={startGame} className="bg-blue-900 text-white px-5 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-800 transition">Play Again</button>
         </div>
       )}
-      <p className="text-xs text-gray-400">Move mouse or touch to control the paddle</p>
+      <p className="text-xs text-gray-400">Move mouse or touch to control paddle</p>
     </div>
   )
 }
+
 
 // ── Announcements ───────────────────────────────────────────────────────────
 function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
