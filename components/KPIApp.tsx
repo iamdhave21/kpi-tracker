@@ -803,7 +803,7 @@ export default function KPIApp() {
   const [userRole, setUserRole] = useState<string>('viewer')
   const [previewAs, setPreviewAs] = useState<'self'|'viewer'>('self')
   const effectiveRole = previewAs === 'viewer' ? 'viewer' : userRole
-  const [view, setView] = useState<View>('dashboard-month')
+  const [view, setView] = useState<View>('announcements')
   const [perfView, setPerfView] = useState<PerfView>('monthly')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [records, setRecords] = useState<KpiRecord[]>([])
