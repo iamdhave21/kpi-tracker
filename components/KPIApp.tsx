@@ -55,6 +55,494 @@ async function writeAuditLog(action: string, performedBy: string, employeeName: 
   await supabase.from('audit_log').insert({ action, performed_by: performedBy, employee_name: employeeName, month_label: monthLabel, field_changed: fieldChanged, old_value: oldValue, new_value: newValue })
 }
 
+// ── HomeScreen Component ────────────────────────────────────────────────────
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+const TAG_COLORS: Record<string, string> = {
+  Urgent: 'bg-red-100 text-red-700 border border-red-200',
+  Info: 'bg-blue-100 text-blue-700 border border-blue-200',
+  Reminder: 'bg-yellow-100 text-yellow-700 border border-yellow-200',
+  Policy: 'bg-purple-100 text-purple-700 border border-purple-200',
+}
+
+function getMonthYear() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+function getMonthLabel() {
+  return new Date().toLocaleString('default', { month: 'long', year: 'numeric' })
+}
+
+// ── Brick Breaker Game ──────────────────────────────────────────────────────
+function BrickBreaker({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const gameRef = useRef<any>({ running: false, animFrame: null })
+  const [gameState, setGameState] = useState<'idle' | 'playing' | 'over' | 'won'>('idle')
+  const [score, setScore] = useState(0)
+  const [todayBest, setTodayBest] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#a855f7']
+
+  useEffect(() => {
+    loadTodayBest()
+  }, [])
+
+  async function loadTodayBest() {
+    const today = new Date().toISOString().split('T')[0]
+    const { data } = await supabase
+      .from('game_scores')
+      .select('score')
+      .eq('user_email', userEmail)
+      .eq('game_key', 'brick_breaker')
+      .gte('played_at', today)
+      .order('score', { ascending: false })
+      .limit(1)
+    if (data && data[0]) setTodayBest(data[0].score)
+  }
+
+  async function saveScore(finalScore: number) {
+    if (finalScore === 0) return
+    setSaving(true)
+    const monthYear = getMonthYear()
+    // Only save if it's a new personal best for today
+    const today = new Date().toISOString().split('T')[0]
+    const { data: existing } = await supabase
+      .from('game_scores')
+      .select('score')
+      .eq('user_email', userEmail)
+      .eq('game_key', 'brick_breaker')
+      .gte('played_at', today)
+      .order('score', { ascending: false })
+      .limit(1)
+
+    const currentBest = existing?.[0]?.score || 0
+    if (finalScore > currentBest) {
+      await supabase.from('game_scores').insert({
+        user_email: userEmail,
+        user_name: userName,
+        game_key: 'brick_breaker',
+        score: finalScore,
+        month_year: monthYear
+      })
+      setTodayBest(finalScore)
+    }
+    setSaving(false)
+    onScoreSaved()
+  }
+
+  const startGame = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')!
+    const W = canvas.width
+    const H = canvas.height
+
+    // Game state
+    let ballX = W / 2, ballY = H - 60
+    let ballDX = 3.5, ballDY = -3.5
+    const BALL_R = 7
+    const PAD_W = 80, PAD_H = 10
+    let padX = W / 2 - PAD_W / 2
+    let currentScore = 0
+    let lives = 3
+
+    // Bricks
+    const COLS = 8, ROWS = 5
+    const BRICK_W = (W - 20) / COLS, BRICK_H = 22
+    const bricks: { x: number, y: number, alive: boolean, color: string }[] = []
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        bricks.push({
+          x: 10 + c * BRICK_W,
+          y: 40 + r * (BRICK_H + 4),
+          alive: true,
+          color: COLORS[r % COLORS.length]
+        })
+      }
+    }
+
+    // Mouse/touch control
+    const onMouseMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect()
+      padX = Math.max(0, Math.min(W - PAD_W, e.clientX - rect.left - PAD_W / 2))
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      padX = Math.max(0, Math.min(W - PAD_W, e.touches[0].clientX - rect.left - PAD_W / 2))
+    }
+    canvas.addEventListener('mousemove', onMouseMove)
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false })
+
+    gameRef.current.running = true
+    setGameState('playing')
+    setScore(0)
+
+    function draw() {
+      if (!gameRef.current.running) return
+
+      ctx.clearRect(0, 0, W, H)
+      ctx.fillStyle = '#0f172a'
+      ctx.fillRect(0, 0, W, H)
+
+      // Bricks
+      let allGone = true
+      bricks.forEach(b => {
+        if (!b.alive) return
+        allGone = false
+        ctx.fillStyle = b.color
+        ctx.beginPath()
+        ctx.roundRect(b.x + 2, b.y, BRICK_W - 4, BRICK_H, 4)
+        ctx.fill()
+      })
+
+      if (allGone) {
+        gameRef.current.running = false
+        canvas.removeEventListener('mousemove', onMouseMove)
+        canvas.removeEventListener('touchmove', onTouchMove)
+        setGameState('won')
+        setScore(currentScore)
+        saveScore(currentScore)
+        return
+      }
+
+      // Paddle
+      ctx.fillStyle = '#3b82f6'
+      ctx.beginPath()
+      ctx.roundRect(padX, H - 20, PAD_W, PAD_H, 5)
+      ctx.fill()
+
+      // Ball
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath()
+      ctx.arc(ballX, ballY, BALL_R, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Score & lives
+      ctx.fillStyle = '#94a3b8'
+      ctx.font = '13px sans-serif'
+      ctx.fillText(`Score: ${currentScore}`, 10, 20)
+      ctx.fillText(`Lives: ${'❤️'.repeat(lives)}`, W - 80, 20)
+
+      // Move ball
+      ballX += ballDX
+      ballY += ballDY
+
+      // Wall collisions
+      if (ballX - BALL_R < 0) { ballX = BALL_R; ballDX = Math.abs(ballDX) }
+      if (ballX + BALL_R > W) { ballX = W - BALL_R; ballDX = -Math.abs(ballDX) }
+      if (ballY - BALL_R < 0) { ballY = BALL_R; ballDY = Math.abs(ballDY) }
+
+      // Paddle collision
+      if (ballY + BALL_R > H - 20 && ballY + BALL_R < H - 10 && ballX > padX && ballX < padX + PAD_W) {
+        ballDY = -Math.abs(ballDY)
+        const hit = (ballX - padX) / PAD_W
+        ballDX = (hit - 0.5) * 8
+      }
+
+      // Out of bounds
+      if (ballY + BALL_R > H) {
+        lives--
+        if (lives <= 0) {
+          gameRef.current.running = false
+          canvas.removeEventListener('mousemove', onMouseMove)
+          canvas.removeEventListener('touchmove', onTouchMove)
+          setGameState('over')
+          setScore(currentScore)
+          saveScore(currentScore)
+          return
+        }
+        ballX = W / 2; ballY = H - 60
+        ballDX = 3.5; ballDY = -3.5
+      }
+
+      // Brick collisions
+      bricks.forEach(b => {
+        if (!b.alive) return
+        if (ballX + BALL_R > b.x && ballX - BALL_R < b.x + BRICK_W - 4 &&
+            ballY + BALL_R > b.y && ballY - BALL_R < b.y + BRICK_H) {
+          b.alive = false
+          ballDY = -ballDY
+          currentScore += 10
+          setScore(currentScore)
+        }
+      })
+
+      gameRef.current.animFrame = requestAnimationFrame(draw)
+    }
+
+    draw()
+  }, [userEmail, userName])
+
+  function stopGame() {
+    gameRef.current.running = false
+    if (gameRef.current.animFrame) cancelAnimationFrame(gameRef.current.animFrame)
+    setGameState('idle')
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <div className="flex items-center gap-4 text-sm text-gray-600">
+        <span>🎮 <strong>Brick Breaker</strong> — {getMonthLabel()}</span>
+        {todayBest !== null && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-medium">Today's best: {todayBest}</span>}
+      </div>
+      <canvas
+        ref={canvasRef}
+        width={360}
+        height={320}
+        className="rounded-xl border border-gray-200 cursor-none"
+        style={{ background: '#0f172a' }}
+      />
+      {gameState === 'idle' && (
+        <button onClick={startGame} className="bg-blue-900 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition">
+          ▶ Start Game
+        </button>
+      )}
+      {gameState === 'playing' && (
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-bold text-gray-800">Score: {score}</span>
+          <button onClick={stopGame} className="text-sm text-gray-400 hover:text-gray-600">Quit</button>
+        </div>
+      )}
+      {(gameState === 'over' || gameState === 'won') && (
+        <div className="text-center space-y-2">
+          <p className="font-bold text-gray-800">{gameState === 'won' ? '🎉 You cleared the board!' : '💥 Game Over!'}</p>
+          <p className="text-gray-600 text-sm">Score: <strong>{score}</strong> {saving ? '(saving...)' : todayBest && score >= todayBest ? '🏆 New best!' : ''}</p>
+          <button onClick={startGame} className="bg-blue-900 text-white px-5 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-800 transition">
+            Play Again
+          </button>
+        </div>
+      )}
+      <p className="text-xs text-gray-400">Move mouse or touch to control the paddle</p>
+    </div>
+  )
+}
+
+// ── Announcements ───────────────────────────────────────────────────────────
+function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const [announcements, setAnnouncements] = useState<any[]>([])
+  const [acks, setAcks] = useState<Record<string, boolean>>({})
+  const [ackDetails, setAckDetails] = useState<Record<string, any[]>>({})
+  const [showForm, setShowForm] = useState(false)
+  const [showAcks, setShowAcks] = useState<string | null>(null)
+  const [form, setForm] = useState({ title: '', body: '', tag: 'Info' })
+  const [posting, setPosting] = useState(false)
+  const canPost = ['super_admin', 'admin', 'team_lead'].includes(userRole)
+  const canManage = ['super_admin', 'admin'].includes(userRole)
+
+  useEffect(() => { loadAnnouncements() }, [])
+
+  async function loadAnnouncements() {
+    const { data } = await supabase.from('announcements').select('*').eq('active', true).order('created_at', { ascending: false })
+    if (data) {
+      setAnnouncements(data)
+      // Load my acks
+      const ids = data.map((a: any) => a.id)
+      if (ids.length > 0) {
+        const { data: myAcks } = await supabase.from('announcement_acknowledgements').select('announcement_id').eq('user_email', userEmail).in('announcement_id', ids)
+        const ackMap: Record<string, boolean> = {}
+        myAcks?.forEach((a: any) => { ackMap[a.announcement_id] = true })
+        setAcks(ackMap)
+      }
+    }
+  }
+
+  async function acknowledge(id: string) {
+    const { error } = await supabase.from('announcement_acknowledgements').insert({ announcement_id: id, user_email: userEmail })
+    if (!error) { setAcks(prev => ({ ...prev, [id]: true })); showToast('Acknowledged!', 'success') }
+  }
+
+  async function loadAckDetails(id: string) {
+    const { data } = await supabase.from('announcement_acknowledgements').select('*').eq('announcement_id', id).order('acknowledged_at')
+    setAckDetails(prev => ({ ...prev, [id]: data || [] }))
+    setShowAcks(showAcks === id ? null : id)
+  }
+
+  async function deleteAnnouncement(id: string) {
+    await supabase.from('announcements').update({ active: false }).eq('id', id)
+    setAnnouncements(prev => prev.filter(a => a.id !== id))
+    showToast('Announcement removed', 'success')
+  }
+
+  async function postAnnouncement() {
+    if (!form.title.trim() || !form.body.trim()) return
+    setPosting(true)
+    const { error } = await supabase.from('announcements').insert({ title: form.title.trim(), body: form.body.trim(), tag: form.tag, posted_by: userEmail })
+    if (error) showToast(error.message, 'error')
+    else { setForm({ title: '', body: '', tag: 'Info' }); setShowForm(false); showToast('Posted!', 'success'); loadAnnouncements() }
+    setPosting(false)
+  }
+
+  const unacknowledged = announcements.filter(a => !acks[a.id])
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold text-gray-800 text-base">📢 Announcements</h2>
+          {unacknowledged.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unacknowledged.length}</span>}
+        </div>
+        {canPost && (
+          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">
+            {showForm ? 'Cancel' : '+ Post'}
+          </button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Announcement title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <textarea value={form.body} onChange={e => setForm(p => ({ ...p, body: e.target.value }))} placeholder="Write your announcement..." rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+          <div className="flex items-center gap-3">
+            <select value={form.tag} onChange={e => setForm(p => ({ ...p, tag: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none">
+              <option>Info</option><option>Urgent</option><option>Reminder</option><option>Policy</option>
+            </select>
+            <button onClick={postAnnouncement} disabled={posting} className="ml-auto bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">
+              {posting ? 'Posting...' : 'Post Announcement'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {announcements.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No announcements yet.</div>}
+
+      {announcements.map(a => (
+        <div key={a.id} className={`bg-white border rounded-xl p-4 space-y-2 ${a.tag === 'Urgent' ? 'border-red-300' : 'border-gray-200'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag] || TAG_COLORS.Info}`}>{a.tag}</span>
+              <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
+            </div>
+            {canManage && (
+              <button onClick={() => deleteAnnouncement(a.id)} className="text-gray-300 hover:text-red-500 text-xs flex-shrink-0 transition">✕</button>
+            )}
+          </div>
+          <p className="text-sm text-gray-600 whitespace-pre-wrap">{a.body}</p>
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-gray-400">Posted by {a.posted_by.split('@')[0]} · {new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+            <div className="flex items-center gap-2">
+              {canManage && (
+                <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">
+                  View compliance
+                </button>
+              )}
+              {!acks[a.id] ? (
+                <button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">
+                  ✓ Acknowledge
+                </button>
+              ) : (
+                <span className="text-xs text-green-600 font-medium">✓ Acknowledged</span>
+              )}
+            </div>
+          </div>
+          {showAcks === a.id && ackDetails[a.id] && (
+            <div className="mt-2 pt-2 border-t border-gray-100">
+              <p className="text-xs font-medium text-gray-600 mb-1">Acknowledged by ({ackDetails[a.id].length}):</p>
+              {ackDetails[a.id].length === 0
+                ? <p className="text-xs text-gray-400">No one yet</p>
+                : <div className="flex flex-wrap gap-1">
+                    {ackDetails[a.id].map((ac: any) => (
+                      <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">
+                        {ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}
+                      </span>
+                    ))}
+                  </div>
+              }
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Monthly Leaderboard ─────────────────────────────────────────────────────
+function GameLeaderboard({ refreshKey }: { refreshKey: number }) {
+  const [scores, setScores] = useState<any[]>([])
+
+  useEffect(() => { loadScores() }, [refreshKey])
+
+  async function loadScores() {
+    const monthYear = getMonthYear()
+    const { data } = await supabase
+      .from('game_scores')
+      .select('user_name, user_email, score')
+      .eq('game_key', 'brick_breaker')
+      .eq('month_year', monthYear)
+      .order('score', { ascending: false })
+
+    // Keep only best score per user
+    const best: Record<string, any> = {}
+    data?.forEach((row: any) => {
+      if (!best[row.user_email] || row.score > best[row.user_email].score) best[row.user_email] = row
+    })
+    setScores(Object.values(best).sort((a, b) => b.score - a.score).slice(0, 10))
+  }
+
+  const medals = ['🥇', '🥈', '🥉']
+
+  return (
+    <div className="space-y-2">
+      <h3 className="font-semibold text-gray-800 text-sm">🏆 {getMonthLabel()} Leaderboard</h3>
+      {scores.length === 0
+        ? <p className="text-xs text-gray-400 text-center py-4">No scores yet this month. Be the first!</p>
+        : scores.map((s, i) => (
+          <div key={s.user_email} className={`flex items-center gap-2 px-3 py-2 rounded-lg ${i === 0 ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50'}`}>
+            <span className="text-sm w-5">{medals[i] || `${i + 1}.`}</span>
+            <span className="text-sm text-gray-800 flex-1 font-medium">{s.user_name || s.user_email.split('@')[0]}</span>
+            <span className="text-sm font-bold text-blue-900">{s.score.toLocaleString()}</span>
+          </div>
+        ))
+      }
+    </div>
+  )
+}
+
+// ── Main HomeScreen ─────────────────────────────────────────────────────────
+export function HomeScreen({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const [leaderboardKey, setLeaderboardKey] = useState(0)
+  const userName = currentUser?.split('@')[0] || currentUser
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {userName}! 👋</h1>
+        <p className="text-sm text-gray-500 mt-0.5">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Announcements - takes 2/3 */}
+        <div className="lg:col-span-2">
+          <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
+        </div>
+
+        {/* Game + Leaderboard - takes 1/3 */}
+        <div className="space-y-4">
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <BrickBreaker
+              userEmail={currentUser}
+              userName={userName}
+              onScoreSaved={() => setLeaderboardKey(k => k + 1)}
+            />
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <GameLeaderboard refreshKey={leaderboardKey} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -251,6 +739,9 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string
   return (
     <div className="flex-1 overflow-y-auto py-3">
 
+      {/* HOME */}
+      <NavItem id="home" label="Home" icon={null} view={view} setView={setView} />
+
       {/* PERFORMANCE */}
       <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee','dashboard-team'].includes(view)} />
       {!collapsed.perf && (
@@ -434,6 +925,7 @@ export default function KPIApp() {
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
             {view === 'entry' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
+            {view === 'home' && <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
             {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
