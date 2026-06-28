@@ -229,7 +229,6 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       .then(({ data }) => {
         if (data?.value) { setBgUrl(data.value); setBgInput(data.value) }
       })
-      .finally(() => )
   }, [])
 
   async function saveBg() {
