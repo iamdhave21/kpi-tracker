@@ -221,15 +221,15 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const unread = announcements.filter(a => !acks[a.id])
 
   const bgUrl = useAnnouncementBg()
+  const bgStyle = bgUrl ? { backgroundImage: 'url(' + bgUrl + ')', backgroundSize: 'cover' as const, backgroundPosition: 'center', filter: 'blur(2px) brightness(0.6)' } : {}
 
   return (
     <div className="space-y-3">
-      {/* Background banner */}
       {bgUrl && (
         <div className="relative h-32 rounded-2xl overflow-hidden">
-          <div className="absolute inset-0" style={{backgroundImage:'url(' + bgUrl + ')',backgroundSize:'cover',backgroundPosition:'center',filter:'blur(2px) brightness(0.6)'}} />
+          <div className="absolute inset-0" style={bgStyle} />
           <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-white font-bold text-xl drop-shadow-lg">📢 Announcements</p>
+            <p className="text-white font-bold text-xl drop-shadow-lg">Announcements</p>
           </div>
         </div>
       )}
