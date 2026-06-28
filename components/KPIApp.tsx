@@ -120,8 +120,8 @@ function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast:
   return (
     <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm border border-white/50 rounded-xl px-4 py-3">
       <div className="flex-1">
-        <p className="text-xs font-medium text-gray-700">🎨 Monthly Theme Background</p>
-        <p className="text-xs text-gray-400">Upload a photo to set this monthly vibe</p>
+        <p className="text-xs font-medium text-gray-900">🎨 Monthly Theme Background</p>
+        <p className="text-xs text-gray-600">Upload a photo to set this monthly vibe</p>
       </div>
       {currentBg && (
         <img src={currentBg} alt="Current bg" className="h-8 w-12 object-cover rounded-lg border border-gray-200" />
@@ -234,7 +234,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       <div className={`relative z-10 space-y-3 ${bgUrl ? 'p-4' : ''}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className={`font-semibold text-base ${bgUrl ? 'text-white drop-shadow' : 'text-gray-800'}`}>📢 Announcements</h2>
+          <h2 className="font-semibold text-base text-gray-900">📢 Announcements</h2>
           {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
         {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
@@ -267,7 +267,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           </div>
         </div>
       )}
-      {announcements.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No announcements yet.</div>}
+      {announcements.length === 0 && <div className="text-center py-8 text-gray-600 text-sm">No announcements yet.</div>}
       {announcements.map(a => (
         <div key={a.id} className={`bg-white border rounded-xl p-4 space-y-2 ${a.tag==='Urgent'?'border-red-300':'border-gray-200'}`}>
           <div className="flex items-start justify-between gap-2">
