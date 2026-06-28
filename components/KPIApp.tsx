@@ -2042,7 +2042,7 @@ function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast:
     <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm border border-white/50 rounded-xl px-4 py-3">
       <div className="flex-1">
         <p className="text-xs font-medium text-gray-700">🎨 Monthly Theme Background</p>
-        <p className="text-xs text-gray-400">Upload a photo to set this month&apos;s vibe</p>
+        <p className="text-xs text-gray-400">Upload a photo to set this monthly vibe</p>
       </div>
       {currentBg && (
         <img src={currentBg} alt="Current bg" className="h-8 w-12 object-cover rounded-lg border border-gray-200" />
