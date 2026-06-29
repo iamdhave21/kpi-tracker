@@ -637,7 +637,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: `${window.location.origin}/auth/callback`,
         queryParams: { prompt: 'select_account' }
       }
     })
@@ -898,22 +898,29 @@ export default function KPIApp() {
 
   useEffect(() => {
     async function initAuth() {
+      // Handle OAuth error params from callback redirect
+      const params = new URLSearchParams(window.location.search)
+      const oauthError = params.get('error')
+      if (oauthError) {
+        window.history.replaceState({}, '', window.location.pathname)
+        const msgs: Record<string, string> = {
+          domain_not_allowed: 'Only @ab-businesssupport.com and @ab-contactsolutions.com accounts can sign in.',
+          oauth_failed: 'Google sign-in failed. Please try again.',
+          no_code: 'Google sign-in was cancelled.',
+        }
+        setLoading(false)
+        alert(msgs[oauthError] || 'Sign-in error. Please try again.')
+        return
+      }
+
       // First check for an existing local session
       const stored = localStorage.getItem('kpi_user')
       if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer'); return }
 
-      // Check for Google OAuth session
+      // Check for Google OAuth session (set by callback route)
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user?.email) {
         const email = session.user.email.toLowerCase()
-        // Domain restriction - allow both company domains
-        const allowedDomains = ['@ab-businesssupport.com', '@ab-contactsolutions.com']
-        if (!allowedDomains.some(d => email.endsWith(d))) {
-          await supabase.auth.signOut()
-          setLoading(false)
-          alert('Only AB Business Support / AB Contact Solutions accounts can sign in.')
-          return
-        }
         // Look up their role in app_users
         const { data: appUser } = await supabase.from('app_users').select('*').eq('email', email).single()
         let role = 'viewer'
@@ -921,9 +928,6 @@ export default function KPIApp() {
         if (appUser) {
           role = appUser.role
           displayName = appUser.display_name || appUser.name || email
-        } else {
-          // Auto-create a viewer account for new Google sign-ins
-          await supabase.from('app_users').insert({ email, name: email.split('@')[0], role: 'viewer', password_hash: 'google-oauth' })
         }
         const userData = { username: email, role, display_name: displayName }
         localStorage.setItem('kpi_user', JSON.stringify(userData))
@@ -1044,7 +1048,7 @@ export default function KPIApp() {
             {view === 'settings' && <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
             {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
-            {view === 'tl-tools' && <ComingSoon title="Team Lead Tools" description="Coaching logs, 1-on-1 trackers, and performance planning tools. Coming soon!" icon="🔧" />}
+            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
             {view === 'cadence' && <OperatingCadence />}
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
@@ -2564,6 +2568,526 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label><input type="password" value={confirmPass} onChange={e=>setConfirmPass(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/></div>
               <button type="submit" disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"><Save className="w-4 h-4"/>{saving?'Saving...':'Change Password'}</button>
             </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- TL Tools: Coaching Log + 1-on-1 Tracker ---------------------------------
+function TLToolsPanel({ employees, currentUser, userRole, showToast }:
+  { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+
+  const [activeTab, setActiveTab] = useState<'coaching'|'oneonone'>('coaching')
+  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const isViewer = userRole === 'viewer'
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 mb-2">
+        <Shield className="w-6 h-6 text-blue-800" />
+        <h2 className="text-xl font-bold text-blue-900">Team Lead Tools</h2>
+      </div>
+
+      {isViewer && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          Showing your personal coaching & 1-on-1 records. Contact your Team Lead to make changes.
+        </div>
+      )}
+
+      {/* Tab switcher */}
+      <div className="flex gap-2 border-b border-gray-200">
+        {([['coaching','📋 Coaching Log'],['oneonone','🤝 1-on-1 Tracker']] as const).map(([tab, label]) => (
+          <button key={tab} onClick={() => setActiveTab(tab as any)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${activeTab === tab ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'coaching' && (
+        <CoachingLog employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} />
+      )}
+      {activeTab === 'oneonone' && (
+        <OneOnOneTracker employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} />
+      )}
+    </div>
+  )
+}
+
+// -- Coaching Log ------------------------------------------------------------
+function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
+  { employees: Employee[], currentUser: string | null, userRole: string, canManage: boolean, showToast: (m: string, t?: 'success'|'error') => void }) {
+
+  const [logs, setLogs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [filterEmp, setFilterEmp] = useState('')
+  const [filterMonth, setFilterMonth] = useState('')
+  const [deleting, setDeleting] = useState<string|null>(null)
+
+  const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], type: 'Performance', discussion: '', action_items: '', next_session_date: '' }
+  const [form, setForm] = useState({ ...emptyForm })
+
+  async function loadLogs() {
+    setLoading(true)
+    let query = supabase.from('coaching_logs').select('*').order('date', { ascending: false })
+    if (userRole === 'viewer' && currentUser) {
+      // Agents see only their own records by email
+      query = query.eq('employee_email', currentUser.toLowerCase())
+    }
+    const { data } = await query
+    setLogs(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadLogs() }, [])
+
+  async function handleSave() {
+    if (!form.employee_id || !form.date || !form.discussion.trim()) {
+      showToast('Please fill in employee, date, and discussion points.', 'error'); return
+    }
+    setSaving(true)
+    const emp = employees.find(e => e.id === form.employee_id)
+    const { error } = await supabase.from('coaching_logs').insert({
+      employee_id: form.employee_id,
+      employee_name: emp?.name || '',
+      employee_email: emp?.email || '',
+      coached_by: currentUser,
+      date: form.date,
+      type: form.type,
+      discussion: form.discussion.trim(),
+      action_items: form.action_items.trim(),
+      next_session_date: form.next_session_date || null,
+    })
+    setSaving(false)
+    if (error) { showToast('Failed to save: ' + error.message, 'error'); return }
+    showToast('Coaching log saved!')
+    setForm({ ...emptyForm })
+    setShowForm(false)
+    loadLogs()
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(id)
+    await supabase.from('coaching_logs').delete().eq('id', id)
+    showToast('Entry deleted.')
+    setDeleting(null)
+    loadLogs()
+  }
+
+  const filtered = logs.filter(l => {
+    if (filterEmp && l.employee_id !== filterEmp) return false
+    if (filterMonth && !l.date.startsWith(filterMonth)) return false
+    return true
+  })
+
+  const COACHING_TYPES = ['Performance', 'Behavior', 'Development', 'Recognition', 'Corrective Action']
+
+  return (
+    <div className="space-y-4">
+      {/* Stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Sessions', value: logs.length },
+          { label: 'This Month', value: logs.filter(l => l.date.startsWith(new Date().toISOString().slice(0,7))).length },
+          { label: 'Employees Coached', value: new Set(logs.map(l => l.employee_id)).size },
+          { label: 'Pending Follow-ups', value: logs.filter(l => l.next_session_date && new Date(l.next_session_date) >= new Date()).length },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div className="text-2xl font-bold text-blue-900">{s.value}</div>
+            <div className="text-xs text-gray-500 mt-1">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Controls */}
+      <div className="flex flex-wrap gap-3 items-center justify-between">
+        <div className="flex gap-2 flex-wrap">
+          {canManage && (
+            <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
+              <option value="">All Employees</option>
+              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          )}
+          <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          {(filterEmp || filterMonth) && (
+            <button onClick={() => { setFilterEmp(''); setFilterMonth('') }} className="text-sm text-blue-600 hover:underline">Clear</button>
+          )}
+        </div>
+        {canManage && (
+          <button onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            <PlusCircle className="w-4 h-4" /> Log Session
+          </button>
+        )}
+      </div>
+
+      {/* Add form */}
+      {showForm && canManage && (
+        <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
+          <h3 className="font-semibold text-blue-900 text-sm">New Coaching Session</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Employee *</label>
+              <select value={form.employee_id} onChange={e => setForm({...form, employee_id: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                <option value="">Select employee…</option>
+                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date *</label>
+              <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+              <select value={form.type} onChange={e => setForm({...form, type: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                {COACHING_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Key Discussion Points *</label>
+            <textarea value={form.discussion} onChange={e => setForm({...form, discussion: e.target.value})} rows={3}
+              placeholder="What was discussed during the session…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Action Items</label>
+            <textarea value={form.action_items} onChange={e => setForm({...form, action_items: e.target.value})} rows={2}
+              placeholder="Commitments and next steps…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          <div className="max-w-xs">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Next Session Date</label>
+            <input type="date" value={form.next_session_date} onChange={e => setForm({...form, next_session_date: e.target.value})}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+              <Save className="w-4 h-4" />{saving ? 'Saving…' : 'Save Session'}
+            </button>
+            <button onClick={() => { setShowForm(false); setForm({...emptyForm}) }}
+              className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Log table */}
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <div className="text-4xl mb-3">📋</div>
+          <p className="font-medium">No coaching sessions found</p>
+          <p className="text-sm mt-1">{canManage ? 'Log your first session above.' : 'No sessions have been recorded for you yet.'}</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {canManage && <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Employee</th>}
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Discussion</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Action Items</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Next Session</th>
+                  {canManage && <th className="px-4 py-3 w-10"></th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map(log => {
+                  const nextDue = log.next_session_date ? new Date(log.next_session_date) : null
+                  const isOverdue = nextDue && nextDue < new Date()
+                  return (
+                    <tr key={log.id} className="hover:bg-gray-50 transition">
+                      {canManage && <td className="px-4 py-3 font-medium text-gray-900">{log.employee_name}</td>}
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(log.date).toLocaleDateString('en-PH', {year:'numeric',month:'short',day:'numeric'})}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                          log.type === 'Performance' ? 'bg-blue-100 text-blue-700' :
+                          log.type === 'Behavior' ? 'bg-yellow-100 text-yellow-700' :
+                          log.type === 'Development' ? 'bg-green-100 text-green-700' :
+                          log.type === 'Recognition' ? 'bg-purple-100 text-purple-700' :
+                          'bg-red-100 text-red-700'}`}>{log.type}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 max-w-xs">
+                        <div className="line-clamp-2">{log.discussion}</div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 max-w-xs">
+                        <div className="line-clamp-2">{log.action_items || '—'}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {nextDue ? (
+                          <span className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
+                            {isOverdue ? '⚠️ ' : ''}{nextDue.toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'})}
+                          </span>
+                        ) : <span className="text-gray-400">—</span>}
+                      </td>
+                      {canManage && (
+                        <td className="px-4 py-3">
+                          <button onClick={() => handleDelete(log.id)} disabled={deleting === log.id}
+                            className="text-gray-400 hover:text-red-500 transition p-1 rounded">
+                            {deleting === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400"/> : <Trash2 className="w-3.5 h-3.5"/>}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- 1-on-1 Tracker ----------------------------------------------------------
+function OneOnOneTracker({ employees, currentUser, userRole, canManage, showToast }:
+  { employees: Employee[], currentUser: string | null, userRole: string, canManage: boolean, showToast: (m: string, t?: 'success'|'error') => void }) {
+
+  const [logs, setLogs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [filterEmp, setFilterEmp] = useState('')
+  const [deleting, setDeleting] = useState<string|null>(null)
+
+  const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], agenda: '', notes: '', mood: '3', follow_ups: '' }
+  const [form, setForm] = useState({ ...emptyForm })
+
+  async function loadLogs() {
+    setLoading(true)
+    let query = supabase.from('one_on_one_logs').select('*').order('date', { ascending: false })
+    if (userRole === 'viewer' && currentUser) {
+      query = query.eq('employee_email', currentUser.toLowerCase())
+    }
+    const { data } = await query
+    setLogs(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadLogs() }, [])
+
+  async function handleSave() {
+    if (!form.employee_id || !form.date) {
+      showToast('Please select an employee and date.', 'error'); return
+    }
+    setSaving(true)
+    const emp = employees.find(e => e.id === form.employee_id)
+    const { error } = await supabase.from('one_on_one_logs').insert({
+      employee_id: form.employee_id,
+      employee_name: emp?.name || '',
+      employee_email: emp?.email || '',
+      conducted_by: currentUser,
+      date: form.date,
+      agenda: form.agenda.trim(),
+      notes: form.notes.trim(),
+      mood: parseInt(form.mood),
+      follow_ups: form.follow_ups.trim(),
+    })
+    setSaving(false)
+    if (error) { showToast('Failed to save: ' + error.message, 'error'); return }
+    showToast('1-on-1 session saved!')
+    setForm({ ...emptyForm })
+    setShowForm(false)
+    loadLogs()
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(id)
+    await supabase.from('one_on_one_logs').delete().eq('id', id)
+    showToast('Entry deleted.')
+    setDeleting(null)
+    loadLogs()
+  }
+
+  // Coverage: employees with a 1-on-1 this month
+  const thisMonth = new Date().toISOString().slice(0,7)
+  const coveredThisMonth = new Set(logs.filter(l => l.date.startsWith(thisMonth)).map(l => l.employee_id))
+  const activeEmps = employees.filter(e => e.active)
+
+  // Overdue: employees whose last 1-on-1 was > 30 days ago (or never)
+  const lastSessionByEmp: Record<string, string> = {}
+  logs.forEach(l => { if (!lastSessionByEmp[l.employee_id] || l.date > lastSessionByEmp[l.employee_id]) lastSessionByEmp[l.employee_id] = l.date })
+  const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const overdueEmps = canManage ? activeEmps.filter(e => !lastSessionByEmp[e.id] || new Date(lastSessionByEmp[e.id]) < thirtyDaysAgo) : []
+
+  const filtered = logs.filter(l => !filterEmp || l.employee_id === filterEmp)
+
+  const MOOD_LABELS: Record<number, {label:string,color:string}> = {
+    1: { label: '😟 Low', color: 'bg-red-100 text-red-700' },
+    2: { label: '😕 Below Avg', color: 'bg-orange-100 text-orange-700' },
+    3: { label: '😐 Neutral', color: 'bg-yellow-100 text-yellow-700' },
+    4: { label: '🙂 Good', color: 'bg-green-100 text-green-700' },
+    5: { label: '😁 Great', color: 'bg-emerald-100 text-emerald-700' },
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Total 1-on-1s', value: logs.length },
+          { label: 'This Month', value: logs.filter(l => l.date.startsWith(thisMonth)).length },
+          { label: 'Coverage This Month', value: canManage ? `${coveredThisMonth.size}/${activeEmps.length}` : '—' },
+          { label: 'Overdue (>30d)', value: canManage ? overdueEmps.length : '—', warn: canManage && overdueEmps.length > 0 },
+        ].map(s => (
+          <div key={s.label} className={`bg-white rounded-xl border p-4 text-center ${(s as any).warn ? 'border-red-300' : 'border-gray-200'}`}>
+            <div className={`text-2xl font-bold ${(s as any).warn ? 'text-red-600' : 'text-blue-900'}`}>{s.value}</div>
+            <div className="text-xs text-gray-500 mt-1">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Overdue alert */}
+      {canManage && overdueEmps.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <p className="text-sm font-semibold text-red-700 mb-1">⚠️ Overdue 1-on-1s ({overdueEmps.length} employees)</p>
+          <p className="text-xs text-red-600">{overdueEmps.map(e => e.name).join(', ')}</p>
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="flex flex-wrap gap-3 items-center justify-between">
+        <div className="flex gap-2 flex-wrap">
+          {canManage && (
+            <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
+              <option value="">All Employees</option>
+              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          )}
+          {filterEmp && (
+            <button onClick={() => setFilterEmp('')} className="text-sm text-blue-600 hover:underline">Clear</button>
+          )}
+        </div>
+        {canManage && (
+          <button onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            <PlusCircle className="w-4 h-4" /> Log 1-on-1
+          </button>
+        )}
+      </div>
+
+      {/* Add form */}
+      {showForm && canManage && (
+        <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
+          <h3 className="font-semibold text-blue-900 text-sm">New 1-on-1 Session</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Employee *</label>
+              <select value={form.employee_id} onChange={e => setForm({...form, employee_id: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                <option value="">Select employee…</option>
+                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date *</label>
+              <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Employee Mood (1–5)</label>
+              <select value={form.mood} onChange={e => setForm({...form, mood: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                {[1,2,3,4,5].map(n => <option key={n} value={n}>{MOOD_LABELS[n].label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Agenda / Topics</label>
+            <textarea value={form.agenda} onChange={e => setForm({...form, agenda: e.target.value})} rows={2}
+              placeholder="What topics were covered…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes / Key Takeaways</label>
+            <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={3}
+              placeholder="Key points from the conversation…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Follow-up Items</label>
+            <textarea value={form.follow_ups} onChange={e => setForm({...form, follow_ups: e.target.value})} rows={2}
+              placeholder="Action items, commitments, or things to revisit…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+              <Save className="w-4 h-4" />{saving ? 'Saving…' : 'Save Session'}
+            </button>
+            <button onClick={() => { setShowForm(false); setForm({...emptyForm}) }}
+              className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Log table */}
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <div className="text-4xl mb-3">🤝</div>
+          <p className="font-medium">No 1-on-1 sessions found</p>
+          <p className="text-sm mt-1">{canManage ? 'Log your first session above.' : 'No sessions have been recorded for you yet.'}</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {canManage && <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Employee</th>}
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Mood</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Agenda</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Follow-ups</th>
+                  {canManage && <th className="px-4 py-3 w-10"></th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map(log => {
+                  const mood = MOOD_LABELS[log.mood as number] || MOOD_LABELS[3]
+                  return (
+                    <tr key={log.id} className="hover:bg-gray-50 transition">
+                      {canManage && <td className="px-4 py-3 font-medium text-gray-900">{log.employee_name}</td>}
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(log.date).toLocaleDateString('en-PH', {year:'numeric',month:'short',day:'numeric'})}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${mood.color}`}>{mood.label}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 max-w-xs"><div className="line-clamp-2">{log.agenda || '—'}</div></td>
+                      <td className="px-4 py-3 text-gray-700 max-w-xs"><div className="line-clamp-2">{log.notes || '—'}</div></td>
+                      <td className="px-4 py-3 text-gray-600 max-w-xs"><div className="line-clamp-2">{log.follow_ups || '—'}</div></td>
+                      {canManage && (
+                        <td className="px-4 py-3">
+                          <button onClick={() => handleDelete(log.id)} disabled={deleting === log.id}
+                            className="text-gray-400 hover:text-red-500 transition p-1 rounded">
+                            {deleting === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400"/> : <Trash2 className="w-3.5 h-3.5"/>}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
