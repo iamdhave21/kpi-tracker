@@ -250,7 +250,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   }
 
   return (
-    <div className="relative rounded-2xl overflow-hidden min-h-[600px]">
+    <div className="relative rounded-2xl overflow-hidden" style={{minHeight:"calc(100vh - 120px)"}}>
       {/* Full page background */}
       {bgUrl !== undefined && bgUrl && (
         <div className="fixed-bg absolute inset-0 z-0">
@@ -974,7 +974,7 @@ export default function KPIApp() {
   const activeEmpIds = new Set(employees.filter(e => e.active).map(e => e.id))
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
       {toast && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
           {toast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
@@ -997,9 +997,9 @@ export default function KPIApp() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
-        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200`}>
+        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
                     <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} />
 
           {/* User info at bottom of sidebar */}
@@ -2575,11 +2575,11 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
   )
 }
 
-// -- TL Tools: Coaching Log + 1-on-1 Tracker ---------------------------------
+// -- TL Tools: Coaching Log + Compliance ------------------------------------
 function TLToolsPanel({ employees, currentUser, userRole, showToast }:
   { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
 
-  const [activeTab, setActiveTab] = useState<'coaching'|'oneonone'>('coaching')
+  const [activeTab, setActiveTab] = useState<'coaching'|'compliance'>('coaching')
   const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
   const isViewer = userRole === 'viewer'
 
@@ -2593,13 +2593,13 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast }:
       {isViewer && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
           <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          Showing your personal coaching & 1-on-1 records. Contact your Team Lead to make changes.
+          Showing your personal coaching records. Contact your Team Lead to make changes.
         </div>
       )}
 
       {/* Tab switcher */}
       <div className="flex gap-2 border-b border-gray-200">
-        {([['coaching','📋 Coaching Log'],['oneonone','🤝 1-on-1 Tracker']] as const).map(([tab, label]) => (
+        {([['coaching','📋 Coaching Log'],['compliance','📊 TL Compliance']] as [string,string][]).map(([tab, label]) => (
           <button key={tab} onClick={() => setActiveTab(tab as any)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${activeTab === tab ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {label}
@@ -2610,8 +2610,15 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast }:
       {activeTab === 'coaching' && (
         <CoachingLog employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} />
       )}
-      {activeTab === 'oneonone' && (
-        <OneOnOneTracker employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} />
+      {activeTab === 'compliance' && canManage && (
+        <TLComplianceReport employees={employees} currentUser={currentUser} userRole={userRole} />
+      )}
+      {activeTab === 'compliance' && !canManage && (
+        <div className="text-center py-16 text-gray-400">
+          <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/>
+          <p className="font-medium">Access Restricted</p>
+          <p className="text-sm mt-1">Compliance reports require Team Lead access or higher</p>
+        </div>
       )}
     </div>
   )
@@ -2629,14 +2636,13 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
   const [filterMonth, setFilterMonth] = useState('')
   const [deleting, setDeleting] = useState<string|null>(null)
 
-  const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], type: 'Performance', discussion: '', action_items: '', next_session_date: '' }
+  const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], type: 'Performance', initiated_by: 'Team Lead', discussion: '', action_items: '', next_session_date: '' }
   const [form, setForm] = useState({ ...emptyForm })
 
   async function loadLogs() {
     setLoading(true)
     let query = supabase.from('coaching_logs').select('*').order('date', { ascending: false })
     if (userRole === 'viewer' && currentUser) {
-      // Agents see only their own records by email
       query = query.eq('employee_email', currentUser.toLowerCase())
     }
     const { data } = await query
@@ -2657,6 +2663,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
       employee_name: emp?.name || '',
       employee_email: emp?.email || '',
       coached_by: currentUser,
+      initiated_by: form.initiated_by,
       date: form.date,
       type: form.type,
       discussion: form.discussion.trim(),
@@ -2686,6 +2693,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
   })
 
   const COACHING_TYPES = ['Performance', 'Behavior', 'Development', 'Recognition', 'Corrective Action']
+  const INITIATED_BY = ['Team Lead', 'Agent', 'Manager', 'HR']
 
   return (
     <div className="space-y-4">
@@ -2732,7 +2740,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
       {showForm && canManage && (
         <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
           <h3 className="font-semibold text-blue-900 text-sm">New Coaching Session</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Employee *</label>
               <select value={form.employee_id} onChange={e => setForm({...form, employee_id: e.target.value})}
@@ -2751,6 +2759,13 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
               <select value={form.type} onChange={e => setForm({...form, type: e.target.value})}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                 {COACHING_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Initiated By</label>
+              <select value={form.initiated_by} onChange={e => setForm({...form, initiated_by: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                {INITIATED_BY.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
           </div>
@@ -2800,6 +2815,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
                   {canManage && <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Employee</th>}
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Initiated By</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Discussion</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Action Items</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Next Session</th>
@@ -2812,7 +2828,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
                   const isOverdue = nextDue && nextDue < new Date()
                   return (
                     <tr key={log.id} className="hover:bg-gray-50 transition">
-                      {canManage && <td className="px-4 py-3 font-medium text-gray-900">{log.employee_name}</td>}
+                      {canManage && <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{log.employee_name}</td>}
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(log.date).toLocaleDateString('en-PH', {year:'numeric',month:'short',day:'numeric'})}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -2822,12 +2838,15 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
                           log.type === 'Recognition' ? 'bg-purple-100 text-purple-700' :
                           'bg-red-100 text-red-700'}`}>{log.type}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-700 max-w-xs">
-                        <div className="line-clamp-2">{log.discussion}</div>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                          log.initiated_by === 'Agent' ? 'bg-orange-100 text-orange-700' :
+                          log.initiated_by === 'Manager' ? 'bg-indigo-100 text-indigo-700' :
+                          log.initiated_by === 'HR' ? 'bg-pink-100 text-pink-700' :
+                          'bg-gray-100 text-gray-700'}`}>{log.initiated_by || 'Team Lead'}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 max-w-xs">
-                        <div className="line-clamp-2">{log.action_items || '—'}</div>
-                      </td>
+                      <td className="px-4 py-3 text-gray-700 max-w-xs"><div className="line-clamp-2">{log.discussion}</div></td>
+                      <td className="px-4 py-3 text-gray-600 max-w-xs"><div className="line-clamp-2">{log.action_items || '—'}</div></td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {nextDue ? (
                           <span className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
@@ -2855,234 +2874,159 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
   )
 }
 
-// -- 1-on-1 Tracker ----------------------------------------------------------
-function OneOnOneTracker({ employees, currentUser, userRole, canManage, showToast }:
-  { employees: Employee[], currentUser: string | null, userRole: string, canManage: boolean, showToast: (m: string, t?: 'success'|'error') => void }) {
+// -- TL Compliance Report ----------------------------------------------------
+function TLComplianceReport({ employees, currentUser, userRole }:
+  { employees: Employee[], currentUser: string | null, userRole: string }) {
 
   const [logs, setLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [filterEmp, setFilterEmp] = useState('')
-  const [deleting, setDeleting] = useState<string|null>(null)
+  const [viewMode, setViewMode] = useState<'monthly'|'weekly'>('monthly')
+  const [selMonth, setSelMonth] = useState(new Date().toISOString().slice(0,7))
 
-  const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], agenda: '', notes: '', mood: '3', follow_ups: '' }
-  const [form, setForm] = useState({ ...emptyForm })
-
-  async function loadLogs() {
-    setLoading(true)
-    let query = supabase.from('one_on_one_logs').select('*').order('date', { ascending: false })
-    if (userRole === 'viewer' && currentUser) {
-      query = query.eq('employee_email', currentUser.toLowerCase())
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const { data } = await supabase.from('coaching_logs').select('*').order('date', { ascending: false })
+      setLogs(data || [])
+      setLoading(false)
     }
-    const { data } = await query
-    setLogs(data || [])
-    setLoading(false)
+    load()
+  }, [])
+
+  // Group by coached_by for selected month
+  const monthLogs = logs.filter(l => l.date.startsWith(selMonth))
+
+  // Get unique TLs (coached_by values)
+  const tlMap: Record<string, { name: string, sessions: any[] }> = {}
+  monthLogs.forEach(l => {
+    const tl = l.coached_by || 'Unknown'
+    if (!tlMap[tl]) tlMap[tl] = { name: tl, sessions: [] }
+    tlMap[tl].sessions.push(l)
+  })
+
+  // Weekly breakdown for selected month
+  const getWeek = (dateStr: string) => {
+    const d = new Date(dateStr)
+    const day = d.getDate()
+    if (day <= 7) return 'Week 1'
+    if (day <= 14) return 'Week 2'
+    if (day <= 21) return 'Week 3'
+    return 'Week 4'
   }
 
-  useEffect(() => { loadLogs() }, [])
+  const weeklyByTL: Record<string, Record<string, number>> = {}
+  monthLogs.forEach(l => {
+    const tl = l.coached_by || 'Unknown'
+    const week = getWeek(l.date)
+    if (!weeklyByTL[tl]) weeklyByTL[tl] = { 'Week 1': 0, 'Week 2': 0, 'Week 3': 0, 'Week 4': 0 }
+    weeklyByTL[tl][week]++
+  })
 
-  async function handleSave() {
-    if (!form.employee_id || !form.date) {
-      showToast('Please select an employee and date.', 'error'); return
-    }
-    setSaving(true)
-    const emp = employees.find(e => e.id === form.employee_id)
-    const { error } = await supabase.from('one_on_one_logs').insert({
-      employee_id: form.employee_id,
-      employee_name: emp?.name || '',
-      employee_email: emp?.email || '',
-      conducted_by: currentUser,
-      date: form.date,
-      agenda: form.agenda.trim(),
-      notes: form.notes.trim(),
-      mood: parseInt(form.mood),
-      follow_ups: form.follow_ups.trim(),
-    })
-    setSaving(false)
-    if (error) { showToast('Failed to save: ' + error.message, 'error'); return }
-    showToast('1-on-1 session saved!')
-    setForm({ ...emptyForm })
-    setShowForm(false)
-    loadLogs()
-  }
-
-  async function handleDelete(id: string) {
-    setDeleting(id)
-    await supabase.from('one_on_one_logs').delete().eq('id', id)
-    showToast('Entry deleted.')
-    setDeleting(null)
-    loadLogs()
-  }
-
-  // Coverage: employees with a 1-on-1 this month
-  const thisMonth = new Date().toISOString().slice(0,7)
-  const coveredThisMonth = new Set(logs.filter(l => l.date.startsWith(thisMonth)).map(l => l.employee_id))
-  const activeEmps = employees.filter(e => e.active)
-
-  // Overdue: employees whose last 1-on-1 was > 30 days ago (or never)
-  const lastSessionByEmp: Record<string, string> = {}
-  logs.forEach(l => { if (!lastSessionByEmp[l.employee_id] || l.date > lastSessionByEmp[l.employee_id]) lastSessionByEmp[l.employee_id] = l.date })
-  const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-  const overdueEmps = canManage ? activeEmps.filter(e => !lastSessionByEmp[e.id] || new Date(lastSessionByEmp[e.id]) < thirtyDaysAgo) : []
-
-  const filtered = logs.filter(l => !filterEmp || l.employee_id === filterEmp)
-
-  const MOOD_LABELS: Record<number, {label:string,color:string}> = {
-    1: { label: '😟 Low', color: 'bg-red-100 text-red-700' },
-    2: { label: '😕 Below Avg', color: 'bg-orange-100 text-orange-700' },
-    3: { label: '😐 Neutral', color: 'bg-yellow-100 text-yellow-700' },
-    4: { label: '🙂 Good', color: 'bg-green-100 text-green-700' },
-    5: { label: '😁 Great', color: 'bg-emerald-100 text-emerald-700' },
-  }
+  const tlList = Object.entries(tlMap).sort((a,b) => b[1].sessions.length - a[1].sessions.length)
+  const WEEKS = ['Week 1', 'Week 2', 'Week 3', 'Week 4']
+  // Target: min 2 sessions per employee per month
+  const activeCount = employees.filter(e => e.active).length
+  const TARGET_MONTHLY = activeCount * 2
 
   return (
-    <div className="space-y-4">
-      {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: 'Total 1-on-1s', value: logs.length },
-          { label: 'This Month', value: logs.filter(l => l.date.startsWith(thisMonth)).length },
-          { label: 'Coverage This Month', value: canManage ? `${coveredThisMonth.size}/${activeEmps.length}` : '—' },
-          { label: 'Overdue (>30d)', value: canManage ? overdueEmps.length : '—', warn: canManage && overdueEmps.length > 0 },
-        ].map(s => (
-          <div key={s.label} className={`bg-white rounded-xl border p-4 text-center ${(s as any).warn ? 'border-red-300' : 'border-gray-200'}`}>
-            <div className={`text-2xl font-bold ${(s as any).warn ? 'text-red-600' : 'text-blue-900'}`}>{s.value}</div>
-            <div className="text-xs text-gray-500 mt-1">{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Overdue alert */}
-      {canManage && overdueEmps.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <p className="text-sm font-semibold text-red-700 mb-1">⚠️ Overdue 1-on-1s ({overdueEmps.length} employees)</p>
-          <p className="text-xs text-red-600">{overdueEmps.map(e => e.name).join(', ')}</p>
-        </div>
-      )}
-
+    <div className="space-y-5">
       {/* Controls */}
       <div className="flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex gap-2 flex-wrap">
-          {canManage && (
-            <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
-              <option value="">All Employees</option>
-              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-          )}
-          {filterEmp && (
-            <button onClick={() => setFilterEmp('')} className="text-sm text-blue-600 hover:underline">Clear</button>
-          )}
+        <div className="flex gap-2 items-center">
+          <input type="month" value={selMonth} onChange={e => setSelMonth(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+            {(['monthly','weekly'] as const).map(m => (
+              <button key={m} onClick={() => setViewMode(m)}
+                className={`px-4 py-2 font-medium transition ${viewMode === m ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                {m.charAt(0).toUpperCase() + m.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-        {canManage && (
-          <button onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
-            <PlusCircle className="w-4 h-4" /> Log 1-on-1
-          </button>
-        )}
+        <div className="text-sm text-gray-500">
+          Target: <span className="font-semibold text-blue-900">2 sessions/employee/month</span>
+          {activeCount > 0 && <span className="ml-2 text-gray-400">({TARGET_MONTHLY} total for {activeCount} active employees)</span>}
+        </div>
       </div>
 
-      {/* Add form */}
-      {showForm && canManage && (
-        <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
-          <h3 className="font-semibold text-blue-900 text-sm">New 1-on-1 Session</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Employee *</label>
-              <select value={form.employee_id} onChange={e => setForm({...form, employee_id: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                <option value="">Select employee…</option>
-                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Date *</label>
-              <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Employee Mood (1–5)</label>
-              <select value={form.mood} onChange={e => setForm({...form, mood: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                {[1,2,3,4,5].map(n => <option key={n} value={n}>{MOOD_LABELS[n].label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Agenda / Topics</label>
-            <textarea value={form.agenda} onChange={e => setForm({...form, agenda: e.target.value})} rows={2}
-              placeholder="What topics were covered…"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notes / Key Takeaways</label>
-            <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={3}
-              placeholder="Key points from the conversation…"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Follow-up Items</label>
-            <textarea value={form.follow_ups} onChange={e => setForm({...form, follow_ups: e.target.value})} rows={2}
-              placeholder="Action items, commitments, or things to revisit…"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          </div>
-          <div className="flex gap-3 pt-1">
-            <button onClick={handleSave} disabled={saving}
-              className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
-              <Save className="w-4 h-4" />{saving ? 'Saving…' : 'Save Session'}
-            </button>
-            <button onClick={() => { setShowForm(false); setForm({...emptyForm}) }}
-              className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* Log table */}
       {loading ? (
         <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" /></div>
-      ) : filtered.length === 0 ? (
+      ) : tlList.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
-          <div className="text-4xl mb-3">🤝</div>
-          <p className="font-medium">No 1-on-1 sessions found</p>
-          <p className="text-sm mt-1">{canManage ? 'Log your first session above.' : 'No sessions have been recorded for you yet.'}</p>
+          <div className="text-4xl mb-3">📊</div>
+          <p className="font-medium">No coaching sessions logged for {selMonth}</p>
+        </div>
+      ) : viewMode === 'monthly' ? (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <p className="text-sm font-semibold text-gray-700">Monthly Summary — {new Date(selMonth+'-01').toLocaleDateString('en-PH',{month:'long',year:'numeric'})}</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="border-b border-gray-100">
+              <tr>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Team Lead</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Sessions</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Unique Employees Coached</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {tlList.map(([tl, data]) => {
+                const uniqueEmps = new Set(data.sessions.map(s => s.employee_id)).size
+                const onTrack = data.sessions.length >= 2
+                return (
+                  <tr key={tl} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 font-medium text-gray-900">{tl.split('@')[0]}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-lg font-bold text-blue-900">{data.sessions.length}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{uniqueEmps} employee{uniqueEmps !== 1 ? 's' : ''}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${onTrack ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {onTrack ? '✓ Compliant' : '⚠ Below Target'}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <p className="text-sm font-semibold text-gray-700">Weekly Breakdown — {new Date(selMonth+'-01').toLocaleDateString('en-PH',{month:'long',year:'numeric'})}</p>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="border-b border-gray-100">
                 <tr>
-                  {canManage && <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Employee</th>}
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Mood</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Agenda</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Follow-ups</th>
-                  {canManage && <th className="px-4 py-3 w-10"></th>}
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Team Lead</th>
+                  {WEEKS.map(w => <th key={w} className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{w}</th>)}
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map(log => {
-                  const mood = MOOD_LABELS[log.mood as number] || MOOD_LABELS[3]
+                {Object.entries(weeklyByTL).sort((a,b) => {
+                  const aTotal = Object.values(a[1]).reduce((s,v) => s+v, 0)
+                  const bTotal = Object.values(b[1]).reduce((s,v) => s+v, 0)
+                  return bTotal - aTotal
+                }).map(([tl, weeks]) => {
+                  const total = Object.values(weeks).reduce((s,v) => s+v, 0)
                   return (
-                    <tr key={log.id} className="hover:bg-gray-50 transition">
-                      {canManage && <td className="px-4 py-3 font-medium text-gray-900">{log.employee_name}</td>}
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(log.date).toLocaleDateString('en-PH', {year:'numeric',month:'short',day:'numeric'})}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${mood.color}`}>{mood.label}</span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700 max-w-xs"><div className="line-clamp-2">{log.agenda || '—'}</div></td>
-                      <td className="px-4 py-3 text-gray-700 max-w-xs"><div className="line-clamp-2">{log.notes || '—'}</div></td>
-                      <td className="px-4 py-3 text-gray-600 max-w-xs"><div className="line-clamp-2">{log.follow_ups || '—'}</div></td>
-                      {canManage && (
-                        <td className="px-4 py-3">
-                          <button onClick={() => handleDelete(log.id)} disabled={deleting === log.id}
-                            className="text-gray-400 hover:text-red-500 transition p-1 rounded">
-                            {deleting === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400"/> : <Trash2 className="w-3.5 h-3.5"/>}
-                          </button>
+                    <tr key={tl} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 font-medium text-gray-900">{tl.split('@')[0]}</td>
+                      {WEEKS.map(w => (
+                        <td key={w} className="px-4 py-3 text-center">
+                          {weeks[w] > 0 ? (
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-800 text-xs font-bold">{weeks[w]}</span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
                         </td>
-                      )}
+                      ))}
+                      <td className="px-4 py-3 text-center font-bold text-blue-900">{total}</td>
                     </tr>
                   )
                 })}
