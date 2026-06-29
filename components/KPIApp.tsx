@@ -1,4 +1,4 @@
-'use client' // v1782647059
+'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
