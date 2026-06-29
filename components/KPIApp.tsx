@@ -919,13 +919,10 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* OPERATIONS */}
-      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','entry','observations','cadence'].includes(view)} />
+      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets'].includes(view)} />
       {!collapsed.ops && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
 
@@ -948,10 +945,13 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* TEAM LEAD TOOLS */}
-      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools'].includes(view as string)} />
+      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence'].includes(view as string)} />
       {!collapsed.tltools && (
         <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
           <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount}/>
+          <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
 
@@ -1183,6 +1183,7 @@ export default function KPIApp() {
             <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} />
           ) : (
           <div className="max-w-6xl mx-auto px-4 pt-4 pb-6 relative z-10">
+          <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'dashboard-team' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
           {/* Preview mode banner */}
           {(userRole === 'super_admin' || userRole === 'admin') && (
             <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'viewer' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
@@ -1221,7 +1222,8 @@ export default function KPIApp() {
           </>
         )}
           </div>
-          )}
+          </div>
+        )}
         </div>
         </main>
       </div>
