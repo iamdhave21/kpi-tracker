@@ -864,7 +864,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
 
 
 // -- Collapsible Sidebar -----------------------------------------------------
-function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void }) {
+function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0 }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, dir: false, sys: false
   })
@@ -890,11 +890,11 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string
     </button>
   )
 
-  const NavItem = ({ id, label, icon }: { id: string, label: string, icon: React.ReactNode }) => (
+  const NavItem = ({ id, label, icon, badge }: { id: string, label: string, icon: React.ReactNode, badge?: number }) => (
     <button onClick={() => { setView(id); setMobileMenuOpen(false) }} className={itemStyle(id)}>
       {icon}
       <span className="truncate">{label}</span>
-      {view === id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/>}
+      {badge && badge > 0 ? <span className="ml-auto bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center">{badge}</span> : view === id ? <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/> : null}
     </button>
   )
 
@@ -944,7 +944,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
           <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount}/>
           <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
@@ -973,6 +973,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string
 export default function KPIApp() {
   const [user, setUser] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('viewer')
+  const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
   const [previewAs, setPreviewAs] = useState<'self'|'viewer'>('self')
   const effectiveRole = previewAs === 'viewer' ? 'viewer' : userRole
   const [view, setView] = useState<View>('announcements')
@@ -1033,6 +1034,30 @@ export default function KPIApp() {
 
   useEffect(() => { if (user) loadData() }, [user])
 
+  // Load pending coaching acknowledgments count for viewers
+  useEffect(() => {
+    if (!user || (userRole !== 'viewer' && userRole !== 'team_lead' && userRole !== 'admin' && userRole !== 'super_admin')) return
+    async function loadPending() {
+      if (userRole === 'viewer') {
+        // Agents: count sessions assigned to them requiring acknowledgment
+        const { data } = await supabase.from('coaching_logs')
+          .select('id')
+          .eq('employee_email', user!.toLowerCase())
+          .eq('requires_acknowledgment', true)
+          .eq('agent_acknowledged', false)
+        setPendingCoachingCount((data || []).length)
+      } else {
+        // TLs/Admins: count sessions pending across all agents
+        const { data } = await supabase.from('coaching_logs')
+          .select('id')
+          .eq('requires_acknowledgment', true)
+          .eq('agent_acknowledged', false)
+        setPendingCoachingCount((data || []).length)
+      }
+    }
+    loadPending()
+  }, [user, userRole])
+
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
     setToast({ msg, type }); setTimeout(() => setToast(null), 3500)
   }
@@ -1092,7 +1117,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} />
 
           {/* User info at bottom of sidebar */}
           <div className="border-t border-gray-200 p-3 flex items-center gap-3 bg-white">
@@ -1144,7 +1169,7 @@ export default function KPIApp() {
             {view === 'settings' && <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
             {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
-            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} />}
+            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='viewer'?'employee_email':'agent_acknowledged', userRole==='viewer'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
             {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
             {view === 'cadence' && <OperatingCadence />}
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
@@ -2716,9 +2741,65 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
   )
 }
 
+// -- Viewer Coaching Banner --------------------------------------------------
+function ViewerCoachingBanner({ currentUser }: { currentUser: string | null }) {
+  const [pending, setPending] = useState<any[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!currentUser) return
+    supabase.from('coaching_logs')
+      .select('id, date, type, discussion, coached_by')
+      .eq('employee_email', currentUser.toLowerCase())
+      .eq('requires_acknowledgment', true)
+      .eq('agent_acknowledged', false)
+      .order('date', { ascending: false })
+      .then(({ data }) => { setPending(data || []); setLoaded(true) })
+  }, [currentUser])
+
+  if (!loaded) return null
+
+  if (pending.length === 0) {
+    return (
+      <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+        <CheckCircle className="w-4 h-4 flex-shrink-0" />
+        You are all caught up! No pending coaching acknowledgments.
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">✍️</span>
+        <div>
+          <p className="font-bold text-amber-800 text-base">
+            {pending.length} coaching session{pending.length > 1 ? 's' : ''} require{pending.length === 1 ? 's' : ''} your acknowledgment
+          </p>
+          <p className="text-xs text-amber-600 mt-0.5">Your Team Lead has logged a coaching session. Please review and sign off below.</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {pending.map(p => (
+          <div key={p.id} className="bg-white border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+            <div>
+              <span className="text-xs font-semibold text-amber-700">{p.type}</span>
+              <span className="text-gray-400 mx-1">·</span>
+              <span className="text-xs text-gray-600">{new Date(p.date).toLocaleDateString('en-PH', {month:'long',day:'numeric',year:'numeric'})}</span>
+              {p.coached_by && <span className="text-xs text-gray-400 ml-2">by {p.coached_by.split('@')[0]}</span>}
+            </div>
+            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">⏳ Pending</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-amber-600">👇 Scroll to the Coaching Log table below to sign & acknowledge each session.</p>
+    </div>
+  )
+}
+
 // -- TL Tools: Coaching Log + Compliance ------------------------------------
-function TLToolsPanel({ employees, currentUser, userRole, showToast }:
-  { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange }:
+  { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, onAckChange?: () => void }) {
 
   const [activeTab, setActiveTab] = useState<'coaching'|'compliance'>('coaching')
   const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
@@ -2732,10 +2813,7 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast }:
       </div>
 
       {isViewer && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          Showing your personal coaching records. Contact your Team Lead to make changes.
-        </div>
+        <ViewerCoachingBanner currentUser={currentUser} />
       )}
 
       {/* Tab switcher */}
@@ -2749,7 +2827,7 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast }:
       </div>
 
       {activeTab === 'coaching' && (
-        <CoachingLog employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} />
+        <CoachingLog employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} onAckChange={onAckChange} />
       )}
       {activeTab === 'compliance' && canManage && (
         <TLComplianceReport employees={employees} currentUser={currentUser} userRole={userRole} />
@@ -2766,8 +2844,8 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast }:
 }
 
 // -- Coaching Log ------------------------------------------------------------
-function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
-  { employees: Employee[], currentUser: string | null, userRole: string, canManage: boolean, showToast: (m: string, t?: 'success'|'error') => void }) {
+function CoachingLog({ employees, currentUser, userRole, canManage, showToast, onAckChange }:
+  { employees: Employee[], currentUser: string | null, userRole: string, canManage: boolean, showToast: (m: string, t?: 'success'|'error') => void, onAckChange?: () => void }) {
 
   const [logs, setLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -2802,7 +2880,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
       agent_acknowledged_by: currentUser,
     }).eq('id', logId)
     if (error) showToast('Failed to acknowledge: ' + error.message, 'error')
-    else showToast('Coaching session acknowledged! ✓')
+    else { showToast('Coaching session acknowledged! ✓'); onAckChange?.() }
     setAckLoading(null)
     loadLogs()
   }
