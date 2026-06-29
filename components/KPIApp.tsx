@@ -261,7 +261,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const currentMonthKey = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
   return (
-    <div className="relative rounded-2xl overflow-hidden" style={{height:"calc(100vh - 112px)"}}>
+    <div className="relative rounded-2xl overflow-hidden" style={{height:"100%"}}>
       {/* Full-bleed background */}
       {bgUrl !== undefined && bgUrl && (
         <div className="absolute inset-0 z-0">
@@ -656,14 +656,14 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { cu
   const userName = currentUser?.split('@')[0] || currentUser
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {userName}! 👋</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-      </div>
-
+    <div className="h-full flex flex-col">
       {activeTab === 'gaming-hub' ? (
+        <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {userName}! 👋</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white border border-gray-200 rounded-xl p-6">
             <GameOfMonth userEmail={currentUser} userName={userName} onScoreSaved={() => setLeaderboardKey(k => k + 1)} />
@@ -672,8 +672,12 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { cu
             <GameLeaderboard refreshKey={leaderboardKey} userRole={userRole} showToast={showToast} />
           </div>
         </div>
+        </div>
+        </div>
       ) : (
-        <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
+        <div className="flex-1 overflow-hidden">
+          <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
+        </div>
       )}
     </div>
   )
@@ -1105,7 +1109,12 @@ export default function KPIApp() {
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
-        <div className="max-w-6xl mx-auto px-6 pt-6 pb-0 animate-fadeIn">
+        <div className="h-full animate-fadeIn">
+          {/* Announcements & Gaming Hub — full bleed, no padding wrapper */}
+          {(view === 'announcements' || view === 'gaming-hub') ? (
+            <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} />
+          ) : (
+          <div className="max-w-6xl mx-auto px-6 pt-6 pb-6">
           {/* Preview mode banner */}
           {(userRole === 'super_admin' || userRole === 'admin') && (
             <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'viewer' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
@@ -1128,7 +1137,6 @@ export default function KPIApp() {
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
             {view === 'entry' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
-            {(view === 'announcements' || view === 'gaming-hub') && <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} />}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
             {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
@@ -1142,6 +1150,8 @@ export default function KPIApp() {
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
           </>
         )}
+          </div>
+          )}
         </div>
         </main>
       </div>
