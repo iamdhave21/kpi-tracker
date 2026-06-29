@@ -974,6 +974,12 @@ export default function KPIApp() {
   const [user, setUser] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('viewer')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
+  const [bgUrl, setBgUrl] = useState<string|null>(null)
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
+      .then(({data}) => { if (data?.value) setBgUrl(data.value) })
+  }, [])
   const [previewAs, setPreviewAs] = useState<'self'|'viewer'>('self')
   const effectiveRole = previewAs === 'viewer' ? 'viewer' : userRole
   const [view, setView] = useState<View>('announcements')
@@ -1133,8 +1139,15 @@ export default function KPIApp() {
         {mobileMenuOpen && <div className="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setMobileMenuOpen(false)} />}
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto">
-        <div className="h-full animate-fadeIn">
+        <main className="flex-1 overflow-y-auto relative">
+          {/* Global background for non-performance views */}
+          {!(['dashboard-month','dashboard-employee','dashboard-team','org-chart'] as string[]).includes(view) && bgUrl && (
+            <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
+              <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(1px) brightness(0.55)'}} />
+              <div className="absolute inset-0 bg-blue-950/30" />
+            </div>
+          )}
+        <div className="h-full animate-fadeIn relative z-10">
           {/* Announcements & Gaming Hub — full bleed, no padding wrapper */}
           {(view === 'announcements' || view === 'gaming-hub') ? (
             <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} />
@@ -1730,14 +1743,12 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   const [newDesig, setNewDesig] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [newEmpId, setNewEmpId] = useState('')
-  const [newPersonalEmail, setNewPersonalEmail] = useState('')
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
   const [editName, setEditName] = useState('')
   const [editDesig, setEditDesig] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editEmpId, setEditEmpId] = useState('')
-  const [editPersonalEmail, setEditPersonalEmail] = useState('')
   const [searchQ, setSearchQ] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
@@ -1748,17 +1759,16 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
       name:newName.trim(), designation:newDesig.trim(),
       email:newEmail.trim()||null,
       employee_id: newEmpId.trim()||null,
-      personal_email: newPersonalEmail.trim()||null,
       active:true
     })
     if (error) showToast(error.message,'error')
-    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); setNewEmail(''); setNewEmpId(''); setNewPersonalEmail(''); onChanged() }
+    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); setNewEmail(''); setNewEmpId(''); onChanged() }
     setAdding(false)
   }
 
   async function saveEdit(id: string) {
     const emp = employees.find(e=>e.id===id)
-    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null,employee_id:editEmpId||null,personal_email:editPersonalEmail||null}).eq('id',id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null,employee_id:editEmpId||null}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
     // If email provided, upsert app_users so they can log in
     if (editEmail && editEmail.trim()) {
@@ -1839,10 +1849,9 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
           <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name (Last, First)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <input value={newDesig} onChange={e=>setNewDesig(e.target.value)} placeholder="Designation / Project" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-          <input type="email" value={newPersonalEmail} onChange={e=>setNewPersonalEmail(e.target.value)} placeholder="Personal email (for notifications)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">Work email links to app login. Personal email receives coaching notifications. Same person with multiple projects = add again with different designation.</p>
+        <p className="text-xs text-gray-400 mt-2">Work email links to app login. Same person with multiple projects = add again with different designation.</p>
       </div>
 
       <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name or designation..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/></div>
@@ -1879,7 +1888,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                 {!isMulti && (
                   <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
                     <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                    <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditPersonalEmail(emps[0].personal_email||'')}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'')}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                     <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                   </div>
                 )}
@@ -1908,10 +1917,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                       <label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
                       <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Personal Email (notifications)</label>
-                      <input type="email" value={editPersonalEmail} onChange={e=>setEditPersonalEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="personal@gmail.com"/>
-                    </div>
+
                   </div>
                   <div className="flex gap-2">
                     <button onClick={()=>saveEdit(emps[0].id)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><Save className="w-3.5 h-3.5"/>Save Changes</button>
@@ -1932,7 +1938,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                       {emp.employee_id && <span className="text-xs font-mono bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{emp.employee_id}</span>}
                     </div>
                     <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                    <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditPersonalEmail(emp.personal_email||'')}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'')}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                     <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                   </>
                   {editId === emp.id && (
@@ -1946,8 +1952,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                           <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Designation"/></div>
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
                           <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/></div>
-                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Personal Email</label>
-                          <input type="email" value={editPersonalEmail} onChange={e=>setEditPersonalEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="personal@gmail.com"/></div>
+
                       </div>
                       <div className="flex gap-2">
                         <button onClick={()=>saveEdit(emp.id)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><Save className="w-3.5 h-3.5"/>Save Changes</button>

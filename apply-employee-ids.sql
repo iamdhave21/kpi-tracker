@@ -1,38 +1,62 @@
--- Auto-apply Employee IDs from ABBSS Employee Record export
--- Run in Supabase SQL Editor
+-- Full employee ID update from ABBSS Employee Record (June 29, 2026)
+-- Run this to apply all employee IDs
 
--- First ensure the column exists
-alter table employees add column if not exists employee_id text;
-alter table employees add column if not exists personal_email text;
+update employees set employee_id = 'ABBSS-100009' where name ilike '%Latimer%' and name ilike '%David%' and (employee_id is null or employee_id != 'ABBSS-100009');
+update employees set employee_id = 'ABBSS-100010' where name ilike '%Alimpolos%' and name ilike '%Thelma%' and (employee_id is null or employee_id != 'ABBSS-100010');
+update employees set employee_id = 'ABBSS-100011' where name ilike '%Camartin%' and name ilike '%Lady%' and (employee_id is null or employee_id != 'ABBSS-100011');
+update employees set employee_id = 'ABBSS-100012' where name ilike '%Dadulla%' and name ilike '%Deodave%' and (employee_id is null or employee_id != 'ABBSS-100012');
+update employees set employee_id = 'ABBSS-100013' where name ilike '%Latimer%' and name ilike '%Azelisa%' and (employee_id is null or employee_id != 'ABBSS-100013');
+update employees set employee_id = 'ABBSS-100014' where name ilike '%Latupan%' and name ilike '%Norbert%' and (employee_id is null or employee_id != 'ABBSS-100014');
+update employees set employee_id = 'ABBSS-100015' where name ilike '%Padua%' and name ilike '%Katrina%' and (employee_id is null or employee_id != 'ABBSS-100015');
+update employees set employee_id = 'ABBSS-100016' where name ilike '%Josue%' and name ilike '%Eloisa%' and (employee_id is null or employee_id != 'ABBSS-100016');
+update employees set employee_id = 'ABBSS-100017' where name ilike '%Miranda%' and name ilike '%Frances%' and (employee_id is null or employee_id != 'ABBSS-100017');
+update employees set employee_id = 'ABBSS-100018' where name ilike '%Aquino%' and name ilike '%Dianne%' and (employee_id is null or employee_id != 'ABBSS-100018');
+update employees set employee_id = 'ABBSS-100019' where name ilike '%De Guzman%' and name ilike '%Jennylou%' and (employee_id is null or employee_id != 'ABBSS-100019');
+update employees set employee_id = 'ABBSS-100020' where name ilike '%Origenes%' and name ilike '%Ethel%' and (employee_id is null or employee_id != 'ABBSS-100020');
+update employees set employee_id = 'ABBSS-100021' where name ilike '%Artiaga%' and name ilike '%Kim%' and (employee_id is null or employee_id != 'ABBSS-100021');
+update employees set employee_id = 'ABBSS-100022' where name ilike '%Mauleon%' and name ilike '%Mary%' and (employee_id is null or employee_id != 'ABBSS-100022');
+update employees set employee_id = 'ABBSS-100023' where name ilike '%Cornel%' and name ilike '%Precilla%' and (employee_id is null or employee_id != 'ABBSS-100023');
+update employees set employee_id = 'ABBSS-100024' where name ilike '%Dadulla%' and name ilike '%Monica%' and (employee_id is null or employee_id != 'ABBSS-100024');
+update employees set employee_id = 'ABBSS-100025' where name ilike '%De Leon%' and name ilike '%Janet%' and (employee_id is null or employee_id != 'ABBSS-100025');
+update employees set employee_id = 'ABBSS-100026' where name ilike '%Delos Santos%' and name ilike '%Mary%' and (employee_id is null or employee_id != 'ABBSS-100026');
+update employees set employee_id = 'ABBSS-100027' where name ilike '%Gamier%' and name ilike '%Ma%' and (employee_id is null or employee_id != 'ABBSS-100027');
+update employees set employee_id = 'ABBSS-100028' where name ilike '%Guillen%' and name ilike '%Marcus%' and (employee_id is null or employee_id != 'ABBSS-100028');
+update employees set employee_id = 'ABBSS-100029' where name ilike '%Tan%' and name ilike '%Kristina%' and (employee_id is null or employee_id != 'ABBSS-100029');
+update employees set employee_id = 'ABBSS-100030' where name ilike '%Dadulla%' and name ilike '%Deodave%' and (employee_id is null or employee_id != 'ABBSS-100030');
+update employees set employee_id = 'ABBSS-100031' where name ilike '%De Guzman%' and name ilike '%Jennylou%' and (employee_id is null or employee_id != 'ABBSS-100031');
+update employees set employee_id = 'ABBSS-100032' where name ilike '%Ramos%' and name ilike '%Ma.%' and (employee_id is null or employee_id != 'ABBSS-100032');
+update employees set employee_id = 'ABBSS-100033' where name ilike '%Cueto%' and name ilike '%Keithlyn%' and (employee_id is null or employee_id != 'ABBSS-100033');
+update employees set employee_id = 'ABBSS-100034' where name ilike '%Latupan%' and name ilike '%Niño%' and (employee_id is null or employee_id != 'ABBSS-100034');
+update employees set employee_id = 'ABBSS-100035' where name ilike '%Pestaño%' and name ilike '%Nove%' and (employee_id is null or employee_id != 'ABBSS-100035');
+update employees set employee_id = 'ABBSS-100036' where name ilike '%Muñez%' and name ilike '%Rose%' and (employee_id is null or employee_id != 'ABBSS-100036');
+update employees set employee_id = 'ABBSS-100037' where name ilike '%Latimer%' and name ilike '%Christina%' and (employee_id is null or employee_id != 'ABBSS-100037');
+update employees set employee_id = 'ABBSS-100038' where name ilike '%Siggaoat%' and name ilike '%Jodilyn%' and (employee_id is null or employee_id != 'ABBSS-100038');
+update employees set employee_id = 'ABBSS-100039' where name ilike '%Pestaño%' and name ilike '%Nove%' and (employee_id is null or employee_id != 'ABBSS-100039');
+update employees set employee_id = 'ABBSS-100040' where name ilike '%Oneza%' and name ilike '%Czareena%' and (employee_id is null or employee_id != 'ABBSS-100040');
+update employees set employee_id = 'ABBSS-100041' where name ilike '%Suing%' and name ilike '%Paula%' and (employee_id is null or employee_id != 'ABBSS-100041');
+update employees set employee_id = 'ABBSS-100042' where name ilike '%Salve%' and name ilike '%Nica%' and (employee_id is null or employee_id != 'ABBSS-100042');
+update employees set employee_id = 'ABBSS-100043' where name ilike '%Austria%' and name ilike '%Beverly%' and (employee_id is null or employee_id != 'ABBSS-100043');
+update employees set employee_id = 'ABBSS-100044' where name ilike '%Balingit%' and name ilike '%Jenefer%' and (employee_id is null or employee_id != 'ABBSS-100044');
+update employees set employee_id = 'ABBSS-100045' where name ilike '%Bancud%' and name ilike '%Jose%' and (employee_id is null or employee_id != 'ABBSS-100045');
+update employees set employee_id = 'ABBSS-100046' where name ilike '%Flaviano%' and name ilike '%Jinky%' and (employee_id is null or employee_id != 'ABBSS-100046');
+update employees set employee_id = 'ABBSS-100047' where name ilike '%Molina%' and name ilike '%Glo%' and (employee_id is null or employee_id != 'ABBSS-100047');
+update employees set employee_id = 'ABBSS-100048' where name ilike '%Dandoy%' and name ilike '%Christienne%' and (employee_id is null or employee_id != 'ABBSS-100048');
+update employees set employee_id = 'ABBSS-100049' where name ilike '%Miking%' and name ilike '%Gennefer%' and (employee_id is null or employee_id != 'ABBSS-100049');
+update employees set employee_id = 'ABBSS-100050' where name ilike '%Graciano%' and name ilike '%Felma%' and (employee_id is null or employee_id != 'ABBSS-100050');
+update employees set employee_id = 'ABBSS-100051' where name ilike '%Longos%' and name ilike '%Meshiel%' and (employee_id is null or employee_id != 'ABBSS-100051');
+update employees set employee_id = 'ABBSS-100052' where name ilike '%Delos Santos%' and name ilike '%Rowelle%' and (employee_id is null or employee_id != 'ABBSS-100052');
+update employees set employee_id = 'ABBSS-100053' where name ilike '%Canoy%' and name ilike '%Madelyn%' and (employee_id is null or employee_id != 'ABBSS-100053');
+update employees set employee_id = 'ABBSS-100054' where name ilike '%Remulla%' and name ilike '%Jefferson%' and (employee_id is null or employee_id != 'ABBSS-100054');
+update employees set employee_id = 'ABBSS-100056' where name ilike '%Landicho%' and name ilike '%Franchezka%' and (employee_id is null or employee_id != 'ABBSS-100056');
+update employees set employee_id = 'ABBSS-100057' where name ilike '%Casimiro%' and name ilike '%Angelica%' and (employee_id is null or employee_id != 'ABBSS-100057');
+update employees set employee_id = 'ABBSS-100058' where name ilike '%Malajacan%' and name ilike '%Jay%' and (employee_id is null or employee_id != 'ABBSS-100058');
+update employees set employee_id = 'ABBSS-100059' where name ilike '%Dela Cruz%' and name ilike '%Mary%' and (employee_id is null or employee_id != 'ABBSS-100059');
+update employees set employee_id = 'ABBSS-100060' where name ilike '%Santos%' and name ilike '%Yanzi%' and (employee_id is null or employee_id != 'ABBSS-100060');
+update employees set employee_id = 'ABBSS-100061' where name ilike '%Villa%' and name ilike '%Catherine%' and (employee_id is null or employee_id != 'ABBSS-100061');
+update employees set employee_id = 'ABBSS-100062' where name ilike '%Lamarca%' and name ilike '%Shyribel%' and (employee_id is null or employee_id != 'ABBSS-100062');
+update employees set employee_id = 'ABBSS-100063' where name ilike '%Pungasi%' and name ilike '%Wennielyn%' and (employee_id is null or employee_id != 'ABBSS-100063');
+update employees set employee_id = 'ABBSS-100064' where name ilike '%Cleofe%' and name ilike '%Nelaine%' and (employee_id is null or employee_id != 'ABBSS-100064');
+update employees set employee_id = 'ABBSS-100065' where name ilike '%Yniesta%' and name ilike '%Zeljeko%' and (employee_id is null or employee_id != 'ABBSS-100065');
 
--- Apply IDs by matching last name (case-insensitive)
--- Active/contractual employees first
-update employees set employee_id = 'ABBSS-100044' where name ilike '%Balingit%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100045' where name ilike '%Bancud%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100053' where name ilike '%Canoy%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100057' where name ilike '%Casimiro%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100064' where name ilike '%Cleofe%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100023' where name ilike '%Cornel%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100048' where name ilike '%Dandoy%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100046' where name ilike '%Flaviano%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100027' where name ilike '%Gamier%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100050' where name ilike '%Graciano%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100059' where name ilike '%Dela Cruz%' and employee_id is null;
-
--- Resigned employees (still useful to have on record)
-update employees set employee_id = 'ABBSS-100010' where name ilike '%Alimpolos%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100018' where name ilike '%Aquino%' and name ilike '%Dianne%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100021' where name ilike '%Artiaga%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100043' where name ilike '%Austria%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100011' where name ilike '%Camartin%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100033' where name ilike '%Cueto%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100025' where name ilike '%De Leon%' and name ilike '%Janet%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100026' where name ilike '%Delos Santos%' and name ilike '%Mary Joy%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100052' where name ilike '%Delos Santos%' and name ilike '%Rowelle%' and employee_id is null;
-
--- Dadulla (multiple people with same last name - match by first name)
-update employees set employee_id = 'ABBSS-100024' where name ilike '%Dadulla%' and name ilike '%Monica%' and employee_id is null;
-update employees set employee_id = 'ABBSS-100031' where name ilike '%De Guzman%' and employee_id is null;
-
--- Verify what was updated
-select name, employee_id from employees where employee_id is not null order by name;
+-- Verify all updated
+select name, employee_id from employees order by name;

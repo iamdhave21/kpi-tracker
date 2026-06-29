@@ -11,7 +11,6 @@ export type Employee = {
   designation: string
   email: string | null
   employee_id: string | null
-  personal_email: string | null
   active: boolean
   created_at: string
 }
