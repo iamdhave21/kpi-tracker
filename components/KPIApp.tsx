@@ -221,14 +221,12 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const unread = announcements.filter(a => !acks[a.id])
   const [bgUrl, setBgUrl] = useState<string|null|undefined>(undefined)
   const [editingBg, setEditingBg] = useState(false)
-  const [bgInput, setBgInput] = useState('')
   const canChangeBg = ['super_admin','admin','team_lead'].includes(userRole)
 
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
       .then(({ data }) => {
         setBgUrl(data?.value || null)
-        if (data?.value) setBgInput(data.value)
       })
   }, [])
 
@@ -245,7 +243,6 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
     const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
     await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: urlData.publicUrl }, { onConflict: 'key' })
     setBgUrl(urlData.publicUrl)
-    setBgInput(urlData.publicUrl)
     setEditingBg(false)
     setBgUploading(false)
     showToast('Background updated!', 'success')
