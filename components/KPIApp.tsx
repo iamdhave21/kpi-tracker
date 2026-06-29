@@ -252,8 +252,8 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   return (
     <div className="space-y-3">
       {bgUrl !== undefined && bgUrl && (
-        <div className="relative h-36 rounded-2xl overflow-hidden">
-          <img src={bgUrl} alt="bg" className="absolute inset-0 w-full h-full object-cover" style={{filter:'blur(3px) brightness(0.5)',transform:'scale(1.05)'}} />
+        <div className="relative h-36 rounded-2xl overflow-hidden bg-blue-900">
+          <img src={bgUrl} alt="bg" className="absolute inset-0 w-full h-full object-cover" style={{filter:'blur(2px) brightness(0.6)'}} onError={(e) => { console.error('BG image failed to load:', bgUrl); (e.target as HTMLImageElement).style.display='none' }} onLoad={() => console.log('BG loaded OK')} />
           <div className="absolute inset-0 flex items-center justify-center">
             <p className="text-white font-bold text-2xl drop-shadow-lg">Announcements</p>
           </div>
