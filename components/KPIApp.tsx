@@ -1704,26 +1704,36 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   const [newName, setNewName] = useState('')
   const [newDesig, setNewDesig] = useState('')
   const [newEmail, setNewEmail] = useState('')
+  const [newEmpId, setNewEmpId] = useState('')
+  const [newPersonalEmail, setNewPersonalEmail] = useState('')
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
   const [editName, setEditName] = useState('')
   const [editDesig, setEditDesig] = useState('')
   const [editEmail, setEditEmail] = useState('')
+  const [editEmpId, setEditEmpId] = useState('')
+  const [editPersonalEmail, setEditPersonalEmail] = useState('')
   const [searchQ, setSearchQ] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
 
   async function addEmployee() {
     if (!newName.trim()) return; setAdding(true)
-    const {error} = await supabase.from('employees').insert({name:newName.trim(),designation:newDesig.trim(),email:newEmail.trim()||null,active:true})
+    const {error} = await supabase.from('employees').insert({
+      name:newName.trim(), designation:newDesig.trim(),
+      email:newEmail.trim()||null,
+      employee_id: newEmpId.trim()||null,
+      personal_email: newPersonalEmail.trim()||null,
+      active:true
+    })
     if (error) showToast(error.message,'error')
-    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); setNewEmail(''); onChanged() }
+    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); setNewEmail(''); setNewEmpId(''); setNewPersonalEmail(''); onChanged() }
     setAdding(false)
   }
 
   async function saveEdit(id: string) {
     const emp = employees.find(e=>e.id===id)
-    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null}).eq('id',id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null,employee_id:editEmpId||null,personal_email:editPersonalEmail||null}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
     // If email provided, upsert app_users so they can log in
     if (editEmail && editEmail.trim()) {
@@ -1799,13 +1809,15 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
 
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500"/>Add Employee / Role</h3>
-        <div className="flex gap-3 flex-col sm:flex-row">
-          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name (Last, First)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-          <input value={newDesig} onChange={e=>setNewDesig(e.target.value)} placeholder="Designation / Project" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-          <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="email@ab-businesssupport.com" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-          <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"><PlusCircle className="w-4 h-4"/>Add</button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <input value={newEmpId} onChange={e=>setNewEmpId(e.target.value)} placeholder="Employee ID (ABBSS-XXXXXX)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name (Last, First)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <input value={newDesig} onChange={e=>setNewDesig(e.target.value)} placeholder="Designation / Project" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <input type="email" value={newPersonalEmail} onChange={e=>setNewPersonalEmail(e.target.value)} placeholder="Personal email (for notifications)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">Email links this employee to their app login. Same person with multiple projects = add again with different designation.</p>
+        <p className="text-xs text-gray-400 mt-2">Work email links to app login. Personal email receives coaching notifications. Same person with multiple projects = add again with different designation.</p>
       </div>
 
       <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name or designation..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/></div>
@@ -1829,7 +1841,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                   {!isExpanded && isMulti && (
                     <p className="text-xs text-gray-500">{emps.map(e=>e.designation).join(' - ')}</p>
                   )}
-                  {!isMulti && <p className="text-xs text-gray-500">{emps[0].designation}</p>}
+                  {!isMulti && <p className="text-xs text-gray-500">{emps[0].designation}{(emps[0] as any).employee_id ? <span className="ml-2 text-gray-400 font-mono">[{(emps[0] as any).employee_id}]</span> : null}</p>}
                 </div>
                 {isMulti && (
                   <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium flex-shrink-0">{emps.length} roles</span>
@@ -1837,16 +1849,19 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                 {!isMulti && (
                   <>
                     {editId === emps[0].id ? (
-                      <div className="flex items-center gap-2" onClick={e=>e.stopPropagation()}>
-                        <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"/>
-                        <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-32 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"/>
+                      <div className="flex items-center gap-2 flex-wrap" onClick={e=>e.stopPropagation()}>
+                        <input value={editEmpId} onChange={e=>setEditEmpId(e.target.value)} className="w-32 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="ABBSS-XXXXXX"/>
+                        <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-36 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Name"/>
+                        <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Designation"/>
+                        <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-44 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Work email"/>
+                        <input type="email" value={editPersonalEmail} onChange={e=>setEditPersonalEmail(e.target.value)} className="w-44 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Personal email"/>
                         <button onClick={()=>saveEdit(emps[0].id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button>
                         <button onClick={()=>setEditId(null)} className="text-gray-400 p-1"><X className="w-4 h-4"/></button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
                         <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                        <button onClick={()=>{setEditId(emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'')}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={()=>{setEditId(emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'');setEditEmpId((emps[0] as any).employee_id||'');setEditPersonalEmail((emps[0] as any).personal_email||'')}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </div>
                     )}
@@ -1865,9 +1880,11 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                   </div>
                   {editId === emp.id ? (
                     <div className="flex-1 flex items-center gap-2 flex-wrap">
+                      <input value={editEmpId} onChange={e=>setEditEmpId(e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="ABBSS-XXXXXX"/>
                       <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-36 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Name"/>
                       <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Designation"/>
-                      <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="email@ab-businesssupport.com"/>
+                      <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Work email"/>
+                      <input type="email" value={editPersonalEmail} onChange={e=>setEditPersonalEmail(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Personal email"/>
                       <button onClick={()=>saveEdit(emp.id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button>
                       <button onClick={()=>setEditId(null)} className="text-gray-400 p-1"><X className="w-4 h-4"/></button>
                     </div>
@@ -1877,7 +1894,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                         <span className={`text-sm ${emp.active ? 'text-gray-700' : 'text-gray-400'}`}>{emp.designation}</span>
                       </div>
                       <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                      <button onClick={()=>{setEditId(emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'')}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
+                      <button onClick={()=>{setEditId(emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'');setEditEmpId((emp as any).employee_id||'');setEditPersonalEmail((emp as any).personal_email||'')}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
                       <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                     </>
                   )}
@@ -2734,8 +2751,9 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
   const [filterMonth, setFilterMonth] = useState('')
   const [deleting, setDeleting] = useState<string|null>(null)
 
-  const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], type: 'Performance', initiated_by: 'Team Lead', discussion: '', action_items: '', next_session_date: '' }
-  const [form, setForm] = useState({ ...emptyForm })
+  const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], type: 'Performance', initiated_by: 'Team Lead', discussion: '', action_items: '', next_session_date: '', send_for_ack: false }
+  const [form, setForm] = useState<any>({ ...emptyForm })
+  const [ackLoading, setAckLoading] = useState<string|null>(null)
 
   async function loadLogs() {
     setLoading(true)
@@ -2749,6 +2767,19 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
   }
 
   useEffect(() => { loadLogs() }, [])
+
+  async function acknowledgeCoaching(logId: string) {
+    setAckLoading(logId)
+    const { error } = await supabase.from('coaching_logs').update({
+      agent_acknowledged: true,
+      agent_acknowledged_at: new Date().toISOString(),
+      agent_acknowledged_by: currentUser,
+    }).eq('id', logId)
+    if (error) showToast('Failed to acknowledge: ' + error.message, 'error')
+    else showToast('Coaching session acknowledged! ✓')
+    setAckLoading(null)
+    loadLogs()
+  }
 
   async function handleSave() {
     if (!form.employee_id || !form.date || !form.discussion.trim()) {
@@ -2767,10 +2798,12 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
       discussion: form.discussion.trim(),
       action_items: form.action_items.trim(),
       next_session_date: form.next_session_date || null,
+      requires_acknowledgment: form.send_for_ack,
+      agent_acknowledged: false,
     })
     setSaving(false)
     if (error) { showToast('Failed to save: ' + error.message, 'error'); return }
-    showToast('Coaching log saved!')
+    showToast(form.send_for_ack ? 'Coaching log saved! Agent will see it for acknowledgment.' : 'Coaching log saved!')
     setForm({ ...emptyForm })
     setShowForm(false)
     loadLogs()
@@ -2809,6 +2842,20 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
           </div>
         ))}
       </div>
+
+      {/* Pending acknowledgment banner for agents */}
+      {userRole === 'viewer' && (() => {
+        const pending = logs.filter(l => l.requires_acknowledgment && !l.agent_acknowledged)
+        return pending.length > 0 ? (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-center gap-3">
+            <span className="text-amber-600 text-lg">✍️</span>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">You have {pending.length} coaching session{pending.length > 1 ? 's' : ''} pending your acknowledgment</p>
+              <p className="text-xs text-amber-600 mt-0.5">Scroll down to find sessions marked "Sign & Acknowledge"</p>
+            </div>
+          </div>
+        ) : null
+      })()}
 
       {/* Controls */}
       <div className="flex flex-wrap gap-3 items-center justify-between">
@@ -2884,7 +2931,14 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
             <input type="date" value={form.next_session_date} onChange={e => setForm({...form, next_session_date: e.target.value})}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
           </div>
-          <div className="flex gap-3 pt-1">
+          <div className="flex items-center gap-3 pt-1 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={form.send_for_ack} onChange={e => setForm({...form, send_for_ack: e.target.checked})}
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <span className="text-sm text-gray-700 font-medium">📧 Send to agent for e-signature acknowledgment</span>
+            </label>
+          </div>
+          <div className="flex gap-3">
             <button onClick={handleSave} disabled={saving}
               className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
               <Save className="w-4 h-4" />{saving ? 'Saving…' : 'Save Session'}
@@ -2917,6 +2971,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Discussion</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Action Items</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Next Session</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Agent Sign-off</th>
                   {canManage && <th className="px-4 py-3 w-10"></th>}
                 </tr>
               </thead>
@@ -2951,6 +3006,23 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast }:
                             {isOverdue ? '⚠️ ' : ''}{nextDue.toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'})}
                           </span>
                         ) : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {!log.requires_acknowledgment ? (
+                          <span className="text-gray-300 text-xs">—</span>
+                        ) : log.agent_acknowledged ? (
+                          <div>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Acknowledged</span>
+                            {log.agent_acknowledged_at && <p className="text-xs text-gray-400 mt-0.5">{new Date(log.agent_acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</p>}
+                          </div>
+                        ) : userRole === 'viewer' ? (
+                          <button onClick={() => acknowledgeCoaching(log.id)} disabled={ackLoading === log.id}
+                            className="flex items-center gap-1 bg-blue-700 hover:bg-blue-800 text-white px-3 py-1 rounded-lg text-xs font-medium transition disabled:opacity-50">
+                            {ackLoading === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"/> : '✍️'} Sign & Acknowledge
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">⏳ Pending</span>
+                        )}
                       </td>
                       {canManage && (
                         <td className="px-4 py-3">
