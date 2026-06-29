@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tl-tools' | 'directory' | 'settings'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tl-tools' | 'directory' | 'settings' | 'hris-referral' | 'hris-records'
 type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type Toast = { msg: string; type: 'success' | 'error' }
 
@@ -868,7 +868,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
 // -- Collapsible Sidebar -----------------------------------------------------
 function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0 }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
-    home: false, perf: false, people: false, ops: false, tltools: false, dir: false, sys: false
+    home: false, perf: false, people: false, ops: false, tltools: false, hris: false, dir: false, sys: false
   })
 
   function toggle(key: string) {
@@ -941,13 +941,22 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* TEAM LEAD TOOLS */}
-      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['entry','observations','tl-tools','cadence'].includes(view)} />
+      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['entry','observations','tl-tools','cadence'].includes(view as string)} />
       {!collapsed.tltools && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
           <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
           <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount}/>
           <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* HRIS */}
+      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records'].includes(view)} />
+      {!collapsed.hris && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
 
@@ -1158,8 +1167,8 @@ export default function KPIApp() {
           {/* Global background for non-performance views */}
           {!(['dashboard-month','dashboard-employee','dashboard-team','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
             <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
-              <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(1px) brightness(0.45)'}} />
-              <div className="absolute inset-0 bg-blue-950/40" />
+              <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(0px) brightness(0.60)'}} />
+              <div className="absolute inset-0 bg-blue-950/25" />
             </div>
           )}
         <div className="h-full animate-fadeIn relative z-10">
@@ -1198,6 +1207,8 @@ export default function KPIApp() {
             {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
             {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='viewer'?'employee_email':'agent_acknowledged', userRole==='viewer'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
+            {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
+            {view === 'hris-records' && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
             {view === 'cadence' && <OperatingCadence />}
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
@@ -3330,6 +3341,386 @@ function TLComplianceReport({ employees, currentUser, userRole }:
                     </tr>
                   )
                 })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- HRIS: Employee Referral -------------------------------------------------
+function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const canManage = userRole === 'super_admin' || userRole === 'admin'
+  const canRefer = true // everyone can submit a referral
+  const [referrals, setReferrals] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const emptyForm = { candidate_name: '', position_applied: '', referred_by: currentUser?.split('@')[0] || '', relationship: '', notes: '', resume_url: '', resume_name: '' }
+  const [form, setForm] = useState({ ...emptyForm })
+
+  useEffect(() => { loadReferrals() }, [])
+
+  async function loadReferrals() {
+    setLoading(true)
+    const { data } = await supabase.from('hris_referrals').select('*').order('created_at', { ascending: false })
+    setReferrals(data || [])
+    setLoading(false)
+  }
+
+  async function uploadResume(file: File) {
+    setUploading(true)
+    const path = `referrals/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file)
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data } = supabase.storage.from('attachments').getPublicUrl(path)
+    setForm(f => ({ ...f, resume_url: data.publicUrl, resume_name: file.name }))
+    setUploading(false)
+    showToast('Resume uploaded!')
+  }
+
+  async function handleSubmit() {
+    if (!form.candidate_name.trim() || !form.position_applied.trim()) {
+      showToast('Please fill in candidate name and position.', 'error'); return
+    }
+    setSaving(true)
+    const { error } = await supabase.from('hris_referrals').insert({
+      candidate_name: form.candidate_name.trim(),
+      position_applied: form.position_applied.trim(),
+      referred_by: form.referred_by.trim() || currentUser,
+      relationship: form.relationship.trim(),
+      notes: form.notes.trim(),
+      resume_url: form.resume_url || null,
+      resume_name: form.resume_name || null,
+      status: 'Pending',
+      submitted_by: currentUser,
+    })
+    setSaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'error'); return }
+    showToast('Referral submitted!')
+    setForm({ ...emptyForm })
+    setShowForm(false)
+    loadReferrals()
+  }
+
+  async function updateStatus(id: string, status: string) {
+    await supabase.from('hris_referrals').update({ status }).eq('id', id)
+    showToast(`Status updated to ${status}`)
+    loadReferrals()
+  }
+
+  async function deleteReferral(id: string) {
+    if (!confirm('Delete this referral?')) return
+    await supabase.from('hris_referrals').delete().eq('id', id)
+    showToast('Deleted')
+    loadReferrals()
+  }
+
+  const STATUS_COLORS: Record<string, string> = {
+    'Pending': 'bg-yellow-100 text-yellow-700',
+    'Under Review': 'bg-blue-100 text-blue-700',
+    'Interviewed': 'bg-purple-100 text-purple-700',
+    'Hired': 'bg-green-100 text-green-700',
+    'Declined': 'bg-red-100 text-red-700',
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Employee Referral</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Refer a candidate for an open position at AB BSS</p>
+        </div>
+        {canRefer && (
+          <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            <PlusCircle className="w-4 h-4" /> Refer Someone
+          </button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
+          <h3 className="font-semibold text-blue-900 text-sm">New Referral</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Candidate Full Name *</label>
+              <input value={form.candidate_name} onChange={e => setForm({...form, candidate_name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Juan dela Cruz"/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Position Applied For *</label>
+              <input value={form.position_applied} onChange={e => setForm({...form, position_applied: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Finance Analyst"/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Referred By</label>
+              <input value={form.referred_by} onChange={e => setForm({...form, referred_by: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Your name"/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Relationship to Candidate</label>
+              <input value={form.relationship} onChange={e => setForm({...form, relationship: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Friend, Former colleague..."/></div>
+          </div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes / Why you're referring them</label>
+            <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Skills, experience, why they'd be a good fit..."/></div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Resume / CV</label>
+            {form.resume_url ? (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                <span className="text-xs text-green-700 font-medium">✓ {form.resume_name}</span>
+                <button onClick={() => setForm({...form, resume_url: '', resume_name: ''})} className="text-xs text-red-500 hover:text-red-700 ml-auto">Remove</button>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-3 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-50">
+                {uploading ? '⏳ Uploading...' : '📎 Upload Resume / CV (PDF, Word)'}
+              </button>
+            )}
+            <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" onChange={e => e.target.files?.[0] && uploadResume(e.target.files[0])} className="hidden" />
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleSubmit} disabled={saving} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+              <Save className="w-4 h-4" />{saving ? 'Submitting...' : 'Submit Referral'}
+            </button>
+            <button onClick={() => { setShowForm(false); setForm({...emptyForm}) }} className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" /></div>
+      ) : referrals.length === 0 ? (
+        <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-3">👥</div><p className="font-medium">No referrals yet</p><p className="text-sm mt-1">Be the first to refer a candidate!</p></div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Candidate</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Position</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Referred By</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Resume</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+                  {canManage && <th className="px-4 py-3 w-10"></th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {referrals.map(r => (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900">{r.candidate_name}</p>
+                      {r.relationship && <p className="text-xs text-gray-400">{r.relationship}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{r.position_applied}</td>
+                    <td className="px-4 py-3 text-gray-600">{r.referred_by || r.submitted_by?.split('@')[0]}</td>
+                    <td className="px-4 py-3">
+                      {r.resume_url ? (
+                        <a href={r.resume_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-medium">
+                          📄 {r.resume_name || 'Download'}
+                        </a>
+                      ) : <span className="text-gray-400 text-xs">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {canManage ? (
+                        <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
+                          className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer ${STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600'}`}>
+                          {Object.keys(STATUS_COLORS).map(s => <option key={s}>{s}</option>)}
+                        </select>
+                      ) : (
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600'}`}>{r.status}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{new Date(r.created_at).toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'})}</td>
+                    {canManage && (
+                      <td className="px-4 py-3">
+                        <button onClick={() => deleteReferral(r.id)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 className="w-3.5 h-3.5"/></button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- HRIS: Employee Records --------------------------------------------------
+function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const canManage = userRole === 'super_admin' || userRole === 'admin'
+  const [records, setRecords] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [filterType, setFilterType] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploadForm, setUploadForm] = useState({ employee_name: '', doc_type: 'Resume', notes: '' })
+  const [showUpload, setShowUpload] = useState(false)
+
+  const DOC_TYPES = ['Resume', 'CV', 'NBI Clearance', 'Medical Certificate', 'Psychological Evaluation', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract', 'Other']
+
+  useEffect(() => { loadRecords() }, [])
+
+  async function loadRecords() {
+    setLoading(true)
+    const { data } = await supabase.from('hris_documents').select('*').order('created_at', { ascending: false })
+    setRecords(data || [])
+    setLoading(false)
+  }
+
+  async function handleUpload(file: File) {
+    if (!uploadForm.employee_name.trim()) { showToast('Please enter the employee name first.', 'error'); return }
+    setUploading(true)
+    const path = `hris/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file)
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data } = supabase.storage.from('attachments').getPublicUrl(path)
+    const { error: dbErr } = await supabase.from('hris_documents').insert({
+      employee_name: uploadForm.employee_name.trim(),
+      doc_type: uploadForm.doc_type,
+      file_name: file.name,
+      file_url: data.publicUrl,
+      file_size: file.size,
+      notes: uploadForm.notes.trim(),
+      uploaded_by: currentUser,
+      storage_path: path,
+    })
+    setUploading(false)
+    if (dbErr) { showToast('Failed to save record: ' + dbErr.message, 'error'); return }
+    showToast('Document uploaded!')
+    setUploadForm({ employee_name: '', doc_type: 'Resume', notes: '' })
+    setShowUpload(false)
+    loadRecords()
+  }
+
+  async function deleteRecord(id: string, storagePath: string) {
+    if (!confirm('Delete this document permanently?')) return
+    await supabase.storage.from('attachments').remove([storagePath])
+    await supabase.from('hris_documents').delete().eq('id', id)
+    showToast('Document deleted')
+    loadRecords()
+  }
+
+  const filtered = records.filter(r => {
+    const matchSearch = !searchQ || r.employee_name?.toLowerCase().includes(searchQ.toLowerCase()) || r.file_name?.toLowerCase().includes(searchQ.toLowerCase())
+    const matchType = !filterType || r.doc_type === filterType
+    return matchSearch && matchType
+  })
+
+  const formatSize = (bytes: number) => {
+    if (!bytes) return ''
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
+  const DOC_ICON: Record<string, string> = { 'Resume': '📄', 'CV': '📋', 'Contract': '📝', 'NBI Clearance': '🔒', 'Medical Certificate': '🏥', 'Psychological Evaluation': '🧠' }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Employee Records</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {canManage ? 'Upload and manage employee documents' : 'View employee documents'}
+          </p>
+        </div>
+        {canManage && (
+          <button onClick={() => setShowUpload(!showUpload)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            <PlusCircle className="w-4 h-4" /> Upload Document
+          </button>
+        )}
+      </div>
+
+      {!canManage && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          You have view-only access. Contact HR or a Manager to upload or update documents.
+        </div>
+      )}
+
+      {showUpload && canManage && (
+        <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
+          <h3 className="font-semibold text-blue-900 text-sm">Upload Document</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Employee Name *</label>
+              <input value={uploadForm.employee_name} onChange={e => setUploadForm({...uploadForm, employee_name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Last, First"/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Document Type</label>
+              <select value={uploadForm.doc_type} onChange={e => setUploadForm({...uploadForm, doc_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900">
+                {DOC_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+              <input value={uploadForm.notes} onChange={e => setUploadForm({...uploadForm, notes: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. Valid until Dec 2026"/></div>
+          </div>
+          <button onClick={() => fileRef.current?.click()} disabled={uploading || !uploadForm.employee_name.trim()}
+            className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-40">
+            {uploading ? '⏳ Uploading...' : '📁 Click to choose file (PDF, Word, Image)'}
+          </button>
+          <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="hidden" />
+          <button onClick={() => setShowUpload(false)} className="text-sm text-gray-500 hover:underline">Cancel</button>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+          <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search by employee or filename..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+        </div>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
+          <option value="">All Types</option>
+          {DOC_TYPES.map(t => <option key={t}>{t}</option>)}
+        </select>
+        {(searchQ || filterType) && <button onClick={() => { setSearchQ(''); setFilterType('') }} className="text-sm text-blue-600 hover:underline">Clear</button>}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-3">📁</div><p className="font-medium">No documents found</p>{canManage && <p className="text-sm mt-1">Upload the first document above.</p>}</div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Employee</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">File</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Uploaded</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map(r => (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{r.employee_name}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                        {DOC_ICON[r.doc_type] || '📄'} {r.doc_type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1">
+                        ⬇ {r.file_name}
+                      </a>
+                      {r.file_size && <p className="text-xs text-gray-400 mt-0.5">{formatSize(r.file_size)}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{r.notes || '—'}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                      <p>{r.uploaded_by?.split('@')[0]}</p>
+                      <p>{new Date(r.created_at).toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'})}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <a href={r.file_url} download className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-lg transition font-medium">⬇ Download</a>
+                        {canManage && (
+                          <button onClick={() => deleteRecord(r.id, r.storage_path)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 className="w-3.5 h-3.5"/></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
