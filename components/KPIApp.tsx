@@ -897,9 +897,41 @@ export default function KPIApp() {
   const [searchQ, setSearchQ] = useState('')
 
   useEffect(() => {
-    const stored = localStorage.getItem('kpi_user')
-    if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer') }
-    else setLoading(false)
+    async function initAuth() {
+      // First check for an existing local session
+      const stored = localStorage.getItem('kpi_user')
+      if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer'); return }
+
+      // Check for Google OAuth session
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user?.email) {
+        const email = session.user.email.toLowerCase()
+        // Domain restriction - only allow company emails
+        if (!email.endsWith('@ab-businesssupport.com')) {
+          await supabase.auth.signOut()
+          setLoading(false)
+          alert('Only @ab-businesssupport.com accounts can sign in.')
+          return
+        }
+        // Look up their role in app_users
+        const { data: appUser } = await supabase.from('app_users').select('*').eq('email', email).single()
+        let role = 'viewer'
+        let displayName = email.split('@')[0]
+        if (appUser) {
+          role = appUser.role
+          displayName = appUser.display_name || appUser.name || email
+        } else {
+          // Auto-create a viewer account for new Google sign-ins
+          await supabase.from('app_users').insert({ email, name: email.split('@')[0], role: 'viewer', password_hash: 'google-oauth' })
+        }
+        const userData = { username: email, role, display_name: displayName }
+        localStorage.setItem('kpi_user', JSON.stringify(userData))
+        setUser(email); setUserRole(role)
+        return
+      }
+      setLoading(false)
+    }
+    initAuth()
   }, [])
 
   useEffect(() => { if (user) loadData() }, [user])
