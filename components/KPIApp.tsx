@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tl-tools' | 'directory' | 'settings'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tl-tools' | 'directory' | 'settings'
 type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type Toast = { msg: string; type: 'success' | 'error' }
 
@@ -826,20 +826,22 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen }: { view: string
       )}
 
       {/* TEAM LEAD TOOLS */}
-      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['entry','observations','tl-tools'].includes(view)} />
+      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['entry','observations','tl-tools','cadence'].includes(view)} />
       {!collapsed.tltools && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
           <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
           <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
 
       {/* DIRECTORY */}
-      <SectionHeader sectionKey="dir" label="Directory" hasActive={['directory'].includes(view)} />
+      <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
       {!collapsed.dir && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="directory" label="Links & Resources" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="links" label="Links" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="resources" label="Resources" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
 
@@ -989,7 +991,9 @@ export default function KPIApp() {
             {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
             {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
             {view === 'tl-tools' && <ComingSoon title="Team Lead Tools" description="Coaching logs, 1-on-1 trackers, and performance planning tools. Coming soon!" icon="🔧" />}
-            {view === 'directory' && <DirectoryLinks />}
+            {view === 'links' && <DirectoryLinks />}
+            {view === 'cadence' && <OperatingCadence />}
+            {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
           </>
         )}
         </div>
@@ -1953,6 +1957,171 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
 
 
 // -- Directory Links ---------------------------------------------------------
+
+// -- Operating Cadence ----------------------------------------------
+function OperatingCadence() {
+  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'>('daily')
+
+  const Card = ({ title, items }: { title: string, items: string[] }) => (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <h4 className="font-semibold text-gray-900 text-sm mb-2">{title}</h4>
+      <ul className="space-y-1">
+        {items.map((it, i) => <li key={i} className="text-sm text-gray-600 flex gap-2"><span className="text-blue-600">•</span><span>{it}</span></li>)}
+      </ul>
+    </div>
+  )
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-5">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">Team Leader Operating Cadence</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Your daily, weekly, and monthly rhythm for effective team leadership</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 flex-wrap">
+        {[['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['deliverables','Deliverables']].map(([key,label]) => (
+          <button key={key} onClick={() => setTab(key as any)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${tab===key ? 'bg-blue-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{label}</button>
+        ))}
+      </div>
+
+      {tab === 'daily' && (
+        <div className="space-y-3">
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800">⏱️ <strong>15-30 minutes</strong> at the start of each shift</div>
+          <Card title="1. Daily Operations Check" items={['Review attendance','Review workload and queues','Check SLA/KPI risks','Identify employees needing assistance','Escalate urgent operational issues']} />
+          <Card title="2. Employee Support (throughout the day)" items={['Answer questions and remove blockers','Monitor productivity','Recognize good performance immediately']} />
+          <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-sm text-green-800"><strong>Output:</strong> Risks identified + immediate action plan</div>
+        </div>
+      )}
+
+      {tab === 'weekly' && (
+        <div className="space-y-3">
+          <Card title="Monday — Team Huddle (30-45 min)" items={['Previous week performance','Current week priorities','Business updates & best practices','Challenges & recognition','Action items']} />
+          <Card title="Midweek — Catch-up (Wed/Thu)" items={['What is working well?','What is slowing you down?','Any process improvements?','Any support needed?','Any recurring issues?']} />
+          <Card title="Friday — Performance Tracking" items={['Submit weekly performance report','Transactions, productivity, quality','Attendance, errors, overtime','Highlights and risks','One row per employee']} />
+          <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-sm text-green-800"><strong>Tip:</strong> Track weekly to spot trends before month-end</div>
+        </div>
+      )}
+
+      {tab === 'monthly' && (
+        <div className="space-y-3">
+          <Card title="1. Coaching Sessions (min 2 per employee)" items={['Week 2 — Coaching Session #1','Week 4 — Coaching Session #2','Cover: KPI, quality, productivity','Strengths & areas for improvement','Career development + action plan']} />
+          <Card title="2. Monthly Performance Review" items={['Team: volume, productivity, SLA, attendance, quality','Highlight top performers','Note employees improving','Flag those requiring coaching','Training recommendations']} />
+          <Card title="3. Talent Review" items={['High performers & promotion readiness','Cross-training opportunities','Backup & succession planning']} />
+          <Card title="4. Process Improvement Review" items={['Recurring issues & root causes','Automation opportunities','Client concerns & process gaps','Recommendations']} />
+        </div>
+      )}
+
+      {tab === 'deliverables' && (
+        <div className="space-y-3">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50"><tr><th className="text-left px-4 py-2 font-semibold text-gray-700">Deliverable</th><th className="text-left px-4 py-2 font-semibold text-gray-700">Frequency</th></tr></thead>
+              <tbody>
+                {[['Weekly team huddle','Weekly'],['Weekly catch-up meeting','Weekly'],['Weekly volume & KPI report','Weekly'],['Coaching sessions (min 2/employee)','Monthly'],['Monthly team performance report','Monthly'],['Recognition summary','Monthly'],['Training needs assessment','Monthly'],['Process improvement recommendations','Monthly'],['Escalation & risk summary','Monthly']].map((row,i)=>(
+                  <tr key={i} className="border-t border-gray-100"><td className="px-4 py-2 text-gray-700">{row[0]}</td><td className="px-4 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${row[1]==='Weekly'?'bg-blue-100 text-blue-700':'bg-purple-100 text-purple-700'}`}>{row[1]}</span></td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+            <h4 className="font-semibold text-amber-900 text-sm mb-2">Manager-to-TL Cadence</h4>
+            <ul className="space-y-1 text-sm text-amber-800">
+              <li>• <strong>Weekly</strong> ops sync (30-45 min)</li>
+              <li>• <strong>Monthly</strong> 1-on-1 (45-60 min)</li>
+              <li>• <strong>Monthly</strong> business review</li>
+              <li>• <strong>Quarterly</strong> leadership review</li>
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- Resources Panel ----------------------------------------------
+function ResourcesPanel({ userRole, showToast }: { userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const [resources, setResources] = useState<any[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [title, setTitle] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+  const canManage = ['super_admin','admin','team_lead'].includes(userRole)
+
+  useEffect(() => { loadResources() }, [])
+
+  async function loadResources() {
+    const { data } = await supabase.from('resources').select('*').order('created_at', { ascending: false })
+    setResources(data || [])
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const path = `resources/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const fileType = ext === 'pdf' ? 'pdf' : ['doc','docx'].includes(ext) ? 'doc' : ['xls','xlsx'].includes(ext) ? 'xls' : ['png','jpg','jpeg','webp'].includes(ext) ? 'image' : 'file'
+    await supabase.from('resources').insert({ title: title.trim() || file.name, file_name: file.name, file_url: urlData.publicUrl, file_type: fileType, uploaded_by: 'admin' })
+    setTitle(''); setUploading(false); showToast('Resource added!', 'success'); loadResources()
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function deleteResource(id: string) {
+    await supabase.from('resources').delete().eq('id', id)
+    setResources(prev => prev.filter(r => r.id !== id))
+    showToast('Removed', 'success')
+  }
+
+  function icon(type: string) {
+    if (type === 'pdf') return '📄'
+    if (type === 'doc') return '📝'
+    if (type === 'xls') return '📊'
+    if (type === 'image') return '🖼️'
+    return '📎'
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-4">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">Resources</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Forms, documents, and templates for the team</p>
+      </div>
+
+      {canManage && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Resource name (optional)..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <button onClick={() => fileRef.current?.click()} disabled={uploading} className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-3 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-50">
+            {uploading ? 'Uploading...' : '📤 Upload form, document, or template'}
+          </button>
+          <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={handleUpload} className="hidden" />
+        </div>
+      )}
+
+      {resources.length === 0 ? (
+        <div className="text-center py-12 text-gray-400 text-sm">No resources yet.</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {resources.map(r => (
+            <div key={r.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:border-blue-300 transition">
+              <span className="text-3xl">{icon(r.file_type)}</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-900 text-sm truncate">{r.title}</p>
+                <p className="text-xs text-gray-400 truncate">{r.file_name}</p>
+              </div>
+              <a href={r.file_url} target="_blank" rel="noopener noreferrer" download className="text-xs bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">Download</a>
+              {canManage && <button onClick={() => deleteResource(r.id)} className="text-gray-300 hover:text-red-500 text-sm">x</button>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function DirectoryLinks() {
   const links = [
     { name: 'ClockSmart', url: 'https://eportal.clocksmart.ph/', description: 'Employee time tracking portal', icon: '🕐', color: 'border-blue-400' },
