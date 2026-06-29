@@ -252,12 +252,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           )}
         </div>
       )}
-      {bgUrl !== undefined && !bgUrl && canChangeBg && (
-        <div className="border-2 border-dashed border-gray-200 rounded-2xl p-4 text-center">
-          <p className="text-xs text-gray-500 mb-2">Add a monthly theme photo</p>
-          <button onClick={() => setEditingBg(true)} className="text-xs bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">+ Add photo URL</button>
-        </div>
-      )}
+      
       {editingBg && canChangeBg && (
         <div className="flex gap-2 items-center">
           <input value={bgInput} onChange={e => setBgInput(e.target.value)} placeholder="Paste image URL here..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
@@ -270,7 +265,10 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           <h2 className="font-semibold text-base text-gray-900">Announcements</h2>
           {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
-        {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
+        <div className="flex items-center gap-2">
+          {canChangeBg && <button onClick={() => setEditingBg(!editingBg)} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition">🎨 Theme</button>}
+          {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
+        </div>
       </div>
       {showForm && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
