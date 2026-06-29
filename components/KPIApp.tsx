@@ -651,7 +651,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
 }
 
 
-export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string }) {
+export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string, bgUrl?: string | null }) {
   const [leaderboardKey, setLeaderboardKey] = useState(0)
   const stored = typeof window !== 'undefined' ? localStorage.getItem('kpi_user') : null
   const storedName = stored ? JSON.parse(stored).display_name : null
@@ -661,6 +661,12 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { cu
     <div className="h-full flex flex-col">
       {activeTab === 'gaming-hub' ? (
         <div className="flex-1 overflow-y-auto p-6 relative z-10">
+          {bgUrl && (
+            <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
+              <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(0px) brightness(0.60)'}}/>
+              <div className="absolute inset-0 bg-blue-950/25"/>
+            </div>
+          )}
         <div className="max-w-6xl mx-auto space-y-6">
         <div>
           <h1 className="text-xl font-bold text-white drop-shadow-lg">Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {userName}! 👋</h1>
@@ -912,6 +918,43 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </div>
       )}
 
+      {/* OPERATIONS */}
+      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','entry','observations','cadence'].includes(view)} />
+      {!collapsed.ops && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* DIRECTORY */}
+      <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
+      {!collapsed.dir && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="links" label="Links" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="resources" label="Resources" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* HRIS */}
+      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records'].includes(view)} />
+      {!collapsed.hris && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+        </div>
+      )}
+
+      {/* TEAM LEAD TOOLS */}
+      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools'].includes(view as string)} />
+      {!collapsed.tltools && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount}/>
+        </div>
+      )}
+
       {/* PERFORMANCE */}
       <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee','dashboard-team'].includes(view)} />
       {!collapsed.perf && (
@@ -929,43 +972,6 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           <NavItem id="employees" label="Employees" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>}/>
           <NavItem id="teams" label="Teams" icon={<Award className="w-4 h-4 flex-shrink-0"/>}/>
           <NavItem id="org-chart" label="Org Chart" icon={<Users className="w-4 h-4 flex-shrink-0"/>}/>
-        </div>
-      )}
-
-      {/* OPERATIONS */}
-      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets'].includes(view)} />
-      {!collapsed.ops && (
-        <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-        </div>
-      )}
-
-      {/* TEAM LEAD TOOLS */}
-      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['entry','observations','tl-tools','cadence'].includes(view as string)} />
-      {!collapsed.tltools && (
-        <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount}/>
-          <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-        </div>
-      )}
-
-      {/* HRIS */}
-      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records'].includes(view)} />
-      {!collapsed.hris && (
-        <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-        </div>
-      )}
-
-      {/* DIRECTORY */}
-      <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
-      {!collapsed.dir && (
-        <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="links" label="Links" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="resources" label="Resources" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
 
@@ -1174,7 +1180,7 @@ export default function KPIApp() {
         <div className="h-full animate-fadeIn relative z-10">
           {/* Announcements & Gaming Hub — full bleed, no padding wrapper */}
           {(view === 'announcements' || view === 'gaming-hub') ? (
-            <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} />
+            <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} />
           ) : (
           <div className="max-w-6xl mx-auto px-4 pt-4 pb-6 relative z-10">
           {/* Preview mode banner */}
@@ -3545,187 +3551,295 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
 }
 
 // -- HRIS: Employee Records --------------------------------------------------
+const REQUIRED_DOCS = ['Resume', 'NBI Clearance', 'Medical Certificate', 'Psychological Evaluation', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract']
+const ALL_DOC_TYPES = ['Resume', 'CV', 'NBI Clearance', 'Medical Certificate', 'Psychological Evaluation', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract', 'Other']
+const DOC_ICON: Record<string, string> = { 'Resume': '📄', 'CV': '📋', 'Contract': '📝', 'NBI Clearance': '🔒', 'Medical Certificate': '🏥', 'Psychological Evaluation': '🧠', 'SSS': '🏛', 'PhilHealth': '💊', 'Pag-IBIG': '🏠', 'TIN': '🪪' }
+
 function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
-  const [records, setRecords] = useState<any[]>([])
+  const isViewer = userRole === 'viewer' || userRole === 'team_lead'
+  const [tab, setTab] = useState<'compliance'|'upload'|'my-docs'>('compliance')
+  const [allDocs, setAllDocs] = useState<any[]>([])
+  const [employees, setEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [searchQ, setSearchQ] = useState('')
-  const [filterType, setFilterType] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  const myFileRef = useRef<HTMLInputElement>(null)
   const [uploadForm, setUploadForm] = useState({ employee_name: '', doc_type: 'Resume', notes: '' })
-  const [showUpload, setShowUpload] = useState(false)
+  const [myUploadForm, setMyUploadForm] = useState({ doc_type: 'Resume', notes: '' })
 
-  const DOC_TYPES = ['Resume', 'CV', 'NBI Clearance', 'Medical Certificate', 'Psychological Evaluation', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract', 'Other']
+  useEffect(() => { loadData() }, [])
 
-  useEffect(() => { loadRecords() }, [])
-
-  async function loadRecords() {
+  async function loadData() {
     setLoading(true)
-    const { data } = await supabase.from('hris_documents').select('*').order('created_at', { ascending: false })
-    setRecords(data || [])
+    const [{ data: docs }, { data: emps }] = await Promise.all([
+      supabase.from('hris_documents').select('*').order('employee_name'),
+      supabase.from('employees').select('name, employee_id').eq('active', true).order('name')
+    ])
+    setAllDocs(docs || [])
+    setEmployees(emps || [])
     setLoading(false)
   }
 
-  async function handleUpload(file: File) {
-    if (!uploadForm.employee_name.trim()) { showToast('Please enter the employee name first.', 'error'); return }
+  async function handleUpload(file: File, isMyDoc = false) {
+    const empName = isMyDoc ? (currentUser?.split('@')[0] || '') : uploadForm.employee_name.trim()
+    const docType = isMyDoc ? myUploadForm.doc_type : uploadForm.doc_type
+    const notes = isMyDoc ? myUploadForm.notes : uploadForm.notes
+    if (!empName) { showToast('Employee name required', 'error'); return }
     setUploading(true)
-    const path = `hris/${Date.now()}-${file.name}`
+    const path = `hris/${isMyDoc ? 'private' : 'shared'}/${Date.now()}-${file.name}`
     const { error } = await supabase.storage.from('attachments').upload(path, file)
     if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
-    const { data } = supabase.storage.from('attachments').getPublicUrl(path)
-    const { error: dbErr } = await supabase.from('hris_documents').insert({
-      employee_name: uploadForm.employee_name.trim(),
-      doc_type: uploadForm.doc_type,
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    await supabase.from('hris_documents').insert({
+      employee_name: empName,
+      doc_type: docType,
       file_name: file.name,
-      file_url: data.publicUrl,
+      file_url: urlData.publicUrl,
       file_size: file.size,
-      notes: uploadForm.notes.trim(),
+      notes: notes.trim(),
       uploaded_by: currentUser,
       storage_path: path,
+      is_private: isMyDoc,
+      owner_email: isMyDoc ? currentUser : null,
     })
     setUploading(false)
-    if (dbErr) { showToast('Failed to save record: ' + dbErr.message, 'error'); return }
     showToast('Document uploaded!')
-    setUploadForm({ employee_name: '', doc_type: 'Resume', notes: '' })
-    setShowUpload(false)
-    loadRecords()
+    if (isMyDoc) setMyUploadForm({ doc_type: 'Resume', notes: '' })
+    else setUploadForm({ employee_name: '', doc_type: 'Resume', notes: '' })
+    loadData()
   }
 
-  async function deleteRecord(id: string, storagePath: string) {
+  async function deleteDoc(id: string, path: string) {
     if (!confirm('Delete this document permanently?')) return
-    await supabase.storage.from('attachments').remove([storagePath])
+    await supabase.storage.from('attachments').remove([path])
     await supabase.from('hris_documents').delete().eq('id', id)
-    showToast('Document deleted')
-    loadRecords()
+    showToast('Deleted')
+    loadData()
   }
 
-  const filtered = records.filter(r => {
-    const matchSearch = !searchQ || r.employee_name?.toLowerCase().includes(searchQ.toLowerCase()) || r.file_name?.toLowerCase().includes(searchQ.toLowerCase())
-    const matchType = !filterType || r.doc_type === filterType
-    return matchSearch && matchType
+  const formatSize = (b: number) => b < 1024*1024 ? (b/1024).toFixed(0)+'KB' : (b/1024/1024).toFixed(1)+'MB'
+
+  // Compliance: docs visible to HR (non-private only)
+  const hrDocs = allDocs.filter(d => !d.is_private || canManage)
+  // My docs: only mine
+  const myDocs = allDocs.filter(d => d.is_private && d.owner_email === currentUser)
+
+  // Build compliance map: employee_name → Set of doc_types
+  const compMap: Record<string, Set<string>> = {}
+  hrDocs.filter(d => !d.is_private).forEach(d => {
+    if (!compMap[d.employee_name]) compMap[d.employee_name] = new Set()
+    compMap[d.employee_name].add(d.doc_type)
   })
 
-  const formatSize = (bytes: number) => {
-    if (!bytes) return ''
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-  }
+  // All employee names from DB employees list
+  const empNames = employees.map(e => e.name)
+  const filteredNames = empNames.filter(n => !searchQ || n.toLowerCase().includes(searchQ.toLowerCase()))
 
-  const DOC_ICON: Record<string, string> = { 'Resume': '📄', 'CV': '📋', 'Contract': '📝', 'NBI Clearance': '🔒', 'Medical Certificate': '🏥', 'Psychological Evaluation': '🧠' }
+  // Count how many are complete
+  const completeCount = empNames.filter(n => REQUIRED_DOCS.every(d => compMap[n]?.has(d))).length
+  const missingCount = empNames.length - completeCount
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Employee Records</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {canManage ? 'Upload and manage employee documents' : 'View employee documents'}
-          </p>
+          <p className="text-sm text-gray-500 mt-0.5">Document compliance tracker and file storage</p>
         </div>
-        {canManage && (
-          <button onClick={() => setShowUpload(!showUpload)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
-            <PlusCircle className="w-4 h-4" /> Upload Document
-          </button>
-        )}
       </div>
 
-      {!canManage && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          You have view-only access. Contact HR or a Manager to upload or update documents.
-        </div>
-      )}
-
-      {showUpload && canManage && (
-        <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
-          <h3 className="font-semibold text-blue-900 text-sm">Upload Document</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">Employee Name *</label>
-              <input value={uploadForm.employee_name} onChange={e => setUploadForm({...uploadForm, employee_name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Last, First"/></div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">Document Type</label>
-              <select value={uploadForm.doc_type} onChange={e => setUploadForm({...uploadForm, doc_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900">
-                {DOC_TYPES.map(t => <option key={t}>{t}</option>)}
-              </select></div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
-              <input value={uploadForm.notes} onChange={e => setUploadForm({...uploadForm, notes: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. Valid until Dec 2026"/></div>
-          </div>
-          <button onClick={() => fileRef.current?.click()} disabled={uploading || !uploadForm.employee_name.trim()}
-            className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-40">
-            {uploading ? '⏳ Uploading...' : '📁 Click to choose file (PDF, Word, Image)'}
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-gray-200">
+        {([
+          ['compliance', '📊 Compliance Tracker'],
+          ...(canManage ? [['upload', '📁 Upload Documents']] : []),
+          ['my-docs', '🔒 My Documents'],
+        ] as [string,string][]).map(([t, label]) => (
+          <button key={t} onClick={() => setTab(t as any)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${tab === t ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {label}
           </button>
-          <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="hidden" />
-          <button onClick={() => setShowUpload(false)} className="text-sm text-gray-500 hover:underline">Cancel</button>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-          <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search by employee or filename..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-        </div>
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
-          <option value="">All Types</option>
-          {DOC_TYPES.map(t => <option key={t}>{t}</option>)}
-        </select>
-        {(searchQ || filterType) && <button onClick={() => { setSearchQ(''); setFilterType('') }} className="text-sm text-blue-600 hover:underline">Clear</button>}
+        ))}
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" /></div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-3">📁</div><p className="font-medium">No documents found</p>{canManage && <p className="text-sm mt-1">Upload the first document above.</p>}</div>
-      ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Employee</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">File</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Uploaded</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filtered.map(r => (
-                  <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{r.employee_name}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-                        {DOC_ICON[r.doc_type] || '📄'} {r.doc_type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1">
-                        ⬇ {r.file_name}
-                      </a>
-                      {r.file_size && <p className="text-xs text-gray-400 mt-0.5">{formatSize(r.file_size)}</p>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{r.notes || '—'}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      <p>{r.uploaded_by?.split('@')[0]}</p>
-                      <p>{new Date(r.created_at).toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'})}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <a href={r.file_url} download className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-lg transition font-medium">⬇ Download</a>
-                        {canManage && (
-                          <button onClick={() => deleteRecord(r.id, r.storage_path)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 className="w-3.5 h-3.5"/></button>
-                        )}
-                      </div>
-                    </td>
+        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600"/></div>
+      ) : tab === 'compliance' ? (
+        <div className="space-y-4">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+              <div className="text-2xl font-bold text-blue-900">{empNames.length}</div>
+              <div className="text-xs text-gray-500 mt-1">Active Employees</div>
+            </div>
+            <div className="bg-white rounded-xl border border-green-200 p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">{completeCount}</div>
+              <div className="text-xs text-gray-500 mt-1">Complete</div>
+            </div>
+            <div className="bg-white rounded-xl border border-red-200 p-4 text-center">
+              <div className="text-2xl font-bold text-red-500">{missingCount}</div>
+              <div className="text-xs text-gray-500 mt-1">Missing Docs</div>
+            </div>
+          </div>
+
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+            <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search employee..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-3 py-3 font-semibold text-gray-500 uppercase tracking-wide sticky left-0 bg-gray-50 min-w-40">Employee</th>
+                    {REQUIRED_DOCS.map(d => (
+                      <th key={d} className="text-center px-2 py-3 font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{DOC_ICON[d] || '📄'}<br/>{d}</th>
+                    ))}
+                    <th className="text-center px-3 py-3 font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredNames.map(name => {
+                    const has = compMap[name] || new Set()
+                    const complete = REQUIRED_DOCS.every(d => has.has(d))
+                    const count = REQUIRED_DOCS.filter(d => has.has(d)).length
+                    return (
+                      <tr key={name} className="hover:bg-gray-50">
+                        <td className="px-3 py-2.5 font-medium text-gray-900 sticky left-0 bg-white">{name}</td>
+                        {REQUIRED_DOCS.map(d => (
+                          <td key={d} className="px-2 py-2.5 text-center">
+                            {has.has(d)
+                              ? <span title="On file" className="text-green-500 text-base">✓</span>
+                              : <span title="Missing" className="text-red-300 text-base">—</span>}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full font-medium ${complete ? 'bg-green-100 text-green-700' : count === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>
+                            {count}/{REQUIRED_DOCS.length}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      )}
+      ) : tab === 'upload' && canManage ? (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
+            <h3 className="font-semibold text-blue-900 text-sm">Upload Employee Document</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Employee *</label>
+                <input list="emp-list" value={uploadForm.employee_name} onChange={e => setUploadForm({...uploadForm, employee_name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Start typing name..."/>
+                <datalist id="emp-list">{employees.map(e => <option key={e.name} value={e.name}/>)}</datalist>
+              </div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Document Type</label>
+                <select value={uploadForm.doc_type} onChange={e => setUploadForm({...uploadForm, doc_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900">
+                  {ALL_DOC_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select></div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                <input value={uploadForm.notes} onChange={e => setUploadForm({...uploadForm, notes: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. Valid until Dec 2026"/></div>
+            </div>
+            <button onClick={() => fileRef.current?.click()} disabled={uploading || !uploadForm.employee_name.trim()}
+              className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-40">
+              {uploading ? '⏳ Uploading...' : '📁 Click to choose file (PDF, Word, Image)'}
+            </button>
+            <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="hidden"/>
+          </div>
+
+          {/* List of all non-private docs */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <p className="text-sm font-semibold text-gray-700">All Uploaded Documents ({hrDocs.filter(d => !d.is_private).length})</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-gray-100"><tr>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Employee</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">File</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Notes</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                  <th className="px-4 py-2 w-8"></th>
+                </tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {hrDocs.filter(d => !d.is_private).map(r => (
+                    <tr key={r.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{r.employee_name}</td>
+                      <td className="px-4 py-2.5"><span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{DOC_ICON[r.doc_type]||'📄'} {r.doc_type}</span></td>
+                      <td className="px-4 py-2.5"><a href={r.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 text-sm font-medium">⬇ {r.file_name}</a>{r.file_size && <p className="text-xs text-gray-400">{formatSize(r.file_size)}</p>}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs">{r.notes||'—'}</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
+                      <td className="px-4 py-2.5"><button onClick={() => deleteDoc(r.id, r.storage_path)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 className="w-3.5 h-3.5"/></button></td>
+                    </tr>
+                  ))}
+                  {hrDocs.filter(d => !d.is_private).length === 0 && <tr><td colSpan={6} className="text-center py-8 text-gray-400">No documents uploaded yet</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : tab === 'my-docs' ? (
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+            <span>🔒</span>
+            <span>Only you and HR/Managers can see the documents you upload here.</span>
+          </div>
+          <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
+            <h3 className="font-semibold text-blue-900 text-sm">Upload My Document</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Document Type</label>
+                <select value={myUploadForm.doc_type} onChange={e => setMyUploadForm({...myUploadForm, doc_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900">
+                  {ALL_DOC_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select></div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                <input value={myUploadForm.notes} onChange={e => setMyUploadForm({...myUploadForm, notes: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. Updated resume"/></div>
+            </div>
+            <button onClick={() => myFileRef.current?.click()} disabled={uploading}
+              className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-40">
+              {uploading ? '⏳ Uploading...' : '📁 Upload my document (PDF, Word, Image)'}
+            </button>
+            <input ref={myFileRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0], true)} className="hidden"/>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <p className="text-sm font-semibold text-gray-700">My Documents ({myDocs.length})</p>
+            </div>
+            {myDocs.length === 0 ? (
+              <div className="text-center py-12 text-gray-400"><div className="text-3xl mb-2">📂</div><p>No documents uploaded yet</p></div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-gray-100"><tr>
+                    <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                    <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">File</th>
+                    <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Notes</th>
+                    <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-2 w-8"></th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {myDocs.map(r => (
+                      <tr key={r.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2.5"><span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{DOC_ICON[r.doc_type]||'📄'} {r.doc_type}</span></td>
+                        <td className="px-4 py-2.5"><a href={r.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 text-sm font-medium">⬇ {r.file_name}</a>{r.file_size && <p className="text-xs text-gray-400">{formatSize(r.file_size)}</p>}</td>
+                        <td className="px-4 py-2.5 text-gray-500 text-xs">{r.notes||'—'}</td>
+                        <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
+                        <td className="px-4 py-2.5"><button onClick={() => deleteDoc(r.id, r.storage_path)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 className="w-3.5 h-3.5"/></button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
