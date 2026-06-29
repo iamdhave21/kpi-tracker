@@ -1019,7 +1019,19 @@ export default function KPIApp() {
       const stored = localStorage.getItem('kpi_user')
       if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer'); setDisplayName(u.display_name || u.username?.split('@')[0] || u.username); return }
 
-      // Check for Google OAuth session (set by callback route)
+      // Check for Google OAuth session (set by callback route via cookie or Supabase session)
+      // Also try to restore session from cookie tokens set by callback
+      const sbAccessToken = document.cookie.split(';').find(c => c.trim().startsWith('sb-access-token='))?.split('=')[1]
+      const sbRefreshToken = document.cookie.split(';').find(c => c.trim().startsWith('sb-refresh-token='))?.split('=')[1]
+      
+      if (sbAccessToken && sbRefreshToken) {
+        // Set the session from cookies
+        await supabase.auth.setSession({ access_token: sbAccessToken, refresh_token: sbRefreshToken })
+        // Clear cookies after use
+        document.cookie = 'sb-access-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
+        document.cookie = 'sb-refresh-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
+      }
+
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user?.email) {
         const email = session.user.email.toLowerCase()
