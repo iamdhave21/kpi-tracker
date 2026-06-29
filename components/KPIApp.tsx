@@ -249,18 +249,30 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
     if (bgFileRef.current) bgFileRef.current.value = ''
   }
 
+  // Group announcements by month
+  const grouped: Record<string, any[]> = {}
+  announcements.forEach(a => {
+    const key = new Date(a.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    if (!grouped[key]) grouped[key] = []
+    grouped[key].push(a)
+  })
+  const monthKeys = Object.keys(grouped)
+  // Current month is expanded by default, others collapsed
+  const currentMonthKey = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
   return (
-    <div className="relative rounded-2xl overflow-hidden" style={{minHeight:"calc(100vh - 120px)"}}>
-      {/* Full page background */}
+    <div className="relative rounded-2xl overflow-hidden" style={{height:"calc(100vh - 112px)"}}>
+      {/* Full-bleed background */}
       {bgUrl !== undefined && bgUrl && (
-        <div className="fixed-bg absolute inset-0 z-0">
+        <div className="absolute inset-0 z-0">
           <img src={bgUrl} alt="bg" className="w-full h-full object-cover" style={{filter:'blur(0.5px) brightness(0.65)'}} onError={(e) => { (e.target as HTMLImageElement).style.display='none' }} />
           <div className="absolute inset-0 bg-blue-950/25" />
         </div>
       )}
-      {/* Content layer */}
-      <div className={bgUrl ? "relative z-10 p-5 space-y-3" : "space-y-3"}>
-      
+      {/* Scrollable content layer */}
+      <div className={`relative z-10 h-full overflow-y-auto ${bgUrl ? "p-5" : ""}`}>
+      <div className="space-y-3">
+
       {editingBg && canChangeBg && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between">
@@ -279,18 +291,22 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           )}
         </div>
       )}
+
+      {/* Header row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className={bgUrl ? "font-semibold text-lg text-white drop-shadow" : "font-semibold text-base text-gray-900"}>Announcements</h2>
           {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
         <div className="flex items-center gap-2">
-          {canChangeBg && <button onClick={() => setEditingBg(!editingBg)} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition">🎨 Theme</button>}
+          {canChangeBg && <button onClick={() => setEditingBg(!editingBg)} className={`text-sm px-3 py-1.5 rounded-lg transition ${bgUrl ? "bg-white/20 hover:bg-white/30 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}>🎨 Theme</button>}
           {canPost && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Post'}</button>}
         </div>
       </div>
+
+      {/* Post form */}
       {showForm && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+        <div className="bg-white/95 backdrop-blur border border-gray-200 rounded-xl p-4 space-y-3">
           <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
           <textarea value={form.body} onChange={e => setForm(p=>({...p,body:e.target.value}))} placeholder="Write your announcement..." rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
           <div className="flex items-center gap-2">
@@ -304,7 +320,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
                 <div key={i} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs">
                   <span>{att.type==='image'?'IMG':att.type==='pdf'?'PDF':'DOC'}</span>
                   <span className="text-gray-700 max-w-xs truncate">{att.name}</span>
-                  <button onClick={() => setAttachments(prev => prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">x</button>
+                  <button onClick={() => setAttachments(prev => prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">×</button>
                 </div>
               ))}
             </div>
@@ -317,63 +333,135 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           </div>
         </div>
       )}
+
+      {/* Announcements grouped by month */}
       {announcements.length === 0 && <div className="text-center py-8 text-gray-600 text-sm">No announcements yet.</div>}
-      {announcements.map(a => (
-        <div key={a.id} className={`bg-white border rounded-xl p-4 space-y-2 ${a.tag==='Urgent'?'border-red-300':'border-gray-200'}`}>
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag]||TAG_COLORS.Info}`}>{a.tag}</span>
-              <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
-            </div>
-            {canManage && <button onClick={() => deleteAnnouncement(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition">x</button>}
-          </div>
-          <p className="text-sm text-gray-600 whitespace-pre-wrap">{a.body}</p>
-          {a.attachments && a.attachments.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-2">
-                {(a.attachments as any[]).filter((att:any)=>att.type!=='image').map((att:any,i:number) => (
-                  <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
-                    <span>{att.type==='pdf'?'PDF':'DOC'}</span><span className="max-w-xs truncate">{att.name}</span>
-                  </a>
-                ))}
+      {monthKeys.map(monthKey => (
+        <MonthGroup
+          key={monthKey}
+          monthKey={monthKey}
+          announcements={grouped[monthKey]}
+          defaultOpen={monthKey === currentMonthKey}
+          acks={acks}
+          showAcks={showAcks}
+          ackDetails={ackDetails}
+          canManage={canManage}
+          bgUrl={bgUrl}
+          onDelete={deleteAnnouncement}
+          onAck={acknowledge}
+          onLoadAck={loadAckDetails}
+          TAG_COLORS={TAG_COLORS}
+        />
+      ))}
+
+      </div>
+      </div>
+    </div>
+  )
+}
+
+// -- Month Group (collapsible) -----------------------------------------------
+function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackDetails, canManage, bgUrl, onDelete, onAck, onLoadAck, TAG_COLORS }: {
+  monthKey: string, announcements: any[], defaultOpen: boolean, acks: Record<string,boolean>,
+  showAcks: string|null, ackDetails: Record<string,any[]>, canManage: boolean, bgUrl: string|null|undefined,
+  onDelete: (id:string)=>void, onAck: (id:string)=>void, onLoadAck: (id:string)=>void, TAG_COLORS: Record<string,string>
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const PREVIEW_LENGTH = 180
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const cardBg = bgUrl ? "bg-white/92 backdrop-blur-sm border border-white/50" : "bg-white border border-gray-200"
+  const headerBg = bgUrl ? "bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl" : "bg-gray-100 rounded-xl border border-gray-200"
+  const headerText = bgUrl ? "text-white font-semibold text-sm drop-shadow" : "text-gray-700 font-semibold text-sm"
+
+  return (
+    <div className="space-y-2">
+      {/* Month header — click to collapse/expand */}
+      <button onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center justify-between px-4 py-2.5 transition ${headerBg}`}>
+        <span className={headerText}>📅 {monthKey}</span>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-2 py-0.5 rounded-full ${bgUrl ? "bg-white/30 text-white" : "bg-gray-200 text-gray-600"}`}>
+            {announcements.length} post{announcements.length !== 1 ? "s" : ""}
+          </span>
+          <span className={bgUrl ? "text-white text-xs" : "text-gray-500 text-xs"}>{open ? "▲ Collapse" : "▼ Show"}</span>
+        </div>
+      </button>
+
+      {/* Announcements within month */}
+      {open && announcements.map(a => {
+        const isLong = a.body && a.body.length > PREVIEW_LENGTH
+        const isExpanded = expandedIds.has(a.id)
+        const displayBody = isLong && !isExpanded ? a.body.slice(0, PREVIEW_LENGTH) + "…" : a.body
+        return (
+          <div key={a.id} className={`${cardBg} rounded-xl p-4 space-y-2 ${a.tag==='Urgent'?'border-red-300':''}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag]||TAG_COLORS.Info}`}>{a.tag}</span>
+                <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {(a.attachments as any[]).filter((att:any)=>att.type==='image').map((att:any,i:number) => (
-                  <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
-                    <img src={att.url} alt={att.name} className="h-24 w-auto rounded-lg border border-gray-200 object-cover hover:opacity-90 transition" />
-                  </a>
-                ))}
+              {canManage && <button onClick={() => onDelete(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">✕</button>}
+            </div>
+            <p className="text-sm text-gray-600 whitespace-pre-wrap">{displayBody}</p>
+            {isLong && (
+              <button onClick={() => toggleExpand(a.id)} className="text-xs text-blue-600 hover:text-blue-800 font-medium transition">
+                {isExpanded ? "▲ Read less" : "▼ Read more"}
+              </button>
+            )}
+            {a.attachments && a.attachments.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  {(a.attachments as any[]).filter((att:any)=>att.type!=='image').map((att:any,i:number) => (
+                    <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
+                      <span>{att.type==='pdf'?'PDF':'DOC'}</span><span className="max-w-xs truncate">{att.name}</span>
+                    </a>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(a.attachments as any[]).filter((att:any)=>att.type==='image').map((att:any,i:number) => (
+                    <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
+                      <img src={att.url} alt={att.name} className="h-24 w-auto rounded-lg border border-gray-200 object-cover hover:opacity-90 transition" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs text-gray-400">By {a.posted_by.split('@')[0]} · {new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
+              <div className="flex items-center gap-2">
+                {canManage && <button onClick={() => onLoadAck(a.id)} className="text-xs text-blue-600 hover:underline">Compliance</button>}
+                {!acks[a.id] ? (
+                  <button onClick={() => onAck(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">Acknowledge</button>
+                ) : (
+                  <span className="text-xs text-green-600 font-medium">✓ Done</span>
+                )}
               </div>
             </div>
-          )}
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-xs text-gray-400">By {a.posted_by.split('@')[0]} - {new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
-            <div className="flex items-center gap-2">
-              {canManage && <button onClick={() => loadAckDetails(a.id)} className="text-xs text-blue-600 hover:underline">Compliance</button>}
-              {!acks[a.id] ? (
-                <button onClick={() => acknowledge(a.id)} className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 transition">Acknowledge</button>
-              ) : (
-                <span className="text-xs text-green-600 font-medium">Done</span>
-              )}
-            </div>
-          </div>
-          {showAcks === a.id && ackDetails[a.id] && (
-            <div className="mt-2 pt-2 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-600 mb-1">Acknowledged ({ackDetails[a.id].length}):</p>
-              {ackDetails[a.id].length === 0 ? (
-                <p className="text-xs text-gray-400">No one yet</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
+            {showAcks === a.id && ackDetails[a.id] && (
+              <div className="mt-2 pt-2 border-t border-gray-100">
+                <p className="text-xs font-medium text-gray-600 mb-1">Acknowledged ({ackDetails[a.id].length}):</p>
+                {ackDetails[a.id].length === 0 ? (
+                  <p className="text-xs text-gray-400">No one yet</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
                     {ackDetails[a.id].map((ac:any) => (
-                      <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{ac.user_email.split('@')[0]} - {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
+                      <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
                     ))}
                   </div>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
-      </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -1017,7 +1105,7 @@ export default function KPIApp() {
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
-        <div className="max-w-6xl mx-auto px-6 py-6 animate-fadeIn">
+        <div className="max-w-6xl mx-auto px-6 pt-6 pb-0 animate-fadeIn">
           {/* Preview mode banner */}
           {(userRole === 'super_admin' || userRole === 'admin') && (
             <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'viewer' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
