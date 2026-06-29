@@ -653,22 +653,24 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
 
 export function HomeScreen({ currentUser, userRole, showToast, activeTab }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string }) {
   const [leaderboardKey, setLeaderboardKey] = useState(0)
-  const userName = currentUser?.split('@')[0] || currentUser
+  const stored = typeof window !== 'undefined' ? localStorage.getItem('kpi_user') : null
+  const storedName = stored ? JSON.parse(stored).display_name : null
+  const userName = storedName || currentUser?.split('@')[0] || currentUser
 
   return (
     <div className="h-full flex flex-col">
       {activeTab === 'gaming-hub' ? (
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 relative z-10">
         <div className="max-w-6xl mx-auto space-y-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {userName}! 👋</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          <h1 className="text-xl font-bold text-white drop-shadow-lg">Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {userName}! 👋</h1>
+          <p className="text-sm text-white/80 mt-0.5 drop-shadow">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="bg-white/95 backdrop-blur-sm border border-white/50 rounded-xl p-6 shadow-lg">
             <GameOfMonth userEmail={currentUser} userName={userName} onScoreSaved={() => setLeaderboardKey(k => k + 1)} />
           </div>
-          <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="bg-white/95 backdrop-blur-sm border border-white/50 rounded-xl p-6 shadow-lg">
             <GameLeaderboard refreshKey={leaderboardKey} userRole={userRole} showToast={showToast} />
           </div>
         </div>
@@ -972,6 +974,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
 
 export default function KPIApp() {
   const [user, setUser] = useState<string | null>(null)
+  const [displayName, setDisplayName] = useState<string>('')
   const [userRole, setUserRole] = useState<string>('viewer')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
   const [bgUrl, setBgUrl] = useState<string|null>(null)
@@ -1014,7 +1017,7 @@ export default function KPIApp() {
 
       // First check for an existing local session
       const stored = localStorage.getItem('kpi_user')
-      if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer'); return }
+      if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer'); setDisplayName(u.display_name || u.username?.split('@')[0] || u.username); return }
 
       // Check for Google OAuth session (set by callback route)
       const { data: { session } } = await supabase.auth.getSession()
@@ -1030,7 +1033,7 @@ export default function KPIApp() {
         }
         const userData = { username: email, role, display_name: displayName }
         localStorage.setItem('kpi_user', JSON.stringify(userData))
-        setUser(email); setUserRole(role)
+        setUser(email); setUserRole(role); setDisplayName(displayName)
         return
       }
       setLoading(false)
@@ -1114,7 +1117,7 @@ export default function KPIApp() {
         <div className="flex items-center gap-2">
           <button onClick={() => setView('settings')} className="flex items-center gap-2 hover:bg-white/10 rounded-lg px-2 py-1 transition">
             <UserAvatar username={user || ''} size="sm" />
-            <span className="text-sm text-white hidden sm:block font-medium">{user}</span>
+            <span className="text-sm text-white hidden sm:block font-medium">{displayName || user}</span>
           </button>
           <button onClick={() => { localStorage.removeItem('kpi_user'); setUser(null) }} className="p-2 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><LogOut className="w-4 h-4" /></button>
         </div>
@@ -1129,7 +1132,7 @@ export default function KPIApp() {
           <div className="border-t border-gray-200 p-3 flex items-center gap-3 bg-white">
             <UserAvatar username={user || ''} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-900 truncate">{user}</p>
+              <p className="text-xs font-medium text-gray-900 truncate">{displayName || user}</p>
               <p className="text-xs text-gray-500 truncate capitalize">{userRole.replace('_',' ')}</p>
             </div>
           </div>
@@ -1141,10 +1144,10 @@ export default function KPIApp() {
         {/* Main content */}
         <main className="flex-1 overflow-y-auto relative">
           {/* Global background for non-performance views */}
-          {!(['dashboard-month','dashboard-employee','dashboard-team','org-chart'] as string[]).includes(view) && bgUrl && (
+          {!(['dashboard-month','dashboard-employee','dashboard-team','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
             <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
-              <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(1px) brightness(0.55)'}} />
-              <div className="absolute inset-0 bg-blue-950/30" />
+              <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(3px) brightness(0.30)'}} />
+              <div className="absolute inset-0 bg-blue-950/55" />
             </div>
           )}
         <div className="h-full animate-fadeIn relative z-10">
@@ -1152,7 +1155,7 @@ export default function KPIApp() {
           {(view === 'announcements' || view === 'gaming-hub') ? (
             <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} />
           ) : (
-          <div className="max-w-6xl mx-auto px-6 pt-6 pb-6">
+          <div className="max-w-6xl mx-auto px-4 pt-4 pb-6 relative z-10">
           {/* Preview mode banner */}
           {(userRole === 'super_admin' || userRole === 'admin') && (
             <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'viewer' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
