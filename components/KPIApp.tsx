@@ -991,7 +991,7 @@ export default function KPIApp() {
             {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
             {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
             {view === 'tl-tools' && <ComingSoon title="Team Lead Tools" description="Coaching logs, 1-on-1 trackers, and performance planning tools. Coming soon!" icon="🔧" />}
-            {view === 'links' && <DirectoryLinks />}
+            {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
             {view === 'cadence' && <OperatingCadence />}
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
           </>
@@ -2122,31 +2122,78 @@ function ResourcesPanel({ userRole, showToast }: { userRole: string, showToast: 
 }
 
 
-function DirectoryLinks() {
-  const links = [
-    { name: 'ClockSmart', url: 'https://eportal.clocksmart.ph/', description: 'Employee time tracking portal', icon: '🕐', color: 'border-blue-400' },
-  ]
+function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const [links, setLinks] = useState<any[]>([])
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ name: '', url: '', description: '' })
+  const [saving, setSaving] = useState(false)
+  const canManage = ['super_admin','admin','team_lead'].includes(userRole)
+  const colors = ['border-blue-400','border-green-400','border-purple-400','border-orange-400','border-pink-400','border-cyan-400']
+
+  useEffect(() => { loadLinks() }, [])
+
+  async function loadLinks() {
+    const { data } = await supabase.from('directory_links').select('*').order('created_at', { ascending: true })
+    setLinks(data || [])
+  }
+
+  async function addLink() {
+    if (!form.name.trim() || !form.url.trim()) return
+    setSaving(true)
+    let url = form.url.trim()
+    if (!url.startsWith('http')) url = 'https://' + url
+    const { error } = await supabase.from('directory_links').insert({ name: form.name.trim(), url, description: form.description.trim() })
+    if (error) showToast(error.message, 'error')
+    else { setForm({ name:'', url:'', description:'' }); setShowForm(false); showToast('Link added!', 'success'); loadLinks() }
+    setSaving(false)
+  }
+
+  async function deleteLink(id: string) {
+    await supabase.from('directory_links').delete().eq('id', id)
+    setLinks(prev => prev.filter(l => l.id !== id))
+    showToast('Removed', 'success')
+  }
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-blue-900">Directory & Links</h2>
-        <p className="text-sm text-gray-500">Quick access to company tools and resources</p>
+    <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Links</h2>
+          <p className="text-sm text-gray-500">Quick access to company tools and websites</p>
+        </div>
+        {canManage && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Add Link'}</button>}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {links.map(link => (
-          <a key={link.name} href={link.url} target="_blank" rel="noopener noreferrer"
-            className={`bg-white rounded-xl border-l-4 ${link.color} border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all hover:-translate-y-1 group`}>
-            <div className="flex items-start gap-4">
-              <span className="text-3xl">{link.icon}</span>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{link.name}</p>
-                <p className="text-xs text-gray-500 mt-1">{link.description}</p>
-                <p className="text-xs text-blue-500 mt-2 truncate">{link.url}</p>
-              </div>
+
+      {showForm && canManage && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <input value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="Link name (e.g. ClockSmart)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <input value={form.url} onChange={e => setForm(p=>({...p,url:e.target.value}))} placeholder="URL (e.g. https://...)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <input value={form.description} onChange={e => setForm(p=>({...p,description:e.target.value}))} placeholder="Short description (optional)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <button onClick={addLink} disabled={saving} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{saving ? 'Saving...' : 'Add Link'}</button>
+        </div>
+      )}
+
+      {links.length === 0 ? (
+        <div className="text-center py-12 text-gray-400 text-sm">No links yet.</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {links.map((link, i) => (
+            <div key={link.id} className={`relative bg-white rounded-xl border-l-4 ${colors[i % colors.length]} border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all group`}>
+              {canManage && <button onClick={() => deleteLink(link.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 text-xs">x</button>}
+              <a href={link.url} target="_blank" rel="noopener noreferrer" className="block">
+                <div className="flex items-start gap-4">
+                  <span className="text-3xl">🔗</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{link.name}</p>
+                    {link.description && <p className="text-xs text-gray-500 mt-1">{link.description}</p>}
+                    <p className="text-xs text-blue-500 mt-2 truncate">{link.url}</p>
+                  </div>
+                </div>
+              </a>
             </div>
-          </a>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
