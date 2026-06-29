@@ -250,18 +250,16 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   }
 
   return (
-    <div className="space-y-3">
+    <div className="relative rounded-2xl overflow-hidden min-h-[600px]">
+      {/* Full page background */}
       {bgUrl !== undefined && bgUrl && (
-        <div className="relative h-36 rounded-2xl overflow-hidden bg-blue-900">
-          <img src={bgUrl} alt="bg" className="absolute inset-0 w-full h-full object-cover" style={{filter:'blur(2px) brightness(0.6)'}} onError={(e) => { console.error('BG image failed to load:', bgUrl); (e.target as HTMLImageElement).style.display='none' }} onLoad={() => console.log('BG loaded OK')} />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-white font-bold text-2xl drop-shadow-lg">Announcements</p>
-          </div>
-          {canChangeBg && (
-            <button onClick={() => setEditingBg(!editingBg)} className="absolute top-2 right-2 bg-white/20 hover:bg-white/40 text-white text-xs px-2 py-1 rounded-lg transition">Change photo</button>
-          )}
+        <div className="fixed-bg absolute inset-0 z-0">
+          <img src={bgUrl} alt="bg" className="w-full h-full object-cover" style={{filter:'blur(3px) brightness(0.4)'}} onError={(e) => { (e.target as HTMLImageElement).style.display='none' }} />
+          <div className="absolute inset-0 bg-blue-950/50" />
         </div>
       )}
+      {/* Content layer */}
+      <div className={bgUrl ? "relative z-10 p-5 space-y-3" : "space-y-3"}>
       
       {editingBg && canChangeBg && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
@@ -283,7 +281,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold text-base text-gray-900">Announcements</h2>
+          <h2 className={bgUrl ? "font-semibold text-lg text-white drop-shadow" : "font-semibold text-base text-gray-900"}>Announcements</h2>
           {unread.length > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unread.length}</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -375,6 +373,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           )}
         </div>
       ))}
+      </div>
     </div>
   )
 }
