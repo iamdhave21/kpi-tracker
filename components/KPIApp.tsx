@@ -254,8 +254,8 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       {/* Full page background */}
       {bgUrl !== undefined && bgUrl && (
         <div className="fixed-bg absolute inset-0 z-0">
-          <img src={bgUrl} alt="bg" className="w-full h-full object-cover" style={{filter:'blur(3px) brightness(0.4)'}} onError={(e) => { (e.target as HTMLImageElement).style.display='none' }} />
-          <div className="absolute inset-0 bg-blue-950/50" />
+          <img src={bgUrl} alt="bg" className="w-full h-full object-cover" style={{filter:'blur(0.5px) brightness(0.65)'}} onError={(e) => { (e.target as HTMLImageElement).style.display='none' }} />
+          <div className="absolute inset-0 bg-blue-950/25" />
         </div>
       )}
       {/* Content layer */}
