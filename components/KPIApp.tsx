@@ -265,8 +265,8 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       {/* Full-bleed background */}
       {bgUrl !== undefined && bgUrl && (
         <div className="absolute inset-0 z-0">
-          <img src={bgUrl} alt="bg" className="w-full h-full object-cover" style={{filter:'blur(0.5px) brightness(0.65)'}} onError={(e) => { (e.target as HTMLImageElement).style.display='none' }} />
-          <div className="absolute inset-0 bg-blue-950/25" />
+          <img src={bgUrl} alt="bg" className="w-full h-full object-cover" style={{filter:'blur(0px) brightness(0.60)'}} onError={(e) => { (e.target as HTMLImageElement).style.display='none' }} />
+          <div className="absolute inset-0 bg-blue-950/20" />
         </div>
       )}
       {/* Scrollable content layer */}
@@ -1146,8 +1146,8 @@ export default function KPIApp() {
           {/* Global background for non-performance views */}
           {!(['dashboard-month','dashboard-employee','dashboard-team','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
             <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
-              <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(3px) brightness(0.30)'}} />
-              <div className="absolute inset-0 bg-blue-950/55" />
+              <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(1px) brightness(0.45)'}} />
+              <div className="absolute inset-0 bg-blue-950/40" />
             </div>
           )}
         <div className="h-full animate-fadeIn relative z-10">
