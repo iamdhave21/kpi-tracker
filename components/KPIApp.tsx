@@ -1847,30 +1847,48 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                   <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium flex-shrink-0">{emps.length} roles</span>
                 )}
                 {!isMulti && (
-                  <>
-                    {editId === emps[0].id ? (
-                      <div className="flex items-center gap-2 flex-wrap" onClick={e=>e.stopPropagation()}>
-                        <input value={editEmpId} onChange={e=>setEditEmpId(e.target.value)} className="w-32 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="ABBSS-XXXXXX"/>
-                        <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-36 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Name"/>
-                        <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Designation"/>
-                        <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-44 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Work email"/>
-                        <input type="email" value={editPersonalEmail} onChange={e=>setEditPersonalEmail(e.target.value)} className="w-44 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Personal email"/>
-                        <button onClick={()=>saveEdit(emps[0].id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button>
-                        <button onClick={()=>setEditId(null)} className="text-gray-400 p-1"><X className="w-4 h-4"/></button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
-                        <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                        <button onClick={()=>{setEditId(emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'');setEditEmpId((emps[0] as any).employee_id||'');setEditPersonalEmail((emps[0] as any).personal_email||'')}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
-                        <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
-                      </div>
-                    )}
-                  </>
+                  <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
+                    <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
+                    <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'');setEditEmpId((emps[0] as any).employee_id||'');setEditPersonalEmail((emps[0] as any).personal_email||'')}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
+                  </div>
                 )}
                 {isMulti && (
                   <span className="text-gray-400 ml-1">{isExpanded ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}</span>
                 )}
               </div>
+
+              {/* Edit panel for single-role employees */}
+              {!isMulti && editId === emps[0].id && (
+                <div className="border-t border-blue-100 bg-blue-50/40 px-4 py-4" onClick={e=>e.stopPropagation()}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Employee ID</label>
+                      <input value={editEmpId} onChange={e=>setEditEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="ABBSS-XXXXXX"/>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Full Name</label>
+                      <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Last, First"/>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Designation / Project</label>
+                      <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Designation"/>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
+                      <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Personal Email (notifications)</label>
+                      <input type="email" value={editPersonalEmail} onChange={e=>setEditPersonalEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="personal@gmail.com"/>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>saveEdit(emps[0].id)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><Save className="w-3.5 h-3.5"/>Save Changes</button>
+                    <button onClick={()=>setEditId(null)} className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+                  </div>
+                </div>
+              )}
 
               {/* Expanded sub-rows for multi-role employees */}
               {isExpanded && isMulti && emps.map((emp, ei) => (
@@ -1878,25 +1896,33 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
                   <div className="flex-shrink-0 w-3 h-3 flex items-center justify-center">
                     <span className="text-gray-300 text-lg leading-none">{ei === emps.length-1 ? '+' : '├'}</span>
                   </div>
-                  {editId === emp.id ? (
-                    <div className="flex-1 flex items-center gap-2 flex-wrap">
-                      <input value={editEmpId} onChange={e=>setEditEmpId(e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="ABBSS-XXXXXX"/>
-                      <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-36 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Name"/>
-                      <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Designation"/>
-                      <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Work email"/>
-                      <input type="email" value={editPersonalEmail} onChange={e=>setEditPersonalEmail(e.target.value)} className="w-40 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" placeholder="Personal email"/>
-                      <button onClick={()=>saveEdit(emp.id)} className="text-emerald-600 hover:text-emerald-700 p-1"><Save className="w-4 h-4"/></button>
-                      <button onClick={()=>setEditId(null)} className="text-gray-400 p-1"><X className="w-4 h-4"/></button>
+                  <>
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-sm ${emp.active ? 'text-gray-700' : 'text-gray-400'}`}>{emp.designation}</span>
                     </div>
-                  ) : (
-                    <>
-                      <div className="flex-1 min-w-0">
-                        <span className={`text-sm ${emp.active ? 'text-gray-700' : 'text-gray-400'}`}>{emp.designation}</span>
+                    <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
+                    <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'');setEditEmpId((emp as any).employee_id||'');setEditPersonalEmail((emp as any).personal_email||'')}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
+                  </>
+                  {editId === emp.id && (
+                    <div className="absolute left-0 right-0 border-t border-blue-100 bg-blue-50/40 px-4 py-4 z-10" style={{top:'100%'}} onClick={e=>e.stopPropagation()}>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Employee ID</label>
+                          <input value={editEmpId} onChange={e=>setEditEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="ABBSS-XXXXXX"/></div>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Full Name</label>
+                          <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Last, First"/></div>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Designation</label>
+                          <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Designation"/></div>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
+                          <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/></div>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Personal Email</label>
+                          <input type="email" value={editPersonalEmail} onChange={e=>setEditPersonalEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="personal@gmail.com"/></div>
                       </div>
-                      <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                      <button onClick={()=>{setEditId(emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'');setEditEmpId((emp as any).employee_id||'');setEditPersonalEmail((emp as any).personal_email||'')}} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 className="w-4 h-4"/></button>
-                      <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
-                    </>
+                      <div className="flex gap-2">
+                        <button onClick={()=>saveEdit(emp.id)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><Save className="w-3.5 h-3.5"/>Save Changes</button>
+                        <button onClick={()=>setEditId(null)} className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+                      </div>
+                    </div>
                   )}
                 </div>
               ))}
