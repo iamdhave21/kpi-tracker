@@ -232,11 +232,31 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       })
   }, [])
 
+  const [bgUploading, setBgUploading] = useState(false)
+  const bgFileRef = useRef<HTMLInputElement>(null)
+
   async function saveBg() {
     await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: bgInput.trim() }, { onConflict: 'key' })
     setBgUrl(bgInput.trim())
     setEditingBg(false)
     showToast('Background updated!', 'success')
+  }
+
+  async function uploadBgFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBgUploading(true)
+    const path = `themes/bg-${Date.now()}.${file.name.split('.').pop()}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setBgUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: urlData.publicUrl }, { onConflict: 'key' })
+    setBgUrl(urlData.publicUrl)
+    setBgInput(urlData.publicUrl)
+    setEditingBg(false)
+    setBgUploading(false)
+    showToast('Background updated!', 'success')
+    if (bgFileRef.current) bgFileRef.current.value = ''
   }
 
   return (
@@ -254,10 +274,25 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       )}
       
       {editingBg && canChangeBg && (
-        <div className="flex gap-2 items-center">
-          <input value={bgInput} onChange={e => setBgInput(e.target.value)} placeholder="Paste image URL here..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          <button onClick={saveBg} className="bg-blue-900 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-800 transition">Save</button>
-          <button onClick={() => setEditingBg(false)} className="text-gray-400 hover:text-gray-600 text-sm px-2">Cancel</button>
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-1">Upload a theme photo</p>
+            <p className="text-xs text-gray-500 mb-2">Best option — upload directly from your device</p>
+            <button onClick={() => bgFileRef.current?.click()} disabled={bgUploading} className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-3 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-50">
+              {bgUploading ? 'Uploading...' : '📤 Upload from device'}
+            </button>
+            <input ref={bgFileRef} type="file" accept="image/*" onChange={uploadBgFile} className="hidden" />
+          </div>
+          <div className="text-center text-xs text-gray-400">— or paste an image URL —</div>
+          <div className="flex gap-2 items-center">
+            <input value={bgInput} onChange={e => setBgInput(e.target.value)} placeholder="https://i.imgur.com/..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+            <button onClick={saveBg} className="bg-blue-900 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-800 transition">Save</button>
+            <button onClick={() => setEditingBg(false)} className="text-gray-400 hover:text-gray-600 text-sm px-2">Cancel</button>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            💡 For URLs, use sites that allow direct linking: <strong>i.imgur.com</strong> works best. 
+            Avoid Google Images, Pinterest, or wallpapers.com (they block external display).
+          </p>
         </div>
       )}
       <div className="flex items-center justify-between">
