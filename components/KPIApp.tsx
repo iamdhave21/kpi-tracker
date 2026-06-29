@@ -235,13 +235,6 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const [bgUploading, setBgUploading] = useState(false)
   const bgFileRef = useRef<HTMLInputElement>(null)
 
-  async function saveBg() {
-    await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: bgInput.trim() }, { onConflict: 'key' })
-    setBgUrl(bgInput.trim())
-    setEditingBg(false)
-    showToast('Background updated!', 'success')
-  }
-
   async function uploadBgFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -275,24 +268,20 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       
       {editingBg && canChangeBg && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-1">Upload a theme photo</p>
-            <p className="text-xs text-gray-500 mb-2">Best option — upload directly from your device</p>
-            <button onClick={() => bgFileRef.current?.click()} disabled={bgUploading} className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-3 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-50">
-              {bgUploading ? 'Uploading...' : '📤 Upload from device'}
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-700">Monthly Theme Photo</p>
+            <button onClick={() => setEditingBg(false)} className="text-gray-400 hover:text-gray-600 text-sm">Cancel</button>
+          </div>
+          <p className="text-xs text-gray-500">Upload a photo from your device to set this month's announcement background</p>
+          <button onClick={() => bgFileRef.current?.click()} disabled={bgUploading} className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-50">
+            {bgUploading ? '⏳ Uploading...' : '📤 Choose photo from device'}
+          </button>
+          <input ref={bgFileRef} type="file" accept="image/*" onChange={uploadBgFile} className="hidden" />
+          {bgUrl && (
+            <button onClick={async () => { await supabase.from('app_settings').upsert({ key:'announcement_bg', value:'' }, { onConflict:'key' }); setBgUrl(null); setEditingBg(false); showToast('Background removed','success') }} className="text-xs text-red-500 hover:text-red-700 transition">
+              Remove current background
             </button>
-            <input ref={bgFileRef} type="file" accept="image/*" onChange={uploadBgFile} className="hidden" />
-          </div>
-          <div className="text-center text-xs text-gray-400">— or paste an image URL —</div>
-          <div className="flex gap-2 items-center">
-            <input value={bgInput} onChange={e => setBgInput(e.target.value)} placeholder="https://i.imgur.com/..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-            <button onClick={saveBg} className="bg-blue-900 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-800 transition">Save</button>
-            <button onClick={() => setEditingBg(false)} className="text-gray-400 hover:text-gray-600 text-sm px-2">Cancel</button>
-          </div>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            💡 For URLs, use sites that allow direct linking: <strong>i.imgur.com</strong> works best. 
-            Avoid Google Images, Pinterest, or wallpapers.com (they block external display).
-          </p>
+          )}
         </div>
       )}
       <div className="flex items-center justify-between">
