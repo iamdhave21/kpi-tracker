@@ -3204,8 +3204,155 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
 }
 
 // -- Settings Panel ----------------------------------------------------------
+// -- Matrix (dev tracker: features, issues, pending SQL) --------------------
+type MatrixItem = {
+  id: string
+  category: 'Feature' | 'Issue' | 'Pending SQL'
+  title: string
+  description: string | null
+  status: 'Open' | 'In Progress' | 'Done'
+  priority: 'Low' | 'Medium' | 'High'
+  created_by: string | null
+  created_at: string
+}
+
+const MATRIX_CATEGORIES = ['Feature', 'Issue', 'Pending SQL'] as const
+const MATRIX_STATUS_COLORS: Record<string, string> = { Open: 'bg-blue-100 text-blue-700', 'In Progress': 'bg-amber-100 text-amber-700', Done: 'bg-emerald-100 text-emerald-700' }
+const MATRIX_PRIORITY_COLORS: Record<string, string> = { Low: 'bg-gray-100 text-gray-600', Medium: 'bg-orange-100 text-orange-700', High: 'bg-red-100 text-red-700' }
+const MATRIX_CATEGORY_COLORS: Record<string, string> = { Feature: 'bg-indigo-50 text-indigo-700 border-indigo-200', Issue: 'bg-red-50 text-red-700 border-red-200', 'Pending SQL': 'bg-purple-50 text-purple-700 border-purple-200' }
+
+function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [items, setItems] = useState<MatrixItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [filterCategory, setFilterCategory] = useState<string>('All')
+  const [filterStatus, setFilterStatus] = useState<string>('All')
+  const emptyForm = { category: 'Issue' as MatrixItem['category'], title: '', description: '', priority: 'Medium' as MatrixItem['priority'] }
+  const [form, setForm] = useState(emptyForm)
+
+  async function loadItems() {
+    setLoading(true)
+    const { data } = await supabase.from('dev_matrix').select('*').order('created_at', { ascending: false })
+    setItems((data || []) as MatrixItem[])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadItems() }, [])
+
+  async function addItem() {
+    if (!form.title.trim()) { showToast('Please add a title.', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('dev_matrix').insert({
+      category: form.category,
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      priority: form.priority,
+      status: 'Open',
+      created_by: currentUser,
+    })
+    setSaving(false)
+    if (error) { showToast(error.message, 'error'); return }
+    showToast('Added to Matrix!')
+    setForm(emptyForm)
+    setShowForm(false)
+    loadItems()
+  }
+
+  async function updateStatus(id: string, status: MatrixItem['status']) {
+    await supabase.from('dev_matrix').update({ status }).eq('id', id)
+    loadItems()
+  }
+
+  async function deleteItem(id: string) {
+    if (!confirm('Remove this item from the Matrix?')) return
+    await supabase.from('dev_matrix').delete().eq('id', id)
+    showToast('Removed')
+    loadItems()
+  }
+
+  const filtered = items.filter(i =>
+    (filterCategory === 'All' || i.category === filterCategory) &&
+    (filterStatus === 'All' || i.status === filterStatus)
+  )
+
+  const openCount = items.filter(i => i.status !== 'Done').length
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
+          <div>
+            <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2"><FileSpreadsheet className="w-4 h-4 text-blue-500"/>Matrix — Build Tracker</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Track features shipped, issues to fix, and SQL still pending in Supabase. {openCount} open item{openCount !== 1 ? 's' : ''}.</p>
+          </div>
+          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition flex items-center gap-1.5"><PlusCircle className="w-4 h-4"/>{showForm ? 'Cancel' : 'Add Item'}</button>
+        </div>
+
+        {showForm && (
+          <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value as MatrixItem['category'] }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                {MATRIX_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+              <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as MatrixItem['priority'] }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                <option>Low</option><option>Medium</option><option>High</option>
+              </select>
+            </div>
+            <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Short title, e.g. 'Ticket status buttons hard to find'" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+            <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Details (optional)..." rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+            <div className="flex justify-end">
+              <button onClick={addItem} disabled={saving} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{saving ? 'Adding...' : 'Add'}</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        {['All', ...MATRIX_CATEGORIES].map(c => (
+          <button key={c} onClick={() => setFilterCategory(c)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterCategory === c ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{c}</button>
+        ))}
+        <span className="text-gray-300">|</span>
+        {['All', 'Open', 'In Progress', 'Done'].map(s => (
+          <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 text-sm">Nothing here yet — add the first item above.</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(item => (
+            <div key={item.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${MATRIX_CATEGORY_COLORS[item.category]}`}>{item.category}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${MATRIX_PRIORITY_COLORS[item.priority]}`}>{item.priority}</span>
+                  <h3 className="font-semibold text-gray-900 text-sm">{item.title}</h3>
+                </div>
+                <button onClick={() => deleteItem(item.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">×</button>
+              </div>
+              {item.description && <p className="text-sm text-gray-600 whitespace-pre-wrap">{item.description}</p>}
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-xs text-gray-400">{item.created_by?.split('@')[0] || 'Unknown'} · {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                <div className="flex items-center gap-1.5">
+                  {(['Open', 'In Progress', 'Done'] as MatrixItem['status'][]).map(s => (
+                    <button key={s} onClick={() => updateStatus(item.id, s)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${item.status === s ? MATRIX_STATUS_COLORS[s] + ' ring-1 ring-offset-1 ring-blue-300' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{s}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>(userRole === 'viewer' ? 'password' : 'users')
+  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'|'matrix'>(userRole === 'viewer' ? 'password' : 'users')
   const [oldPassword, setOldPassword] = useState('')
   const [newPass, setNewPass] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
@@ -3241,8 +3388,8 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
     <div className="max-w-4xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">Settings</h2><p className="text-sm text-gray-500">Manage app users, activity, and security</p></div>
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['users','App Users'],['activity','Audit Log'],['password','Change Password']] as const).map(([t,l])=>(
-          <button key={t} onClick={()=>setActiveTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab===t?'bg-white shadow text-blue-900':'text-gray-600 hover:text-gray-900'}`}>{l}</button>
+        {([['users','App Users'],['activity','Audit Log'],['password','Change Password'],...(userRole === 'super_admin' || userRole === 'admin' ? [['matrix','Matrix']] : [])] as [string,string][]).map(([t,l])=>(
+          <button key={t} onClick={()=>setActiveTab(t as any)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab===t?'bg-white shadow text-blue-900':'text-gray-600 hover:text-gray-900'}`}>{l}</button>
         ))}
       </div>
       {activeTab==='users' && (
@@ -3309,6 +3456,9 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
             </form>
           </div>
         </div>
+      )}
+      {activeTab==='matrix' && (userRole === 'super_admin' || userRole === 'admin') && (
+        <MatrixPanel currentUser={currentUser} showToast={showToast} />
       )}
     </div>
   )
