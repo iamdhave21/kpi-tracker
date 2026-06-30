@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1030,7 +1030,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePa
 
 
 // -- Collapsible Sidebar -----------------------------------------------------
-function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, userRole }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, userRole: string }) {
+function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, userRole }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, userRole: string }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, hris: false, dir: false, sys: false
   })
@@ -1077,10 +1077,11 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* OPERATIONS */}
-      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','bcp'].includes(view)} />
+      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp'].includes(view)} />
       {!collapsed.ops && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="tasks" label="Tasks" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingTaskCount}/>
           <NavItem id="bcp" label="BCP" icon={<Shield className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
@@ -1153,6 +1154,7 @@ export default function KPIApp() {
   const [displayName, setDisplayName] = useState<string>('')
   const [userRole, setUserRole] = useState<string>('viewer')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
+  const [pendingTaskCount, setPendingTaskCount] = useState(0)
   const [bgUrl, setBgUrl] = useState<string|null>(null)
 
   useEffect(() => {
@@ -1255,6 +1257,19 @@ export default function KPIApp() {
     loadPending()
   }, [user, userRole])
 
+  // Load pending tasks count -- Agents see their own assigned/incomplete
+  // tasks, Manager/Team Lead see all incomplete tasks across everyone.
+  useEffect(() => {
+    if (!user) return
+    async function loadPendingTasks() {
+      let q = supabase.from('tasks').select('id').eq('is_done', false)
+      if (userRole === 'viewer') q = q.eq('assigned_to', user!.toLowerCase())
+      const { data } = await q
+      setPendingTaskCount((data || []).length)
+    }
+    loadPendingTasks()
+  }, [user, userRole])
+
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
     setToast({ msg, type }); setTimeout(() => setToast(null), 3500)
   }
@@ -1316,7 +1331,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} userRole={userRole} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={userRole} />
 
           {/* User info at bottom of sidebar */}
           <div className="border-t border-gray-200 p-3 flex items-center gap-3 bg-white">
@@ -1382,6 +1397,7 @@ export default function KPIApp() {
             {view === 'settings' && <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'org-chart' && <OrgChart employees={employees} showToast={showToast} />}
             {view === 'tickets' && <TicketsPanel currentUser={user || ''} userRole={userRole} showToast={showToast} />}
+            {view === 'tasks' && <TasksPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='viewer'?'employee_email':'agent_acknowledged', userRole==='viewer'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
             {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
@@ -3367,6 +3383,151 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- Tasks: Manager/Team Lead assigns a task to a subordinate -------------
+type AppTask = {
+  id: string
+  title: string
+  description: string | null
+  assigned_to: string
+  assigned_by: string
+  due_date: string | null
+  is_done: boolean
+  created_at: string
+}
+
+function TasksPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const canAssign = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const [tasks, setTasks] = useState<AppTask[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const [filterStatus, setFilterStatus] = useState<'All' | 'To Do' | 'Done'>('All')
+  const [form, setForm] = useState({ title: '', description: '', assigned_to: '', due_date: '' })
+
+  // Build a lookup of email -> name for display, and the list of people
+  // a Manager/Team Lead can actually assign to (anyone with a work email).
+  const assignableEmployees = employees.filter(e => e.active && e.email)
+  const nameByEmail = (email: string) => assignableEmployees.find(e => e.email?.toLowerCase() === email.toLowerCase())?.name || email.split('@')[0]
+
+  async function loadTasks() {
+    setLoading(true)
+    let q = supabase.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false })
+    // Agents only see tasks assigned to them. Manager/Team Lead see everyone's.
+    if (!canAssign) q = q.eq('assigned_to', currentUser.toLowerCase())
+    const { data, error } = await q
+    if (!error) setTasks((data || []) as AppTask[])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadTasks() }, [])
+
+  async function createTask() {
+    if (!form.title.trim() || !form.assigned_to) { showToast('Please add a title and pick who this is assigned to.', 'error'); return }
+    setPosting(true)
+    const { error } = await supabase.from('tasks').insert({
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      assigned_to: form.assigned_to.toLowerCase(),
+      assigned_by: currentUser,
+      due_date: form.due_date || null,
+      is_done: false,
+    })
+    setPosting(false)
+    if (error) { showToast(error.message, 'error'); return }
+    showToast('Task assigned!')
+    fetch('/api/notify/task-assigned', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedTo: form.assigned_to, assignedBy: currentUser, title: form.title.trim(), description: form.description.trim(), dueDate: form.due_date || null })
+    }).catch(() => {})
+    setForm({ title: '', description: '', assigned_to: '', due_date: '' })
+    setShowForm(false)
+    loadTasks()
+  }
+
+  async function toggleDone(task: AppTask) {
+    await supabase.from('tasks').update({ is_done: !task.is_done }).eq('id', task.id)
+    loadTasks()
+  }
+
+  async function deleteTask(id: string) {
+    if (!confirm('Delete this task?')) return
+    await supabase.from('tasks').delete().eq('id', id)
+    showToast('Task deleted')
+    loadTasks()
+  }
+
+  const filtered = tasks.filter(t => {
+    if (filterStatus === 'To Do') return !t.is_done
+    if (filterStatus === 'Done') return t.is_done
+    return true
+  })
+
+  const isOverdue = (dueDate: string | null) => dueDate ? new Date(dueDate) < new Date(new Date().toDateString()) : false
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Tasks</h2>
+          <p className="text-sm text-gray-500">{canAssign ? `${tasks.length} task${tasks.length !== 1 ? 's' : ''} across the team` : `${tasks.length} task${tasks.length !== 1 ? 's' : ''} assigned to you`}</p>
+        </div>
+        {canAssign && (
+          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Assign Task'}</button>
+        )}
+      </div>
+
+      {showForm && canAssign && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Task title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Details (optional)..." rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+          <div className="flex items-center gap-3 flex-wrap">
+            <select value={form.assigned_to} onChange={e => setForm(p => ({ ...p, assigned_to: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 flex-1 min-w-48">
+              <option value="">Assign to...</option>
+              {assignableEmployees.map(e => <option key={e.id} value={e.email || ''}>{e.name}</option>)}
+            </select>
+            <input type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
+          </div>
+          <div className="flex justify-end">
+            <button onClick={createTask} disabled={posting} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Assigning...' : 'Assign Task'}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        {(['All', 'To Do', 'Done'] as const).map(s => (
+          <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading tasks...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 text-sm">No tasks found.</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(t => (
+            <div key={t.id} className={`bg-white border rounded-xl p-4 flex items-start gap-3 ${t.is_done ? 'border-gray-200 opacity-60' : isOverdue(t.due_date) ? 'border-red-300' : 'border-gray-200'}`}>
+              <button onClick={() => toggleDone(t)} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${t.is_done ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-blue-400'}`}>
+                {t.is_done && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+              </button>
+              <div className="flex-1 min-w-0">
+                <p className={`font-semibold text-sm ${t.is_done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{t.title}</p>
+                {t.description && <p className="text-sm text-gray-500 mt-0.5">{t.description}</p>}
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {canAssign && <>Assigned to <span className="font-medium text-gray-600">{nameByEmail(t.assigned_to)}</span> · </>}
+                  By {t.assigned_by.split('@')[0]}
+                  {t.due_date && <> · <span className={isOverdue(t.due_date) && !t.is_done ? 'text-red-500 font-medium' : ''}>{isOverdue(t.due_date) && !t.is_done ? '⚠ Overdue: ' : 'Due '}{new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></>}
+                </p>
+              </div>
+              {canAssign && <button onClick={() => deleteTask(t.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">×</button>}
+            </div>
+          ))}
         </div>
       )}
     </div>
