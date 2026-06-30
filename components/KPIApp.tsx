@@ -1067,6 +1067,24 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
   return (
     <div className="flex-1 overflow-y-auto py-3">
 
+      {/* Collapse All / Expand All */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={() => {
+            const allCollapsed = Object.values(collapsed).every(Boolean)
+            const next = Object.keys(collapsed).reduce((acc, k) => ({ ...acc, [k]: !allCollapsed }), {} as Record<string, boolean>)
+            setCollapsed(next)
+          }}
+          className="w-full flex items-center justify-center gap-1.5 text-xs font-medium text-gray-400 hover:text-gray-600 py-1.5 rounded-lg hover:bg-gray-50 transition"
+        >
+          {Object.values(collapsed).every(Boolean) ? (
+            <><ChevronDown className="w-3.5 h-3.5" /> Expand All</>
+          ) : (
+            <><ChevronUp className="w-3.5 h-3.5" /> Collapse All</>
+          )}
+        </button>
+      </div>
+
       {/* HOME */}
       <SectionHeader sectionKey="home" label="Home" hasActive={['announcements','gaming-hub'].includes(view)} />
       {!collapsed.home && (
