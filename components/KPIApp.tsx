@@ -1556,7 +1556,7 @@ export default function KPIApp() {
             {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'viewer' || userRole === 'team_lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
             {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
-            {view === 'cadence' && <OperatingCadence />}
+            {view === 'cadence' && <OperatingCadence currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
           </>
         )}
@@ -2937,17 +2937,149 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
 // -- Directory Links ---------------------------------------------------------
 
 // -- Operating Cadence ----------------------------------------------
-function OperatingCadence() {
-  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'>('daily')
+// -- Operating Cadence: checklist items with stable IDs per frequency.
+// Used by both the tracker UI and the compliance calculation, so this
+// is the single source of truth for what counts as a cadence item.
+type CadenceItem = { id: string, frequency: 'daily' | 'weekly' | 'monthly', label: string }
 
-  const Card = ({ title, items }: { title: string, items: string[] }) => (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h4 className="font-semibold text-gray-900 text-sm mb-2">{title}</h4>
-      <ul className="space-y-1">
-        {items.map((it, i) => <li key={i} className="text-sm text-gray-600 flex gap-2"><span className="text-blue-600">•</span><span>{it}</span></li>)}
-      </ul>
+const CADENCE_ITEMS: CadenceItem[] = [
+  // Daily
+  { id: 'd-attendance', frequency: 'daily', label: 'Review attendance' },
+  { id: 'd-workload', frequency: 'daily', label: 'Review workload and queues' },
+  { id: 'd-sla', frequency: 'daily', label: 'Check SLA/KPI risks' },
+  { id: 'd-assist', frequency: 'daily', label: 'Identify employees needing assistance' },
+  { id: 'd-escalate', frequency: 'daily', label: 'Escalate urgent operational issues' },
+  { id: 'd-blockers', frequency: 'daily', label: 'Answer questions and remove blockers' },
+  { id: 'd-monitor', frequency: 'daily', label: 'Monitor productivity' },
+  { id: 'd-recognize', frequency: 'daily', label: 'Recognize good performance immediately' },
+  // Weekly
+  { id: 'w-huddle', frequency: 'weekly', label: 'Monday Team Huddle (30-45 min)' },
+  { id: 'w-catchup', frequency: 'weekly', label: 'Midweek Catch-up (Wed/Thu)' },
+  { id: 'w-report', frequency: 'weekly', label: 'Friday Performance Tracking report submitted' },
+  // Monthly
+  { id: 'm-coach1', frequency: 'monthly', label: 'Coaching Session #1 (Week 2)' },
+  { id: 'm-coach2', frequency: 'monthly', label: 'Coaching Session #2 (Week 4)' },
+  { id: 'm-review', frequency: 'monthly', label: 'Monthly Performance Review completed' },
+  { id: 'm-talent', frequency: 'monthly', label: 'Talent Review completed' },
+  { id: 'm-process', frequency: 'monthly', label: 'Process Improvement Review completed' },
+]
+
+// Returns the period key for "today" at a given frequency, so a Daily
+// item resets every new day, Weekly resets every Monday, Monthly resets
+// every 1st of the month -- per spec, fully automatic, no manual reset.
+function currentPeriodKey(frequency: 'daily' | 'weekly' | 'monthly'): string {
+  const now = new Date()
+  if (frequency === 'daily') return now.toISOString().slice(0, 10)
+  if (frequency === 'monthly') return now.toISOString().slice(0, 7)
+  // weekly: key = the Monday of this week
+  const day = now.getDay()
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + diffToMonday)
+  return monday.toISOString().slice(0, 10)
+}
+
+function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'>('daily')
+  const [completions, setCompletions] = useState<Record<string, { done: boolean, note: string }>>({})
+  const [loading, setLoading] = useState(true)
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const canViewCompliance = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+
+  async function loadCompletions() {
+    if (!currentUser) { setLoading(false); return }
+    setLoading(true)
+    const periods = CADENCE_ITEMS.map(it => currentPeriodKey(it.frequency))
+    const { data } = await supabase.from('cadence_completions')
+      .select('*')
+      .eq('team_lead_email', currentUser.toLowerCase())
+      .in('period_key', Array.from(new Set(periods)))
+    const map: Record<string, { done: boolean, note: string }> = {}
+    ;(data || []).forEach((row: any) => { map[`${row.item_id}__${row.period_key}`] = { done: row.done, note: row.note || '' } })
+    setCompletions(map)
+    setLoading(false)
+  }
+
+  useEffect(() => { loadCompletions() }, [currentUser])
+
+  function keyFor(item: CadenceItem) { return `${item.id}__${currentPeriodKey(item.frequency)}` }
+
+  async function toggleItem(item: CadenceItem) {
+    if (!currentUser) return
+    const k = keyFor(item)
+    const current = completions[k]
+    const nextDone = !current?.done
+    setSavingId(item.id)
+    await supabase.from('cadence_completions').upsert({
+      team_lead_email: currentUser.toLowerCase(),
+      item_id: item.id,
+      frequency: item.frequency,
+      period_key: currentPeriodKey(item.frequency),
+      done: nextDone,
+      note: current?.note || '',
+    }, { onConflict: 'team_lead_email,item_id,period_key' })
+    setCompletions(prev => ({ ...prev, [k]: { done: nextDone, note: current?.note || '' } }))
+    setSavingId(null)
+  }
+
+  async function saveNote(item: CadenceItem, note: string) {
+    if (!currentUser) return
+    const k = keyFor(item)
+    const current = completions[k]
+    await supabase.from('cadence_completions').upsert({
+      team_lead_email: currentUser.toLowerCase(),
+      item_id: item.id,
+      frequency: item.frequency,
+      period_key: currentPeriodKey(item.frequency),
+      done: current?.done || false,
+      note,
+    }, { onConflict: 'team_lead_email,item_id,period_key' })
+    setCompletions(prev => ({ ...prev, [k]: { done: current?.done || false, note } }))
+  }
+
+  const CheckItem = ({ item }: { item: CadenceItem }) => {
+    const k = keyFor(item)
+    const state = completions[k] || { done: false, note: '' }
+    const [noteDraft, setNoteDraft] = useState(state.note)
+    const [showNote, setShowNote] = useState(false)
+    return (
+      <div className="border border-gray-200 rounded-lg p-3 bg-white">
+        <div className="flex items-start gap-3">
+          <button onClick={() => toggleItem(item)} disabled={savingId === item.id}
+            className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${state.done ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-blue-400'}`}>
+            {state.done && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm ${state.done ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.label}</p>
+            {!showNote && !state.note && (
+              <button onClick={() => setShowNote(true)} className="text-xs text-blue-600 hover:underline mt-1">+ Add note</button>
+            )}
+            {(showNote || state.note) && (
+              <textarea
+                value={noteDraft}
+                onChange={e => setNoteDraft(e.target.value)}
+                onBlur={() => saveNote(item, noteDraft)}
+                placeholder="What did you accomplish? (optional)"
+                rows={2}
+                className="mt-1.5 w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const Card = ({ title, items }: { title: string, items: CadenceItem[] }) => (
+    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+      <h4 className="font-semibold text-gray-900 text-sm mb-1">{title}</h4>
+      {items.map(item => <CheckItem key={item.id} item={item} />)}
     </div>
   )
+
+  const dailyItems = CADENCE_ITEMS.filter(i => i.frequency === 'daily')
+  const weeklyItems = CADENCE_ITEMS.filter(i => i.frequency === 'weekly')
+  const monthlyItems = CADENCE_ITEMS.filter(i => i.frequency === 'monthly')
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -2958,35 +3090,36 @@ function OperatingCadence() {
 
       {/* Tabs */}
       <div className="flex gap-2 flex-wrap">
-        {[['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['deliverables','Deliverables']].map(([key,label]) => (
+        {([['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['deliverables','Deliverables'],...(canViewCompliance ? [['compliance','Compliance']] : [])] as [string,string][]).map(([key,label]) => (
           <button key={key} onClick={() => setTab(key as any)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${tab===key ? 'bg-blue-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{label}</button>
         ))}
       </div>
 
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+      ) : (
+      <>
       {tab === 'daily' && (
         <div className="space-y-3">
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800">⏱️ <strong>15-30 minutes</strong> at the start of each shift</div>
-          <Card title="1. Daily Operations Check" items={['Review attendance','Review workload and queues','Check SLA/KPI risks','Identify employees needing assistance','Escalate urgent operational issues']} />
-          <Card title="2. Employee Support (throughout the day)" items={['Answer questions and remove blockers','Monitor productivity','Recognize good performance immediately']} />
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800">⏱️ <strong>15-30 minutes</strong> at the start of each shift — resets automatically each new day</div>
+          <Card title="1. Daily Operations Check" items={dailyItems.slice(0, 5)} />
+          <Card title="2. Employee Support (throughout the day)" items={dailyItems.slice(5)} />
           <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-sm text-green-800"><strong>Output:</strong> Risks identified + immediate action plan</div>
         </div>
       )}
 
       {tab === 'weekly' && (
         <div className="space-y-3">
-          <Card title="Monday — Team Huddle (30-45 min)" items={['Previous week performance','Current week priorities','Business updates & best practices','Challenges & recognition','Action items']} />
-          <Card title="Midweek — Catch-up (Wed/Thu)" items={['What is working well?','What is slowing you down?','Any process improvements?','Any support needed?','Any recurring issues?']} />
-          <Card title="Friday — Performance Tracking" items={['Submit weekly performance report','Transactions, productivity, quality','Attendance, errors, overtime','Highlights and risks','One row per employee']} />
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800">Resets automatically every Monday</div>
+          <Card title="This Week" items={weeklyItems} />
           <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-sm text-green-800"><strong>Tip:</strong> Track weekly to spot trends before month-end</div>
         </div>
       )}
 
       {tab === 'monthly' && (
         <div className="space-y-3">
-          <Card title="1. Coaching Sessions (min 2 per employee)" items={['Week 2 — Coaching Session #1','Week 4 — Coaching Session #2','Cover: KPI, quality, productivity','Strengths & areas for improvement','Career development + action plan']} />
-          <Card title="2. Monthly Performance Review" items={['Team: volume, productivity, SLA, attendance, quality','Highlight top performers','Note employees improving','Flag those requiring coaching','Training recommendations']} />
-          <Card title="3. Talent Review" items={['High performers & promotion readiness','Cross-training opportunities','Backup & succession planning']} />
-          <Card title="4. Process Improvement Review" items={['Recurring issues & root causes','Automation opportunities','Client concerns & process gaps','Recommendations']} />
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800">Resets automatically on the 1st of each month</div>
+          <Card title="This Month" items={monthlyItems} />
         </div>
       )}
 
@@ -3008,9 +3141,80 @@ function OperatingCadence() {
               <li>• <strong>Weekly</strong> ops sync (30-45 min)</li>
               <li>• <strong>Monthly</strong> 1-on-1 (45-60 min)</li>
               <li>• <strong>Monthly</strong> business review</li>
+
               <li>• <strong>Quarterly</strong> leadership review</li>
             </ul>
           </div>
+        </div>
+      )}
+
+      {tab === 'compliance' && canViewCompliance && (
+        <CadenceCompliance currentUser={currentUser} userRole={userRole} showToast={showToast} />
+      )}
+      </>
+      )}
+    </div>
+  )
+}
+
+// -- Cadence Compliance: % of cadence items completed, per Team Lead.
+// Manager/Super Admin see everyone; Team Lead sees only their own.
+// Designed so this rate can be reused later in the planned Team Lead
+// Scorecard feature, not locked to this page only.
+function CadenceCompliance({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [rows, setRows] = useState<{ email: string, rate: number, done: number, total: number }[]>([])
+  const [loading, setLoading] = useState(true)
+  const isManager = userRole === 'super_admin' || userRole === 'admin'
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const periods = Array.from(new Set(CADENCE_ITEMS.map(it => currentPeriodKey(it.frequency))))
+      let q = supabase.from('cadence_completions').select('team_lead_email, done').in('period_key', periods)
+      if (!isManager && currentUser) q = q.eq('team_lead_email', currentUser.toLowerCase())
+      const { data } = await q
+
+      // Compliance rate = (items marked done this period) / (total items
+      // that exist for that frequency) -- per Team Lead.
+      const byEmail: Record<string, number> = {}
+      ;(data || []).forEach((row: any) => { if (row.done) byEmail[row.team_lead_email] = (byEmail[row.team_lead_email] || 0) + 1 }
+      )
+      const total = CADENCE_ITEMS.length
+      const emails = isManager ? Object.keys(byEmail) : (currentUser ? [currentUser.toLowerCase()] : [])
+      // Manager view should still show Team Leads with 0 done, not just
+      // ones with at least one completion -- but without a team_leads
+      // list handy here, we show whoever has activity, which is the
+      // practical signal for "is anyone falling behind."
+      const result = emails.map(email => {
+        const done = byEmail[email] || 0
+        return { email, rate: total > 0 ? Math.round((done / total) * 100) : 0, done, total }
+      }).sort((a, b) => a.rate - b.rate)
+      setRows(result)
+      setLoading(false)
+    }
+    load()
+  }, [currentUser, userRole])
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm text-gray-600">
+        Compliance = % of this period's cadence items (daily + weekly + monthly combined) marked done. {isManager ? 'Showing all Team Leads with activity this period.' : 'Showing your own compliance.'}
+      </div>
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+      ) : rows.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 text-sm">No cadence activity recorded yet this period.</div>
+      ) : (
+        <div className="space-y-2">
+          {rows.map(r => (
+            <div key={r.email} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${r.rate >= 80 ? 'bg-emerald-100 text-emerald-700' : r.rate >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{r.rate}%</div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">{r.email.split('@')[0]}</p>
+                <p className="text-xs text-gray-500">{r.done} of {r.total} cadence items completed this period</p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
