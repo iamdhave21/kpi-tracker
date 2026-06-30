@@ -1962,7 +1962,26 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   }
 
   async function addEmployee() {
-    if (!newName.trim()) return; setAdding(true)
+    if (!newName.trim()) return
+    // Duplicate check: Employee ID first (most reliable unique identifier),
+    // then email, since both should be unique per person/role.
+    const empIdTrimmed = newEmpId.trim()
+    const emailTrimmed = newEmail.trim().toLowerCase()
+    if (empIdTrimmed) {
+      const idMatch = employees.find(e => e.employee_id && e.employee_id.trim().toLowerCase() === empIdTrimmed.toLowerCase())
+      if (idMatch) {
+        showToast(`Employee ID ${empIdTrimmed} already belongs to ${idMatch.name}. Edit that record instead of adding a new one.`, 'error')
+        return
+      }
+    }
+    if (emailTrimmed) {
+      const emailMatch = employees.find(e => e.email && e.email.trim().toLowerCase() === emailTrimmed)
+      if (emailMatch) {
+        showToast(`${emailTrimmed} is already used by ${emailMatch.name}. Add a new role for them by editing that record, or use a different email.`, 'error')
+        return
+      }
+    }
+    setAdding(true)
     const existingForPerson = employees.filter(e => e.name.trim().toLowerCase() === newName.trim().toLowerCase())
     const generatedDesig = generateDesignation(newEmpType, newClient, existingForPerson)
     const {error} = await supabase.from('employees').insert({
