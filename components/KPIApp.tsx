@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key } from 'lucide-react'
+import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet } from 'lucide-react'
 
 type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tl-tools' | 'directory' | 'settings' | 'hris-referral' | 'hris-records'
 type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
@@ -1206,7 +1206,7 @@ export default function KPIApp() {
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
             {view === 'entry' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
-            {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} />}
+            {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} userRole={userRole} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
             {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
             {view === 'observations' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Observations require Team Lead access or higher</p></div>}
@@ -1771,8 +1771,8 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
 }
 
 // -- Employee Manager --------------------------------------------------------
-function EmployeeManager({ employees, onChanged, showToast, currentUser }:
-  { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
+function EmployeeManager({ employees, onChanged, showToast, currentUser, userRole }:
+  { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string }) {
   const [newName, setNewName] = useState('')
   const [newDesig, setNewDesig] = useState('')
   const [newEmail, setNewEmail] = useState('')
@@ -1786,6 +1786,28 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
   const [searchQ, setSearchQ] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
+  const canExport = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+
+  async function exportToExcel() {
+    const XLSX = await import('xlsx')
+    const rows = employees
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(e => ({
+        'Employee ID': e.employee_id || '',
+        'Name': e.name,
+        'Designation / Project': e.designation,
+        'Work Email': e.email || '',
+        'Status': e.active ? 'Active' : 'Inactive',
+      }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 32 }, { wch: 10 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Employees')
+    const dateStr = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(wb, `ABBSS_Employee_Records_${dateStr}.xlsx`)
+    showToast('Export downloaded!')
+  }
 
   async function addEmployee() {
     if (!newName.trim()) return; setAdding(true)
@@ -1873,7 +1895,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser }:
           <h2 className="text-xl font-bold text-blue-900">Employee Management</h2>
           <p className="text-sm text-gray-500">{uniquePeople} people - {activeCount} active records</p>
         </div>
-        <button onClick={()=>setShowInactive(!showInactive)} className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${showInactive?'bg-gray-800 text-white border-gray-800':'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{showInactive?'Hide Inactive':'Show Inactive'}</button>
+        <div className="flex items-center gap-2">
+          {canExport && <button onClick={exportToExcel} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-green-300 text-green-700 bg-green-50 hover:bg-green-100 font-medium transition"><FileSpreadsheet className="w-3.5 h-3.5"/>Export to Excel</button>}
+          <button onClick={()=>setShowInactive(!showInactive)} className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${showInactive?'bg-gray-800 text-white border-gray-800':'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{showInactive?'Hide Inactive':'Show Inactive'}</button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-5">
