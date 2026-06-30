@@ -12,6 +12,7 @@ export type Employee = {
   email: string | null
   employee_id: string | null
   departments: string[] | null
+  employment_type: string | null
   active: boolean
   created_at: string
 }
