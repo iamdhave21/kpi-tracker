@@ -1385,7 +1385,8 @@ export default function KPIApp() {
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='viewer'?'employee_email':'agent_acknowledged', userRole==='viewer'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
             {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
-            {view === 'hris-records' && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
+            {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
+            {view === 'hris-records' && (userRole === 'viewer' || userRole === 'team_lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
             {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
             {view === 'cadence' && <OperatingCadence />}
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
@@ -2854,7 +2855,7 @@ function ResourcesPanel({ userRole, showToast }: { userRole: string, showToast: 
   const [uploading, setUploading] = useState(false)
   const [title, setTitle] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const canManage = ['super_admin','admin','team_lead'].includes(userRole)
+  const canManage = ['super_admin','admin'].includes(userRole)
 
   useEffect(() => { loadResources() }, [])
 
@@ -2936,7 +2937,7 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', url: '', description: '' })
   const [saving, setSaving] = useState(false)
-  const canManage = ['super_admin','admin','team_lead'].includes(userRole)
+  const canManage = ['super_admin','admin'].includes(userRole)
   const colors = ['border-blue-400','border-green-400','border-purple-400','border-orange-400','border-pink-400','border-cyan-400']
 
   useEffect(() => { loadLinks() }, [])
@@ -4685,6 +4686,10 @@ function TLComplianceReport({ employees, currentUser, userRole }:
 function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
   const canRefer = true // everyone can submit a referral
+  // Agent/Team Lead see only their own submitted referrals (status visible,
+  // but not other people's candidate details). Manager+ see everyone and
+  // can export.
+  const canSeeAll = canManage
   const [referrals, setReferrals] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -4698,7 +4703,9 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
 
   async function loadReferrals() {
     setLoading(true)
-    const { data } = await supabase.from('hris_referrals').select('*').order('created_at', { ascending: false })
+    let q = supabase.from('hris_referrals').select('*').order('created_at', { ascending: false })
+    if (!canSeeAll && currentUser) q = q.eq('submitted_by', currentUser)
+    const { data } = await q
     setReferrals(data || [])
     setLoading(false)
   }
@@ -4759,18 +4766,39 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
     'Declined': 'bg-red-100 text-red-700',
   }
 
+  async function exportReferralsToExcel() {
+    const XLSX = await import('xlsx')
+    const rows = referrals.map(r => ({
+      'Candidate Name': r.candidate_name,
+      'Position Applied': r.position_applied,
+      'Referred By': r.referred_by || r.submitted_by,
+      'Relationship': r.relationship || '',
+      'Status': r.status,
+      'Submitted': new Date(r.created_at).toLocaleDateString('en-PH'),
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [{ wch: 24 }, { wch: 24 }, { wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 14 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Referrals')
+    XLSX.writeFile(wb, `ABBSS_Employee_Referrals_${new Date().toISOString().slice(0,10)}.xlsx`)
+    showToast('Export downloaded!')
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Employee Referral</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Refer a candidate for an open position at AB BSS</p>
+          <p className="text-sm text-gray-500 mt-0.5">{canSeeAll ? 'Refer a candidate for an open position at AB BSS' : 'Refer a candidate, and track the status of your own submissions'}</p>
         </div>
-        {canRefer && (
-          <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
-            <PlusCircle className="w-4 h-4" /> Refer Someone
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canManage && <button onClick={exportReferralsToExcel} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-green-300 text-green-700 bg-green-50 hover:bg-green-100 font-medium transition"><FileSpreadsheet className="w-3.5 h-3.5"/>Export to Excel</button>}
+          {canRefer && (
+            <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+              <PlusCircle className="w-4 h-4" /> Refer Someone
+            </button>
+          )}
+        </div>
       </div>
 
       {showForm && (
