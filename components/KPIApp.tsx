@@ -785,9 +785,6 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl 
         </div>
       ) : (
         <div className="flex-1 overflow-hidden flex flex-col">
-          <div className="px-4 pt-4">
-            <MyProfileCard currentUser={currentUser} userName={userName} showToast={showToast} />
-          </div>
           <div className="flex-1 overflow-hidden">
             <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
           </div>
@@ -1030,7 +1027,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePa
 
 
 // -- Collapsible Sidebar -----------------------------------------------------
-function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void }) {
+function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, hris: false, dir: false, sys: false
   })
@@ -1114,8 +1111,56 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     setDragIndex(null)
   }
 
+  const [sidebarAvatarUrl, setSidebarAvatarUrl] = useState<string | null>(null)
+  const [uploadingSidebarAvatar, setUploadingSidebarAvatar] = useState(false)
+
+  useEffect(() => {
+    if (!user) return
+    supabase.from('app_users').select('avatar_url').eq('username', user.toLowerCase()).single()
+      .then(({ data }) => setSidebarAvatarUrl(data?.avatar_url || null))
+  }, [user])
+
+  async function handleSidebarAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB', 'error'); return }
+    setUploadingSidebarAvatar(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${user.toLowerCase()}/avatar.${ext}`
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      const publicUrl = urlData.publicUrl + '?t=' + Date.now()
+      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', user.toLowerCase()).select()
+      if (dbErr) throw dbErr
+      if (!updated || updated.length === 0) throw new Error(`No account found for "${user}".`)
+      setSidebarAvatarUrl(publicUrl)
+      showToast('Photo updated!', 'success')
+    } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Upload failed', 'error') }
+    setUploadingSidebarAvatar(false)
+  }
+
   return (
     <div className="flex-1 overflow-y-auto py-3">
+
+      {/* Profile -- photo + name at top of sidebar, click photo to change it */}
+      <div className="px-3 pb-3 mb-1 border-b border-gray-200 flex items-center gap-3">
+        <label className="relative flex-shrink-0 cursor-pointer group" title="Click to upload or change your photo">
+          {sidebarAvatarUrl
+            ? <img src={sidebarAvatarUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover ring-2 ring-blue-100"/>
+            : <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ring-2 ring-blue-100 ${avatarColor(user||'')}`}>{displayName?.charAt(0).toUpperCase()}</div>
+          }
+          <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition">
+            {uploadingSidebarAvatar ? <span className="text-white text-[9px]">...</span> : <span className="text-white text-[10px] opacity-0 group-hover:opacity-100">📷</span>}
+          </div>
+          <input type="file" accept="image/*" className="hidden" disabled={uploadingSidebarAvatar} onChange={handleSidebarAvatarUpload}/>
+        </label>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900 truncate">{displayName || user}</p>
+          <p className="text-xs text-gray-500 truncate">{ROLE_LABELS[userRole] || userRole}</p>
+        </div>
+      </div>
 
       {/* FAVORITES -- personal, drag-to-reorder shortcuts. Purely additive;
           does not remove or alter anything from the full sidebar below. */}
@@ -1437,27 +1482,17 @@ export default function KPIApp() {
           <span className="font-semibold text-white tracking-wide hidden sm:block">AB BSS Operations Portal</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setView('settings')} className="flex items-center gap-2 hover:bg-white/10 rounded-lg px-2 py-1 transition">
-            <UserAvatar username={user || ''} size="sm" />
-            <span className="text-sm text-white hidden sm:block font-medium">{displayName || user}</span>
+          <button onClick={() => { localStorage.removeItem('kpi_user'); setUser(null) }} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition font-medium">
+            <LogOut className="w-4 h-4" /><span className="hidden sm:inline">Log Out</span>
           </button>
-          <button onClick={() => { localStorage.removeItem('kpi_user'); setUser(null) }} className="p-2 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><LogOut className="w-4 h-4" /></button>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={userRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={userRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
 
-          {/* User info at bottom of sidebar */}
-          <div className="border-t border-gray-200 p-3 flex items-center gap-3 bg-white">
-            <UserAvatar username={user || ''} size="sm" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-900 truncate">{displayName || user}</p>
-              <p className="text-xs text-gray-500 truncate">{ROLE_LABELS[userRole] || userRole}</p>
-            </div>
-          </div>
         </aside>
 
         {/* Mobile overlay */}
