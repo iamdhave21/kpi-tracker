@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       super_admin: 'Super Admin',
       admin: 'Manager',
       team_lead: 'Team Lead',
-      viewer: 'Agent / Viewer'
+      viewer: 'Agent'
     }
 
     const toEmails = recipients

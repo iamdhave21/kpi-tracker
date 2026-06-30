@@ -17,6 +17,10 @@ const EMPLOYMENT_TYPE_COLORS: Record<string, string> = { Manager: 'bg-rose-100 t
 // Client support — used by Employees to tag which client account a role serves
 const CLIENTS = ['EMMA', 'AB BSS', 'Harlan + Holden']
 const CLIENT_COLORS: Record<string, string> = { EMMA: 'bg-fuchsia-100 text-fuchsia-700', 'AB BSS': 'bg-cyan-100 text-cyan-700', 'Harlan + Holden': 'bg-lime-100 text-lime-700' }
+
+// User access roles — shown throughout the app (sidebar, Settings, banners).
+// Underlying role keys (super_admin/admin/team_lead/viewer) are unchanged in the DB.
+const ROLE_LABELS: Record<string, string> = { super_admin: 'Super Admin', admin: 'Manager', team_lead: 'Team Lead', viewer: 'Agent' }
 type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type Toast = { msg: string; type: 'success' | 'error' }
 
@@ -1188,7 +1192,7 @@ export default function KPIApp() {
             <UserAvatar username={user || ''} size="sm" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-gray-900 truncate">{displayName || user}</p>
-              <p className="text-xs text-gray-500 truncate capitalize">{userRole.replace('_',' ')}</p>
+              <p className="text-xs text-gray-500 truncate">{ROLE_LABELS[userRole] || userRole}</p>
             </div>
           </div>
         </aside>
@@ -1217,11 +1221,11 @@ export default function KPIApp() {
             <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'viewer' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
               <div className="flex items-center gap-2">
                 {previewAs === 'viewer' ? <AlertCircle className="w-4 h-4 text-amber-500"/> : <Shield className="w-4 h-4 text-blue-500"/>}
-                {previewAs === 'viewer' ? 'Previewing as Agent (Viewer) — notes and edits are hidden' : 'Viewing as Admin — full access'}
+                {previewAs === 'viewer' ? 'Previewing as Agent — notes and edits are hidden' : `Viewing as ${ROLE_LABELS[userRole] || 'Admin'} — full access`}
               </div>
               <button onClick={() => setPreviewAs(previewAs === 'viewer' ? 'self' : 'viewer')}
                 className={`px-3 py-1 rounded-lg text-xs font-bold transition ${previewAs === 'viewer' ? 'bg-amber-200 hover:bg-amber-300 text-amber-900' : 'bg-blue-200 hover:bg-blue-300 text-blue-900'}`}>
-                {previewAs === 'viewer' ? '← Back to Admin View' : '👁 Preview as Agent'}
+                {previewAs === 'viewer' ? `← Back to ${ROLE_LABELS[userRole] || 'Admin'} View` : '👁 Preview as Agent'}
               </button>
             </div>
           )}
@@ -2243,46 +2247,11 @@ function TeamManager({ employees, showToast }:
 // -- User Manager ------------------------------------------------------------
 function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string, currentUser: string | null }) {
   const [appUsers, setAppUsers] = useState<any[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [newUser, setNewUser] = useState('')
+  const [selectedEmpId, setSelectedEmpId] = useState('')
   const [newPass, setNewPass] = useState('')
   const [newRole, setNewRole] = useState('viewer')
-  const [mastermatch, setMastermatch] = useState<{name:string,emp_id:string,position:string}|null>(null)
-
-  // Full employee masterlist from ABBSS records
-  const EMPLOYEE_MASTERLIST: Record<string, {name: string, emp_id: string, position: string}> = {
-    'latimer': { name: 'Latimer, David Paul', emp_id: 'ABBSS-100009', position: 'Operations Manager' },
-    'alatimer': { name: 'Latimer, Azelisa', emp_id: 'ABBSS-100013', position: 'Finance Analyst' },
-    'nlatupan': { name: 'Latupan, Norbert Arpy', emp_id: 'ABBSS-100014', position: 'Finance Analyst' },
-    'padua': { name: 'Padua, Katrina Joy', emp_id: 'ABBSS-100015', position: 'Finance Analyst' },
-    'miranda': { name: 'Miranda, Frances Mariazell', emp_id: 'ABBSS-100017', position: 'Marketing Lead' },
-    'origenes': { name: 'Origenes, Ethel', emp_id: 'ABBSS-100020', position: 'Finance Analyst' },
-    'cornel': { name: 'Cornel, Precilla Guillermo', emp_id: 'ABBSS-100023', position: 'Finance Analyst' },
-    'gamier': { name: 'Gamier, Ma Czarina Lourdes', emp_id: 'ABBSS-100027', position: 'Finance Analyst' },
-    'ramos': { name: 'Ramos, Ma. Cristina', emp_id: 'ABBSS-100032', position: 'Finance Analyst' },
-    'munez': { name: 'Muñez, Rose Anne', emp_id: 'ABBSS-100036', position: 'Finance Analyst' },
-    'siggaoat': { name: 'Siggaoat, Jodilyn', emp_id: 'ABBSS-100038', position: 'Finance Analyst' },
-    'oneza': { name: 'Oneza, Czareena Mae', emp_id: 'ABBSS-100040', position: 'Finance Analyst' },
-    'suing': { name: 'Suing, Paula Mae', emp_id: 'ABBSS-100041', position: 'Finance Analyst' },
-    'balingit': { name: 'Balingit, Jenefer', emp_id: 'ABBSS-100044', position: 'Finance Analyst' },
-    'bancud': { name: 'Bancud, Jose David', emp_id: 'ABBSS-100045', position: 'Finance Analyst' },
-    'flaviano': { name: 'Flaviano, Jinky Sayoto', emp_id: 'ABBSS-100046', position: 'Finance Analyst' },
-    'molina': { name: 'Molina, Glo Anne', emp_id: 'ABBSS-100047', position: 'Finance Analyst' },
-    'dandoy': { name: 'Dandoy, Christienne Lois', emp_id: 'ABBSS-100048', position: 'Finance Analyst' },
-    'graciano': { name: 'Graciano, Felma', emp_id: 'ABBSS-100050', position: 'Finance Analyst' },
-    'canoy': { name: 'Canoy, Madelyn', emp_id: 'ABBSS-100053', position: 'Finance Analyst' },
-    'remulla': { name: 'Remulla, Jefferson', emp_id: 'ABBSS-100054', position: 'Finance Analyst' },
-    'landicho': { name: 'Landicho, Franchezka', emp_id: 'ABBSS-100056', position: 'Finance Analyst' },
-    'casimiro': { name: 'Casimiro, Angelica', emp_id: 'ABBSS-100057', position: 'Finance Analyst' },
-    'malajacan': { name: 'Malajacan, Jay Paul', emp_id: 'ABBSS-100058', position: 'Marketing Lead' },
-    'delacruz': { name: 'Dela Cruz, Mary Joy', emp_id: 'ABBSS-100059', position: 'Marketing Lead' },
-    'santos': { name: 'Santos, Yanzi Elizavel Shane', emp_id: 'ABBSS-100060', position: 'Finance Analyst' },
-    'villa': { name: 'Villa, Catherine', emp_id: 'ABBSS-100061', position: 'Finance Analyst' },
-    'lamarca': { name: 'Lamarca, Shyribel', emp_id: 'ABBSS-100062', position: 'Finance Analyst' },
-    'pungasi': { name: 'Pungasi, Wennielyn', emp_id: 'ABBSS-100063', position: 'Team Lead' },
-    'cleofe': { name: 'Cleofe, Nelaine', emp_id: 'ABBSS-100064', position: 'Finance Analyst' },
-    'yniesta': { name: 'Yniesta, Zeljeko Josh', emp_id: 'ABBSS-100065', position: 'Finance Analyst' },
-  }
 
   const [saving, setSaving] = useState(false)
   const [resetUserId, setResetUserId] = useState<string|null>(null)
@@ -2291,50 +2260,43 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
 
   async function loadUsers() {
     setLoading(true)
-    const { data } = await supabase.from('app_users').select('id,username,role,active,created_at').order('created_at')
-    setAppUsers(data || [])
+    const [{ data: users }, { data: emps }] = await Promise.all([
+      supabase.from('app_users').select('id,username,role,active,created_at').order('created_at'),
+      supabase.from('employees').select('*').eq('active', true).order('name'),
+    ])
+    setAppUsers(users || [])
+    setEmployees((emps || []) as Employee[])
     setLoading(false)
   }
 
   useEffect(() => { loadUsers() }, [])
 
-  // Check masterlist when email changes
-  function checkMasterlist(email: string) {
-    const prefix = email.split('@')[0].toLowerCase().replace(/[^a-z]/g,'')
-    const match = Object.entries(EMPLOYEE_MASTERLIST).find(([key]) => prefix.includes(key) || key.includes(prefix))
-    setMastermatch(match ? match[1] : null)
-  }
+  // Active employees who have a work email on file AND don't already have a login.
+  // Dedupe by email since multi-role employees can have several rows with the same email.
+  const existingLogins = new Set(appUsers.map(u => u.username.toLowerCase()))
+  const seenEmails = new Set<string>()
+  const employeesNeedingLogin = employees.filter(e => {
+    const email = e.email?.trim().toLowerCase()
+    if (!email || existingLogins.has(email) || seenEmails.has(email)) return false
+    seenEmails.add(email)
+    return true
+  })
+
+  const selectedEmp = employees.find(e => e.id === selectedEmpId)
 
   async function addUser(e: React.FormEvent) {
     e.preventDefault()
-    if (!newUser.trim() || !newPass.trim()) return
+    if (!selectedEmp?.email || !newPass.trim()) return
     setSaving(true)
     try {
-      const email = newUser.trim().toLowerCase()
+      const email = selectedEmp.email.trim().toLowerCase()
       const res = await fetch('/api/auth/add-user', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: email, password: newPass, role: newRole }) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
 
-      // Check if they exist in employees table, if not auto-create
-      const { data: existingEmp } = await supabase.from('employees').select('id').eq('email', email).single()
-      if (!existingEmp) {
-        // Find in masterlist
-        const prefix = email.split('@')[0].toLowerCase().replace(/[^a-z]/g,'')
-        const match = Object.entries(EMPLOYEE_MASTERLIST).find(([key]) => prefix.includes(key) || key.includes(prefix))
-        const empName = match ? match[1].name : email.split('@')[0]
-        const empId = match ? match[1].emp_id : null
-        const position = match ? match[1].position : 'Finance Analyst'
-        await supabase.from('employees').insert({
-          name: empName, designation: position, email: email,
-          employee_id: empId, active: true
-        })
-        showToast(`User "${email}" added${match ? ` and matched to ${match[1].name} (${match[1].emp_id})` : ' — no masterlist match, added as new employee'}!`)
-      } else {
-        showToast(`User "${email}" added successfully!`)
-      }
-
+      showToast(`Login created for ${selectedEmp.name} (${email})!`)
       fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: email, newRole, addedBy: currentUser || 'admin' }) }).catch(() => {})
-      setNewUser(''); setNewPass(''); setNewRole('viewer'); setMastermatch(null)
+      setSelectedEmpId(''); setNewPass(''); setNewRole('viewer')
       loadUsers()
     } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
     setSaving(false)
@@ -2365,46 +2327,47 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
   }
 
   const roleColors: Record<string,string> = { super_admin: 'bg-purple-50 text-purple-700', admin: 'bg-blue-50 text-blue-700', team_lead: 'bg-emerald-50 text-emerald-700', viewer: 'bg-gray-100 text-gray-600' }
-  const roleLabels: Record<string,string> = { super_admin: 'Super Admin', admin: 'Manager', team_lead: 'Team Lead', viewer: 'Viewer' }
+  const roleLabels = ROLE_LABELS
 
   return (
     <div className="space-y-5">
       {/* Add user form - only super_admin and admin */}
       {(currentUserRole === 'super_admin' || currentUserRole === 'admin') && <div className="space-y-3">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Add New User</p>
-        <form onSubmit={addUser} className="space-y-3">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input type="email" value={newUser} onChange={e=>{ setNewUser(e.target.value); checkMasterlist(e.target.value) }} placeholder="email@ab-businesssupport.com" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-            <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Password (min 6 chars)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-            <select value={newRole} onChange={e=>setNewRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-              {currentUserRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
-              {(currentUserRole === 'super_admin' || currentUserRole === 'admin') && <option value="admin">Admin / Manager</option>}
-              <option value="team_lead">Team Lead</option>
-              <option value="viewer">Viewer</option>
-            </select>
-            <button type="submit" disabled={saving||!newUser.trim()||!newPass.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap flex items-center gap-2"><UserPlus className="w-4 h-4"/>Add User</button>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Grant Portal Access</p>
+        <p className="text-xs text-gray-400">Only people already in People → Employees can be given a login. This keeps every login tied to a real employee record and a verified work email — no more typos, no more bounced notification emails.</p>
+        {employeesNeedingLogin.length === 0 ? (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-500">
+            Everyone with a work email on file already has a login. Add a new person under People → Employees first (with their work email), then come back here.
           </div>
-          {/* Masterlist match preview */}
-          {newUser.includes('@') && (
-            mastermatch ? (
-              <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5">
-                <span className="text-green-500 text-lg">✓</span>
+        ) : (
+          <form onSubmit={addUser} className="space-y-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <select value={selectedEmpId} onChange={e=>setSelectedEmpId(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                <option value="">Select employee...</option>
+                {employeesNeedingLogin.map(emp => (
+                  <option key={emp.id} value={emp.id}>{emp.name} — {emp.email}</option>
+                ))}
+              </select>
+              <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Password (min 6 chars)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+              <select value={newRole} onChange={e=>setNewRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                {currentUserRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
+                {(currentUserRole === 'super_admin' || currentUserRole === 'admin') && <option value="admin">Manager</option>}
+                <option value="team_lead">Team Lead</option>
+                <option value="viewer">Agent</option>
+              </select>
+              <button type="submit" disabled={saving||!selectedEmpId||!newPass.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap flex items-center gap-2"><UserPlus className="w-4 h-4"/>Create Login</button>
+            </div>
+            {selectedEmp && (
+              <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+                <span className="text-blue-500 text-lg">✓</span>
                 <div>
-                  <p className="text-sm font-semibold text-green-800">Matched: {mastermatch.name} — {mastermatch.emp_id}</p>
-                  <p className="text-xs text-green-600">Will be auto-linked to existing employee record and Employee ID assigned</p>
+                  <p className="text-sm font-semibold text-blue-800">{selectedEmp.name}{selectedEmp.employee_id ? ` — ${selectedEmp.employee_id}` : ''}</p>
+                  <p className="text-xs text-blue-600">Login will use: {selectedEmp.email}</p>
                 </div>
               </div>
-            ) : (
-              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
-                <span className="text-amber-500 text-lg">⚠️</span>
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">Not found in masterlist</p>
-                  <p className="text-xs text-amber-600">A new employee record will be created. You can update their details in People → Employees.</p>
-                </div>
-              </div>
-            )
-          )}
-        </form>
+            )}
+          </form>
+        )}
       </div>}
 
       {/* Users list */}
