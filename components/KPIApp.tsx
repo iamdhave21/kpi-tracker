@@ -21,6 +21,14 @@ const CLIENT_COLORS: Record<string, string> = { EMMA: 'bg-fuchsia-100 text-fuchs
 // User access roles — shown throughout the app (sidebar, Settings, banners).
 // Underlying role keys (super_admin/admin/team_lead/viewer) are unchanged in the DB.
 const ROLE_LABELS: Record<string, string> = { super_admin: 'Super Admin', admin: 'Manager', team_lead: 'Team Lead', viewer: 'Agent' }
+
+// -- Centralized permission helpers --------------------------------------
+// Single source of truth for "who can do what" across the app.
+// Role hierarchy: super_admin > admin (Manager) > team_lead > viewer (Agent)
+const canEditEmployees = (role: string) => role === 'super_admin' || role === 'admin'
+const canManageTeams = (role: string) => role === 'super_admin' || role === 'admin'
+const canViewAllObservations = (role: string) => role === 'super_admin' || role === 'admin'
+const canViewTeamObservations = (role: string) => role === 'super_admin' || role === 'admin' || role === 'team_lead'
 type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type Toast = { msg: string; type: 'success' | 'error' }
 
@@ -1362,9 +1370,9 @@ export default function KPIApp() {
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
             {view === 'entry' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} userRole={userRole} />}
-            {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
-            {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
-            {view === 'observations' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Observations require Team Lead access or higher</p></div>}
+            {view === 'teams' && <TeamManager employees={employees} showToast={showToast} userRole={userRole} />}
+            {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} />}
+            {view === 'observations' && userRole === 'viewer' && <MyObservations employees={employees} currentUser={user} />}
             {view === 'matrix' && (userRole === 'super_admin' || userRole === 'admin') && (
               <div className="max-w-4xl mx-auto space-y-6">
                 <div><h2 className="text-xl font-bold text-blue-900">Matrix</h2><p className="text-sm text-gray-500">Track features shipped, issues to fix, and SQL still pending in Supabase</p></div>
@@ -1955,6 +1963,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
   const canExport = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
   const canManagePhotos = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const canEdit = canEditEmployees(userRole)
   const [avatarMap, setAvatarMap] = useState<Record<string, string>>({})
   const [uploadingFor, setUploadingFor] = useState<string|null>(null)
 
@@ -2171,6 +2180,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         </div>
       </div>
 
+      {canEdit && (
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500"/>Add Employee / Role</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2198,6 +2208,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         </div>
         <p className="text-xs text-gray-400 mt-2">Work email links to app login. Same person supporting multiple roles/clients? Add them again with a different Role and/or Client.</p>
       </div>
+      )}
 
       <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name, role, or client..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/></div>
 
@@ -2262,9 +2273,15 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                 )}
                 {!isMulti && (
                   <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
-                    <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                    <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0])}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
-                    <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
+                    {canEdit ? (
+                      <>
+                        <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
+                        <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0])}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
+                      </>
+                    ) : (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${emps[0].active?'bg-emerald-50 text-emerald-700':'bg-gray-100 text-gray-400'}`}>{emps[0].active?'Active':'Inactive'}</span>
+                    )}
                   </div>
                 )}
                 {isMulti && (
@@ -2335,9 +2352,15 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                         <span key={d} className={`text-xs px-1.5 py-0.5 rounded border ${DEPT_BADGE_COLORS[d] || 'bg-gray-50 text-gray-500 border-gray-200'}`}>{d}</span>
                       ))}
                     </div>
-                    <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                    <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0])}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
-                    <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
+                    {canEdit ? (
+                      <>
+                        <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
+                        <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0])}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
+                      </>
+                    ) : (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700':'bg-gray-100 text-gray-400'}`}>{emp.active?'Active':'Inactive'}</span>
+                    )}
                   </>
                   {editId === emp.id && (
                     <div className="absolute left-0 right-0 border-t border-blue-100 bg-blue-50/40 px-4 py-4 z-10" style={{top:'100%'}} onClick={e=>e.stopPropagation()}>
@@ -2386,8 +2409,9 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
 }
 
 // -- Team Manager ------------------------------------------------------------
-function TeamManager({ employees, showToast }:
-  { employees: Employee[], showToast: (m: string, t?: 'success'|'error') => void }) {
+function TeamManager({ employees, showToast, userRole }:
+  { employees: Employee[], showToast: (m: string, t?: 'success'|'error') => void, userRole: string }) {
+  const canEdit = canManageTeams(userRole)
   const [teams, setTeams] = useState<any[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -2471,6 +2495,7 @@ function TeamManager({ employees, showToast }:
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">Team Management</h2><p className="text-sm text-gray-500">{teams.length} teams configured</p></div>
+      {canEdit && (
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><PlusCircle className="w-4 h-4 text-blue-500"/>Create New Team</h3>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -2480,6 +2505,7 @@ function TeamManager({ employees, showToast }:
           <button onClick={createTeam} disabled={!newTeamName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2"><PlusCircle className="w-4 h-4"/>Create</button>
         </div>
       </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50"><h3 className="font-semibold text-gray-700 text-sm">All Teams</h3></div>
@@ -2497,8 +2523,12 @@ function TeamManager({ employees, showToast }:
               ) : (
                 <>
                   <div className="flex-1 min-w-0"><p className="font-medium text-gray-900 text-sm">{team.name}</p><p className="text-xs text-gray-500">{team.department}{team.team_lead?.name?` - Lead: ${team.team_lead.name.split(',')[0]}`:' - No lead'}</p><p className="text-xs text-gray-400">{members.filter(m=>m.team_id===team.id).length} members</p></div>
-                  <button onClick={e=>{e.stopPropagation();setEditTeamId(team.id);setEditTeamName(team.name);setEditTeamDept(team.department||'')}} className="text-gray-400 hover:text-blue-600 p-1 transition"><Edit2 className="w-4 h-4"/></button>
-                  <button onClick={e=>{e.stopPropagation();deleteTeam(team.id)}} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
+                  {canEdit && (
+                    <>
+                      <button onClick={e=>{e.stopPropagation();setEditTeamId(team.id);setEditTeamName(team.name);setEditTeamDept(team.department||'')}} className="text-gray-400 hover:text-blue-600 p-1 transition"><Edit2 className="w-4 h-4"/></button>
+                      <button onClick={e=>{e.stopPropagation();deleteTeam(team.id)}} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -2509,17 +2539,19 @@ function TeamManager({ employees, showToast }:
             <>
               <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-semibold text-gray-700 text-sm">{selectedTeam?.name} — Members</h3>
-                <div className="mt-2 flex items-center gap-2"><span className="text-xs text-gray-500">Team Lead:</span><select value={selectedTeam?.team_lead_id||''} onChange={e=>updateLead(selTeam,e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs text-gray-900"><option value="">No lead assigned</option>{employees.filter(e=>e.active).map(e=><option key={e.id} value={e.id}>{e.name.split(',')[0]}</option>)}</select></div>
+                <div className="mt-2 flex items-center gap-2"><span className="text-xs text-gray-500">Team Lead:</span>{canEdit ? (<select value={selectedTeam?.team_lead_id||''} onChange={e=>updateLead(selTeam,e.target.value)} className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs text-gray-900"><option value="">No lead assigned</option>{employees.filter(e=>e.active).map(e=><option key={e.id} value={e.id}>{e.name.split(',')[0]}</option>)}</select>) : (<span className="text-xs text-gray-700 font-medium">{selectedTeam?.team_lead?.name?.split(',')[0] || 'No lead assigned'}</span>)}</div>
               </div>
+              {canEdit && (
               <div className="p-4 border-b border-gray-100">
                 <div className="flex gap-2"><select value={addMemberId} onChange={e=>setAddMemberId(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"><option value="">Add member...</option>{availableToAdd.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select><button onClick={addMember} disabled={!addMemberId} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">Add</button></div>
               </div>
+              )}
               <div>
                 {teamMembers.length===0?<div className="p-6 text-center text-gray-400 text-sm">No members yet</div>:teamMembers.map((m,i)=>(
                   <div key={m.id} className={`flex items-center gap-3 px-4 py-2.5 ${i>0?'border-t border-gray-100':''}`}>
                     <div className="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">{m.employee?.name?.split(',')[0]?.charAt(0)||'?'}</div>
                     <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-900 truncate">{m.employee?.name}</p><p className="text-xs text-gray-500">{m.employee?.employment_type||'Agent'} ({m.employee?.client||'AB BSS'})</p></div>
-                    <button onClick={()=>removeMember(m.id)} className="text-gray-400 hover:text-red-600 p-1 transition"><X className="w-3.5 h-3.5"/></button>
+                    <button onClick={()=>removeMember(m.id)} className={`text-gray-400 hover:text-red-600 p-1 transition ${canEdit ? '' : 'invisible'}`}><X className="w-3.5 h-3.5"/></button>
                   </div>
                 ))}
               </div>
@@ -3553,8 +3585,50 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
 }
 
 // -- Observations Panel ------------------------------------------------------
-function ObservationsPanel({ employees, currentUser, showToast }:
-  { employees: Employee[], currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
+// -- My Observations (Agent view: own notes only, read-only) ----------------
+function MyObservations({ employees, currentUser }: { employees: Employee[], currentUser: string | null }) {
+  const [obs, setObs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      if (!currentUser) { setLoading(false); return }
+      const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
+      if (!myEmp) { setObs([]); setLoading(false); return }
+      const { data } = await supabase.from('observations').select('*').eq('employee_id', myEmp.id).order('created_at', { ascending: false })
+      setObs(data || [])
+      setLoading(false)
+    }
+    load()
+  }, [currentUser, employees])
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      <div><h2 className="text-xl font-bold text-blue-900">My Observations</h2><p className="text-sm text-gray-500">Notes your Team Lead or Manager have shared about your performance. Only visible to you.</p></div>
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+      ) : obs.length === 0 ? (
+        <div className="text-center py-12 text-gray-400"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30"/><p className="text-sm">No observations recorded for you yet.</p></div>
+      ) : (
+        <div className="space-y-3">
+          {obs.map(o => (
+            <div key={o.id} className="bg-white border border-gray-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">{o.month_label}</span>
+                <span className="text-xs text-gray-400">{new Date(o.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
+              </div>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{o.observation}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ObservationsPanel({ employees, currentUser, userRole, showToast }:
+  { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [obs, setObs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selEmp, setSelEmp] = useState<string>('')
@@ -3563,6 +3637,7 @@ function ObservationsPanel({ employees, currentUser, showToast }:
   const [saving, setSaving] = useState(false)
   const [filterEmp, setFilterEmp] = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
+  const [myTeamEmployeeIds, setMyTeamEmployeeIds] = useState<string[] | null>(null)
 
   const allMonths = ['2024','2025','2026','2027'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
 
@@ -3570,17 +3645,45 @@ function ObservationsPanel({ employees, currentUser, showToast }:
     if (employees.length > 0 && !selEmp) setSelEmp(employees[0].id)
   }, [employees])
 
+  // Team Leads only see observations for employees on teams they lead.
+  // Manager/Super Admin see everyone (no scoping applied).
+  useEffect(() => {
+    async function loadMyTeamScope() {
+      if (userRole !== 'team_lead' || !currentUser) { setMyTeamEmployeeIds(null); return }
+      const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
+      if (!myEmp) { setMyTeamEmployeeIds([]); return }
+      const { data: myTeams } = await supabase.from('teams').select('id').eq('team_lead_id', myEmp.id)
+      const teamIds = (myTeams || []).map(t => t.id)
+      if (teamIds.length === 0) { setMyTeamEmployeeIds([]); return }
+      const { data: members } = await supabase.from('team_members').select('employee_id').in('team_id', teamIds)
+      setMyTeamEmployeeIds((members || []).map(m => m.employee_id))
+    }
+    loadMyTeamScope()
+  }, [userRole, currentUser, employees])
+
+  // Employees visible to the current viewer in dropdowns/filters
+  const visibleEmployees = myTeamEmployeeIds === null
+    ? employees
+    : employees.filter(e => myTeamEmployeeIds.includes(e.id))
+
   async function loadObs() {
     setLoading(true)
     let q = supabase.from('observations').select('*').order('created_at', { ascending: false }).limit(200)
     if (filterEmp !== 'all') q = q.eq('employee_id', filterEmp)
     if (filterMonth !== 'all') q = q.eq('month_label', filterMonth)
+    // Team Leads are scoped to their own team's employees only -- this is
+    // a real query filter, not just hiding rows after the fact, so a
+    // Team Lead never receives another team's observation data at all.
+    if (myTeamEmployeeIds !== null) {
+      if (myTeamEmployeeIds.length === 0) { setObs([]); setLoading(false); return }
+      q = q.in('employee_id', myTeamEmployeeIds)
+    }
     const { data } = await q
     setObs(data || [])
     setLoading(false)
   }
 
-  useEffect(() => { loadObs() }, [filterEmp, filterMonth])
+  useEffect(() => { loadObs() }, [filterEmp, filterMonth, myTeamEmployeeIds])
 
   async function saveObs(e: React.FormEvent) {
     e.preventDefault()
@@ -3620,7 +3723,7 @@ function ObservationsPanel({ employees, currentUser, showToast }:
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Employee</label>
               <select value={selEmp} onChange={e => setSelEmp(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name} — {e.employment_type||'Agent'} ({e.client||'AB BSS'})</option>)}
+                {visibleEmployees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name} — {e.employment_type||'Agent'} ({e.client||'AB BSS'})</option>)}
               </select>
             </div>
             <div>
@@ -3651,7 +3754,7 @@ function ObservationsPanel({ employees, currentUser, showToast }:
           <div className="flex flex-wrap items-center gap-2">
             <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
               <option value="all">All Employees</option>
-              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name.split(',')[0]} — {e.employment_type||'Agent'} ({e.client||'AB BSS'})</option>)}
+              {visibleEmployees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name.split(',')[0]} — {e.employment_type||'Agent'} ({e.client||'AB BSS'})</option>)}
             </select>
             <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
               <option value="all">All Months</option>
