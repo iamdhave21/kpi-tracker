@@ -1043,7 +1043,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     `w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-all rounded-lg ${
       view === id
         ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md'
-        : 'text-gray-600 hover:bg-gray-100 hover:text-blue-900'
+        : 'text-gray-900 hover:bg-gray-100 hover:text-blue-900'
     }`
 
   const SectionHeader = ({ sectionKey, label, hasActive }: { sectionKey: string, label: string, hasActive: boolean }) => (
