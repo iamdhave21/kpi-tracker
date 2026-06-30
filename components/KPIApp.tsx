@@ -2023,6 +2023,32 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       }
     }
     await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Role/Client',emp?.designation||'',generatedDesig)
+
+    // Build a human-readable diff of what actually changed, then email
+    // whoever's email is on the record (regardless of portal login).
+    const fieldLabels: Record<string,string> = { name: 'Name', email: 'Work Email', employee_id: 'Employee ID', employment_type: 'Role', client: 'Client Supported', departments: 'Department(s)' }
+    const before: Record<string, any> = { name: emp?.name, email: emp?.email, employee_id: emp?.employee_id, employment_type: emp?.employment_type, client: emp?.client, departments: (emp?.departments||[]).join(', ') }
+    const after: Record<string, any> = { name: editName, email: editEmail||null, employee_id: editEmpId||null, employment_type: editEmpType, client: editClient, departments: editDepartments.join(', ') }
+    const changes = Object.keys(fieldLabels)
+      .filter(k => String(before[k] ?? '') !== String(after[k] ?? ''))
+      .map(k => ({ field: fieldLabels[k], from: before[k] ?? '', to: after[k] ?? '' }))
+
+    const notifyEmail = editEmail?.trim() || emp?.email
+    if (changes.length > 0 && notifyEmail) {
+      try {
+        const res = await fetch('/api/notify/employee-updated', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employeeName: editName, employeeEmail: notifyEmail, changes, changedBy: currentUser || 'admin' })
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          showToast(`Saved, but the notification email failed: ${data.error || 'unknown error'}`, 'error')
+        }
+      } catch {
+        showToast('Saved, but the notification email could not be sent (network error).', 'error')
+      }
+    }
+
     setEditId(null); onChanged()
   }
 
