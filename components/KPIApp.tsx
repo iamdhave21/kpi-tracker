@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'hris-referral' | 'hris-records'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -970,7 +970,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
 
 
 // -- Collapsible Sidebar -----------------------------------------------------
-function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0 }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number }) {
+function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, userRole }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, userRole: string }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, hris: false, dir: false, sys: false
   })
@@ -1075,9 +1075,10 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* SYSTEM */}
-      <SectionHeader sectionKey="sys" label="System" hasActive={['settings'].includes(view)} />
+      <SectionHeader sectionKey="sys" label="System" hasActive={['settings','matrix'].includes(view)} />
       {!collapsed.sys && (
         <div className="px-2 pb-1 space-y-0.5">
+          {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="matrix" label="Matrix" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>}/>}
           <NavItem id="settings" label="Settings" icon={<Shield className="w-4 h-4 flex-shrink-0"/>}/>
         </div>
       )}
@@ -1252,7 +1253,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} userRole={userRole} />
 
           {/* User info at bottom of sidebar */}
           <div className="border-t border-gray-200 p-3 flex items-center gap-3 bg-white">
@@ -1309,6 +1310,12 @@ export default function KPIApp() {
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} />}
             {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} showToast={showToast} />}
             {view === 'observations' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Observations require Team Lead access or higher</p></div>}
+            {view === 'matrix' && (userRole === 'super_admin' || userRole === 'admin') && (
+              <div className="max-w-4xl mx-auto space-y-6">
+                <div><h2 className="text-xl font-bold text-blue-900">Matrix</h2><p className="text-sm text-gray-500">Track features shipped, issues to fix, and SQL still pending in Supabase</p></div>
+                <MatrixPanel currentUser={user} showToast={showToast} />
+              </div>
+            )}
             {view === 'settings' && <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'org-chart' && <OrgChart employees={employees} showToast={showToast} />}
             {view === 'tickets' && <TicketsPanel currentUser={user || ''} userRole={userRole} showToast={showToast} />}
@@ -3808,7 +3815,7 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
 }
 
 function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'|'matrix'>(userRole === 'viewer' ? 'password' : 'users')
+  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>(userRole === 'viewer' ? 'password' : 'users')
   const [oldPassword, setOldPassword] = useState('')
   const [newPass, setNewPass] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
@@ -3843,9 +3850,8 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">Settings</h2><p className="text-sm text-gray-500">Manage app users, activity, and security</p></div>
-      <p className="text-xs bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-lg inline-block">DEBUG: userRole = "{userRole}" (length: {userRole?.length})</p>
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['users','App Users'],['activity','Audit Log'],['password','Change Password'],...(userRole === 'super_admin' || userRole === 'admin' ? [['matrix','Matrix']] : [])] as [string,string][]).map(([t,l])=>(
+        {([['users','App Users'],['activity','Audit Log'],['password','Change Password']] as [string,string][]).map(([t,l])=>(
           <button key={t} onClick={()=>setActiveTab(t as any)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab===t?'bg-white shadow text-blue-900':'text-gray-600 hover:text-gray-900'}`}>{l}</button>
         ))}
       </div>
@@ -3913,9 +3919,6 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
             </form>
           </div>
         </div>
-      )}
-      {activeTab==='matrix' && (userRole === 'super_admin' || userRole === 'admin') && (
-        <MatrixPanel currentUser={currentUser} showToast={showToast} />
       )}
     </div>
   )
