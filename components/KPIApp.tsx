@@ -2595,6 +2595,7 @@ type Ticket = {
   title: string
   description: string
   category: string
+  department: string
   priority: 'Low' | 'Medium' | 'High' | 'Urgent'
   status: 'Open' | 'In Progress' | 'Resolved' | 'Closed'
   created_by: string
@@ -2605,8 +2606,10 @@ type Ticket = {
 }
 
 const TICKET_CATEGORIES = ['IT / Systems Access', 'HR / Payroll', 'Equipment', 'Facilities', 'Client / Account Issue', 'Other']
+const TICKET_DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
 const PRIORITY_COLORS: Record<string, string> = { Low: 'bg-gray-100 text-gray-600', Medium: 'bg-amber-100 text-amber-700', High: 'bg-orange-100 text-orange-700', Urgent: 'bg-red-100 text-red-700' }
 const STATUS_COLORS: Record<string, string> = { Open: 'bg-blue-100 text-blue-700', 'In Progress': 'bg-purple-100 text-purple-700', Resolved: 'bg-emerald-100 text-emerald-700', Closed: 'bg-gray-100 text-gray-500' }
+const DEPT_COLORS: Record<string, string> = { Payroll: 'bg-emerald-50 text-emerald-700 border-emerald-200', IT: 'bg-sky-50 text-sky-700 border-sky-200', Operations: 'bg-indigo-50 text-indigo-700 border-indigo-200', Management: 'bg-rose-50 text-rose-700 border-rose-200', HR: 'bg-violet-50 text-violet-700 border-violet-200', Admin: 'bg-slate-50 text-slate-700 border-slate-200', Logistics: 'bg-orange-50 text-orange-700 border-orange-200' }
 
 function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
@@ -2617,10 +2620,11 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const [uploading, setUploading] = useState(false)
   const [attachments, setAttachments] = useState<TicketAttachment[]>([])
   const [filterStatus, setFilterStatus] = useState<string>('All')
+  const [filterDept, setFilterDept] = useState<string>('All')
   const [scope, setScope] = useState<'mine' | 'all'>(canManage ? 'all' : 'mine')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [form, setForm] = useState({ title: '', description: '', category: TICKET_CATEGORIES[0], priority: 'Medium' as Ticket['priority'] })
+  const [form, setForm] = useState({ title: '', description: '', category: TICKET_CATEGORIES[0], department: TICKET_DEPARTMENTS[1], priority: 'Medium' as Ticket['priority'] })
 
   async function loadTickets() {
     setLoading(true)
@@ -2658,6 +2662,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
       title: form.title.trim(),
       description: form.description.trim(),
       category: form.category,
+      department: form.department,
       priority: form.priority,
       status: 'Open',
       created_by: currentUser,
@@ -2665,14 +2670,14 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     }).select().single()
     setPosting(false)
     if (error) { showToast(error.message, 'error'); return }
-    setForm({ title: '', description: '', category: TICKET_CATEGORIES[0], priority: 'Medium' })
+    setForm({ title: '', description: '', category: TICKET_CATEGORIES[0], department: TICKET_DEPARTMENTS[1], priority: 'Medium' })
     setAttachments([])
     setShowForm(false)
     showToast('Ticket submitted!', 'success')
     loadTickets()
     fetch('/api/notify/ticket-created', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticketId: data?.id, title: form.title.trim(), category: form.category, priority: form.priority, createdBy: currentUser })
+      body: JSON.stringify({ ticketId: data?.id, title: form.title.trim(), category: form.category, department: form.department, priority: form.priority, createdBy: currentUser })
     }).catch(() => {})
   }
 
@@ -2691,7 +2696,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     loadTickets()
   }
 
-  const filtered = tickets.filter(t => filterStatus === 'All' || t.status === filterStatus)
+  const filtered = tickets.filter(t => (filterStatus === 'All' || t.status === filterStatus) && (filterDept === 'All' || t.department === filterDept))
   const openCount = tickets.filter(t => t.status === 'Open').length
   const inProgressCount = tickets.filter(t => t.status === 'In Progress').length
 
@@ -2721,6 +2726,9 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
             <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
               {TICKET_CATEGORIES.map(c => <option key={c}>{c}</option>)}
             </select>
+            <select value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+              {TICKET_DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+            </select>
             <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as Ticket['priority'] }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
               <option>Low</option><option>Medium</option><option>High</option><option>Urgent</option>
             </select>
@@ -2749,6 +2757,10 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
         {['All', 'Open', 'In Progress', 'Resolved', 'Closed'].map(s => (
           <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
         ))}
+        <span className="text-gray-300">|</span>
+        {['All', ...TICKET_DEPARTMENTS].map(d => (
+          <button key={d} onClick={() => setFilterDept(d)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterDept === d ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{d}</button>
+        ))}
       </div>
 
       {loading ? (
@@ -2761,6 +2773,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
             <div key={t.id} className={`bg-white border rounded-xl p-4 space-y-2 ${t.priority === 'Urgent' ? 'border-red-300' : 'border-gray-200'}`}>
               <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${DEPT_COLORS[t.department] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>📨 {t.department}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[t.priority]}`}>{t.priority}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status]}`}>{t.status}</span>
                   <h3 className="font-semibold text-gray-900 text-sm">{t.title}</h3>

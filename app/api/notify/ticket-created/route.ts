@@ -11,7 +11,7 @@ function getSupabase() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { ticketId, title, category, priority, createdBy } = await req.json()
+    const { ticketId, title, category, department, priority, createdBy } = await req.json()
 
     if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
       return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
@@ -52,18 +52,22 @@ export async function POST(req: NextRequest) {
     await transporter.sendMail({
       from: `"AB BSS Operations Portal" <${process.env.GMAIL_USER}>`,
       to: toEmails.join(','),
-      subject: `🎫 New Ticket: ${title}`,
+      subject: `🎫 [${department}] New Ticket: ${title}`,
       html: `
         <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
           <div style="background: #1e3a8a; padding: 24px; border-radius: 12px 12px 0 0;">
             <h2 style="color: white; margin: 0; font-size: 18px;">🎫 New Ticket Submitted</h2>
-            <p style="color: #93c5fd; margin: 4px 0 0; font-size: 13px;">Action may be required</p>
+            <p style="color: #93c5fd; margin: 4px 0 0; font-size: 13px;">Routed to: ${department}</p>
           </div>
           <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 12px 12px;">
             <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px;">${title}</p>
             <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
               <tr style="border-bottom: 1px solid #f3f4f6;">
-                <td style="padding: 10px; color: #6b7280; font-size: 13px; width: 120px;">Category</td>
+                <td style="padding: 10px; color: #6b7280; font-size: 13px; width: 120px;">Department</td>
+                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${department}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f3f4f6;">
+                <td style="padding: 10px; color: #6b7280; font-size: 13px;">Category</td>
                 <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${category}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f3f4f6;">
