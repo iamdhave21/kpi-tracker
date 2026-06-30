@@ -2325,12 +2325,20 @@ function TeamManager({ employees, showToast }:
     await supabase.from('teams').delete().eq('id',id); setSelTeam(null); loadTeams(); showToast('Team deleted')
   }
 
-  function notifyTeamChange(action: 'added'|'removed', employeeName: string, employeeEmail: string|null, teamName: string, leadEmail: string|null) {
+  async function notifyTeamChange(action: 'added'|'removed', employeeName: string, employeeEmail: string|null, teamName: string, leadEmail: string|null) {
     if (!employeeEmail) return
-    fetch('/api/notify/team-change', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, employeeName, employeeEmail, teamName, leadEmail })
-    }).catch(() => {})
+    try {
+      const res = await fetch('/api/notify/team-change', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, employeeName, employeeEmail, teamName, leadEmail })
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        showToast(`Team updated, but the notification email failed: ${data.error || 'unknown error'}`, 'error')
+      }
+    } catch {
+      showToast('Team updated, but the notification email could not be sent (network error).', 'error')
+    }
   }
 
   async function addMember() {
@@ -2491,10 +2499,18 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
     if (error) { showToast(error.message, 'error'); return }
     showToast(`Role updated for ${u.username}`)
     loadUsers()
-    fetch('/api/notify/role-changed', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: u.username, oldRole: u.role, newRole, changedBy: currentUser || 'admin' })
-    }).catch(() => {})
+    try {
+      const res = await fetch('/api/notify/role-changed', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u.username, oldRole: u.role, newRole, changedBy: currentUser || 'admin' })
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        showToast(`Role saved, but the notification email failed: ${data.error || 'unknown error'}`, 'error')
+      }
+    } catch {
+      showToast('Role saved, but the notification email could not be sent (network error).', 'error')
+    }
   }
 
   async function deleteUser(u: any) {
