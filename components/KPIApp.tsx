@@ -790,7 +790,59 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl 
 }
 
 
-function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
+// -- Forced Password Change (shown after login if must_change_password) ----
+function ForcedPasswordChange({ username, onDone }: { username: string, onDone: () => void }) {
+  const [newPass, setNewPass] = useState('')
+  const [confirmPass, setConfirmPass] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (newPass.length < 6) { setError('Password must be at least 6 characters'); return }
+    if (newPass !== confirmPass) { setError('Passwords do not match'); return }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, newPassword: newPass, adminReset: true })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to update password')
+      onDone()
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Failed to update password') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center md:justify-end md:pr-16 p-4 relative overflow-hidden">
+      <div className="absolute inset-0 z-0" style={{backgroundImage:"url('/login-bg.jpg')",backgroundSize:'cover',backgroundPosition:'center left',filter:'blur(2px) brightness(0.5)',transform:'scale(1.05)'}} />
+      <div className="absolute inset-0 z-0 bg-blue-950/30" />
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 md:mx-0 p-8 relative z-10">
+        <div className="text-center mb-6">
+          <img src="/ab-logo.png" alt="AB BSS" className="w-20 h-20 object-contain mb-2 mx-auto" />
+          <h1 className="text-2xl font-bold text-gray-900">Set a New Password</h1>
+          <p className="text-gray-500 text-sm mt-1">For your security, please choose your own password before continuing.</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
+            <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} required minLength={6} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label>
+            <input type="password" value={confirmPass} onChange={e=>setConfirmPass(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button type="submit" disabled={saving} className="w-full bg-blue-900 hover:bg-blue-800 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50">{saving ? 'Saving...' : 'Set Password & Continue'}</button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePassword?: boolean) => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -825,7 +877,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string) => void }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Login failed')
       localStorage.setItem('kpi_user', JSON.stringify(data.user))
-      onLogin(data.user.username, data.user.role)
+      onLogin(data.user.username, data.user.role, data.user.mustChangePassword)
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Login failed') }
     finally { setLoading(false) }
   }
@@ -1089,6 +1141,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
 
 export default function KPIApp() {
   const [user, setUser] = useState<string | null>(null)
+  const [mustChangePassword, setMustChangePassword] = useState(false)
   const [displayName, setDisplayName] = useState<string>('')
   const [userRole, setUserRole] = useState<string>('viewer')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
@@ -1132,7 +1185,7 @@ export default function KPIApp() {
 
       // First check for an existing local session
       const stored = localStorage.getItem('kpi_user')
-      if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer'); setDisplayName(u.display_name || u.username?.split('@')[0] || u.username); return }
+      if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer'); setDisplayName(u.display_name || u.username?.split('@')[0] || u.username); setMustChangePassword(!!u.mustChangePassword); return }
 
       // Check for Google OAuth session (set by callback route via cookie or Supabase session)
       // Also try to restore session from cookie tokens set by callback
@@ -1210,7 +1263,9 @@ export default function KPIApp() {
     setLoading(false)
   }
 
-  if (!user) return <LoginScreen onLogin={(u, r) => { setUser(u); setUserRole(r || 'viewer'); setLoading(true) }} />
+  if (!user) return <LoginScreen onLogin={(u, r, mcp) => { setUser(u); setUserRole(r || 'viewer'); setMustChangePassword(!!mcp); setLoading(true) }} />
+
+  if (mustChangePassword) return <ForcedPasswordChange username={user} onDone={() => setMustChangePassword(false)} />
 
   const navItems = [
     { id: 'dashboard-month' as View, label: 'Performance', icon: <BarChart2 className="w-4 h-4" /> },
@@ -2017,14 +2072,17 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       // Check if user already exists
       const {data: existingUser} = await supabase.from('app_users').select('id').eq('email', emailLower).single()
       if (!existingUser) {
-        // Create new app_user with default password
+        // Create new app_user with a unique random temporary password
+        // (not a shared known default) and force a change on first login.
+        const tempPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 100)
         await supabase.from('app_users').insert({
           email: emailLower,
           name: editName,
           role: 'viewer',
-          password_hash: 'changeme123'
+          password_hash: tempPassword,
+          must_change_password: true,
         })
-        showToast(`Login created for ${emailLower} — default password: changeme123`, 'success')
+        showToast(`Login created for ${emailLower} — temporary password: ${tempPassword} (they'll be required to set their own on first login)`, 'success')
       } else {
         showToast(`Email updated — login already exists for ${emailLower}`, 'success')
       }

@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       if (!user || user.password_hash !== oldPassword) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 })
     }
 
-    const { error } = await supabase.from('app_users').update({ password_hash: newPassword, updated_at: new Date().toISOString() }).eq('username', username)
+    const { error } = await supabase.from('app_users').update({ password_hash: newPassword, must_change_password: false, updated_at: new Date().toISOString() }).eq('username', username)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ success: true })

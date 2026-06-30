@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
       email: email,
       password_hash: password,
       role: role || 'viewer',
-      active: true
+      active: true,
+      must_change_password: true,
     })
 
     if (error) {

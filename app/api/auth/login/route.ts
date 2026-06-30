@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     if (user.password_hash !== password) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
 
-    return NextResponse.json({ user: { username: user.email || user.username, role: user.role, display_name: user.display_name || user.username } })
+    return NextResponse.json({ user: { username: user.email || user.username, role: user.role, display_name: user.display_name || user.username, mustChangePassword: !!user.must_change_password } })
   } catch {
     return NextResponse.json({ error: 'Login failed' }, { status: 500 })
   }
