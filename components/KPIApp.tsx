@@ -1056,10 +1056,11 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     </button>
   )
 
-  const NavItem = ({ id, label, icon, badge }: { id: string, label: string, icon: React.ReactNode, badge?: number }) => (
+  const NavItem = ({ id, label, icon, badge, dotColor }: { id: string, label: string, icon: React.ReactNode, badge?: number, dotColor?: string }) => (
     <button onClick={() => { setView(id); setMobileMenuOpen(false) }} className={itemStyle(id)}>
+      {dotColor && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />}
       {icon}
-      <span className="truncate">{label}</span>
+      <span className="truncate font-semibold">{label}</span>
       {badge && badge > 0 ? <span className="ml-auto bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center">{badge}</span> : view === id ? <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/> : null}
     </button>
   )
@@ -1089,8 +1090,8 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="home" label="Home" hasActive={['announcements','gaming-hub'].includes(view)} />
       {!collapsed.home && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="announcements" label="Announcements" icon={<Bell className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="gaming-hub" label="Gaming Hub" icon={<Gamepad2 className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="announcements" label="Announcements" icon={<Bell className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-sky-400"/>
+          <NavItem id="gaming-hub" label="Gaming Hub" icon={<Gamepad2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-sky-400"/>
         </div>
       )}
 
@@ -1098,9 +1099,9 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp'].includes(view)} />
       {!collapsed.ops && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="tasks" label="Tasks" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingTaskCount}/>
-          <NavItem id="bcp" label="BCP" icon={<Shield className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
+          <NavItem id="tasks" label="Tasks" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingTaskCount} dotColor="bg-orange-400"/>
+          <NavItem id="bcp" label="BCP" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
         </div>
       )}
 
@@ -1108,8 +1109,8 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
       {!collapsed.dir && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="links" label="Links" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="resources" label="Resources" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="links" label="Links" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-purple-400"/>
+          <NavItem id="resources" label="Resources" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-purple-400"/>
         </div>
       )}
 
@@ -1117,8 +1118,8 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records'].includes(view)} />
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
+          <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
         </div>
       )}
 
@@ -1126,10 +1127,10 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence'].includes(view as string)} />
       {!collapsed.tltools && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount}/>
-          <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+          <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} dotColor="bg-indigo-400"/>
+          <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
         </div>
       )}
 
@@ -1137,9 +1138,9 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee','dashboard-team'].includes(view)} />
       {!collapsed.perf && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="dashboard-team" label="Team View" icon={<Users className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+          <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+          <NavItem id="dashboard-team" label="Team View" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
         </div>
       )}
 
@@ -1147,9 +1148,9 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="people" label="People" hasActive={['employees','teams','org-chart'].includes(view)} />
       {!collapsed.people && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="employees" label="Employees" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="teams" label="Teams" icon={<Award className="w-4 h-4 flex-shrink-0"/>}/>
-          <NavItem id="org-chart" label="Org Chart" icon={<Users className="w-4 h-4 flex-shrink-0"/>}/>
+          <NavItem id="employees" label="Employees" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>
+          <NavItem id="teams" label="Teams" icon={<Award className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>
+          <NavItem id="org-chart" label="Org Chart" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>
         </div>
       )}
 
@@ -1157,8 +1158,8 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="sys" label="System" hasActive={['settings','matrix'].includes(view)} />
       {!collapsed.sys && (
         <div className="px-2 pb-1 space-y-0.5">
-          {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="matrix" label="Matrix" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>}/>}
-          <NavItem id="settings" label="Settings" icon={<Shield className="w-4 h-4 flex-shrink-0"/>}/>
+          {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="matrix" label="Matrix" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-rose-400"/>}
+          <NavItem id="settings" label="Settings" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-rose-400"/>
         </div>
       )}
 
