@@ -1824,6 +1824,46 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [showInactive, setShowInactive] = useState(false)
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
   const canExport = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const canManagePhotos = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({})
+  const [uploadingFor, setUploadingFor] = useState<string|null>(null)
+
+  async function loadAvatars() {
+    const { data } = await supabase.from('app_users').select('username, avatar_url').not('avatar_url', 'is', null)
+    const map: Record<string, string> = {}
+    ;(data || []).forEach((u: any) => { if (u.avatar_url) map[u.username.toLowerCase()] = u.avatar_url })
+    setAvatarMap(map)
+  }
+
+  useEffect(() => { loadAvatars() }, [employees])
+
+  async function uploadAvatarFor(email: string, file: File) {
+    if (!email) { showToast('This employee has no work email on file yet — add one first.', 'error'); return }
+    if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB', 'error'); return }
+    const emailLower = email.trim().toLowerCase()
+    setUploadingFor(emailLower)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${emailLower}/avatar.${ext}`
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      const publicUrl = urlData.publicUrl + '?t=' + Date.now()
+      // Photo lives on app_users.avatar_url. If they don't have a login yet,
+      // there's no row to attach it to — surface that clearly rather than
+      // silently doing nothing.
+      const { data: existing } = await supabase.from('app_users').select('id').eq('username', emailLower).single()
+      if (!existing) {
+        showToast(`${email} doesn't have a portal login yet — grant access in Settings first, then their photo will save.`, 'error')
+        setUploadingFor(null)
+        return
+      }
+      await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', emailLower)
+      showToast('Photo updated!')
+      loadAvatars()
+    } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Upload failed', 'error') }
+    setUploadingFor(null)
+  }
 
   async function exportToExcel() {
     const XLSX = await import('xlsx')
@@ -1998,12 +2038,31 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           const allActive = emps.every(e => e.active)
           const someActive = emps.some(e => e.active)
           const initial = name.split(',')[0]?.charAt(0) || '?'
+          const groupEmail = emps.find(e => e.email)?.email || ''
+          const groupAvatarUrl = groupEmail ? avatarMap[groupEmail.toLowerCase()] : undefined
+          const isUploadingThis = uploadingFor === groupEmail.toLowerCase()
 
           return (
             <div key={name} className={gi > 0 ? 'border-t border-gray-200' : ''}>
               {/* Group header row */}
               <div className={`flex items-center gap-3 px-4 py-3 ${isMulti ? 'cursor-pointer hover:bg-gray-50' : 'hover:bg-gray-50'}`} onClick={() => isMulti && toggleExpand(name)}>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 text-white ${someActive ? avatarColor(name) : 'bg-gray-200'}`}>{initial}</div>
+                {(canManagePhotos || currentUser?.toLowerCase() === groupEmail.toLowerCase()) && groupEmail ? (
+                  <label onClick={e => e.stopPropagation()} className="relative flex-shrink-0 cursor-pointer group" title="Click to upload/change photo">
+                    {groupAvatarUrl
+                      ? <img src={groupAvatarUrl} alt={name} className="w-9 h-9 rounded-full object-cover"/>
+                      : <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${someActive ? avatarColor(name) : 'bg-gray-200'}`}>{initial}</div>
+                    }
+                    <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition">
+                      {isUploadingThis ? <span className="text-white text-[9px]">...</span> : <span className="text-white text-[10px] opacity-0 group-hover:opacity-100">📷</span>}
+                    </div>
+                    <input type="file" accept="image/*" className="hidden" disabled={isUploadingThis}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatarFor(groupEmail, f) }}/>
+                  </label>
+                ) : (
+                  groupAvatarUrl
+                    ? <img src={groupAvatarUrl} alt={name} className="w-9 h-9 rounded-full object-cover flex-shrink-0"/>
+                    : <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 text-white ${someActive ? avatarColor(name) : 'bg-gray-200'}`}>{initial}</div>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${someActive ? 'text-gray-900' : 'text-gray-400'}`}>{name}</p>
                   {!isExpanded && isMulti && (
@@ -2659,17 +2718,22 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
 function OrgChart({ employees, showToast }: { employees: Employee[], showToast: (m: string, t?: 'success'|'error') => void }) {
   const [teams, setTeams] = useState<any[]>([])
   const [members, setMembers] = useState<any[]>([])
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [searchQ, setSearchQ] = useState('')
 
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const [{data:t},{data:m}] = await Promise.all([
-        supabase.from('teams').select('*, team_lead:employees(id, name, designation, employment_type, client)').eq('active', true).order('department').order('name'),
-        supabase.from('team_members').select('*, employee:employees(id, name, designation, employment_type, employee_id, client)')
+      const [{data:t},{data:m},{data:users}] = await Promise.all([
+        supabase.from('teams').select('*, team_lead:employees(id, name, designation, employment_type, client, email)').eq('active', true).order('department').order('name'),
+        supabase.from('team_members').select('*, employee:employees(id, name, designation, employment_type, employee_id, client, email)'),
+        supabase.from('app_users').select('username, avatar_url').not('avatar_url', 'is', null),
       ])
       setTeams(t||[]); setMembers(m||[]); setLoading(false)
+      const map: Record<string, string> = {}
+      ;(users || []).forEach((u: any) => { if (u.avatar_url) map[u.username.toLowerCase()] = u.avatar_url })
+      setAvatarMap(map)
     }
     load()
   }, [])
@@ -2687,9 +2751,12 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
 
   const matchesSearch = (name: string) => !searchQ || name.toLowerCase().includes(searchQ.toLowerCase())
 
-  const PersonCard = ({ name, empType, client, isLead }: { name: string, empType?: string|null, client?: string|null, isLead?: boolean }) => (
+  const PersonCard = ({ name, empType, client, avatarUrl, isLead }: { name: string, empType?: string|null, client?: string|null, avatarUrl?: string|null, isLead?: boolean }) => (
     <div className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 transition ${isLead ? 'bg-blue-900 border-blue-900 shadow-md' : 'bg-white border-gray-200 hover:border-blue-200'} ${searchQ && !matchesSearch(name) ? 'opacity-30' : ''}`}>
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white ${isLead ? 'bg-white/20' : avatarColor(name)}`}>{initial(name)}</div>
+      {avatarUrl
+        ? <img src={avatarUrl} alt={name} className={`w-8 h-8 rounded-full object-cover flex-shrink-0 ${isLead ? 'ring-2 ring-white/40' : ''}`}/>
+        : <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white ${isLead ? 'bg-white/20' : avatarColor(name)}`}>{initial(name)}</div>
+      }
       <div className="min-w-0">
         <p className={`text-sm font-semibold truncate ${isLead ? 'text-white' : 'text-gray-900'}`}>{name.split(',').reverse().join(' ').trim()}</p>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -2740,14 +2807,14 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
                     <div key={team.id} className="bg-gray-50 rounded-2xl border border-gray-200 p-4 space-y-3">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{team.name}</p>
                       {leadName ? (
-                        <PersonCard name={leadName} empType={team.team_lead.employment_type} client={team.team_lead.client} isLead />
+                        <PersonCard name={leadName} empType={team.team_lead.employment_type} client={team.team_lead.client} avatarUrl={team.team_lead.email ? avatarMap[team.team_lead.email.toLowerCase()] : undefined} isLead />
                       ) : (
                         <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-gray-300 px-3 py-2.5 text-xs text-gray-400">No team lead assigned</div>
                       )}
                       {teamMembers.length > 0 && (
                         <div className="pl-3 border-l-2 border-blue-100 ml-4 space-y-2">
                           {teamMembers.map(m => (
-                            <PersonCard key={m.id} name={m.employee?.name || 'Unknown'} empType={m.employee?.employment_type} client={m.employee?.client} />
+                            <PersonCard key={m.id} name={m.employee?.name || 'Unknown'} empType={m.employee?.employment_type} client={m.employee?.client} avatarUrl={m.employee?.email ? avatarMap[m.employee.email.toLowerCase()] : undefined} />
                           ))}
                         </div>
                       )}
@@ -2967,7 +3034,18 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
                 </div>
                 {canManage && <button onClick={(e) => { e.stopPropagation(); deleteTicket(t.id) }} className="text-gray-300 hover:text-red-500 text-xs transition">×</button>}
               </div>
-              <p className="text-xs text-gray-400">{t.category} · By {t.created_by.split('@')[0]} · {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              <p className="text-xs text-gray-400 cursor-pointer" onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
+                {t.category} · By {t.created_by.split('@')[0]} · {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {' · '}<span className="text-blue-500 font-medium">{expandedId === t.id ? '▲ Hide details' : '▼ View details'}</span>
+              </p>
+              {canManage && (
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
+                  <span className="text-xs text-gray-500">Status:</span>
+                  {(['Open', 'In Progress', 'Resolved', 'Closed'] as Ticket['status'][]).map(s => (
+                    <button key={s} onClick={() => updateStatus(t.id, s)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${t.status === s ? STATUS_COLORS[s] + ' ring-1 ring-offset-1 ring-blue-300' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{s}</button>
+                  ))}
+                </div>
+              )}
               {expandedId === t.id && (
                 <div className="space-y-3 pt-2 border-t border-gray-100">
                   <p className="text-sm text-gray-600 whitespace-pre-wrap">{t.description}</p>
@@ -2987,14 +3065,6 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
                           </a>
                         ))}
                       </div>
-                    </div>
-                  )}
-                  {canManage && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="text-xs text-gray-500">Update status:</span>
-                      {(['Open', 'In Progress', 'Resolved', 'Closed'] as Ticket['status'][]).map(s => (
-                        <button key={s} onClick={() => updateStatus(t.id, s)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${t.status === s ? STATUS_COLORS[s] + ' ring-1 ring-offset-1 ring-blue-300' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{s}</button>
-                      ))}
                     </div>
                   )}
                 </div>
