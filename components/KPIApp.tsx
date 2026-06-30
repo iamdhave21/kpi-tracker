@@ -683,6 +683,60 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
 }
 
 
+// -- My Profile Card (Home page — upload/change your own photo) -------------
+function MyProfileCard({ currentUser, userName, showToast }: { currentUser: string, userName: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const [avatarUrl, setAvatarUrl] = useState<string|null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!currentUser) return
+    supabase.from('app_users').select('avatar_url').eq('username', currentUser.toLowerCase()).single()
+      .then(({data}) => { setAvatarUrl(data?.avatar_url || null); setLoaded(true) })
+  }, [currentUser])
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !currentUser) return
+    if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB', 'error'); return }
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${currentUser.toLowerCase()}/avatar.${ext}`
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      const publicUrl = urlData.publicUrl + '?t=' + Date.now()
+      const { error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', currentUser.toLowerCase())
+      if (dbErr) throw dbErr
+      setAvatarUrl(publicUrl)
+      showToast('Photo updated!', 'success')
+    } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Upload failed', 'error') }
+    setUploading(false)
+  }
+
+  if (!loaded) return null
+
+  return (
+    <div className="bg-white/95 backdrop-blur-sm border border-white/50 rounded-xl px-4 py-3 shadow-sm flex items-center gap-4">
+      <label className="relative flex-shrink-0 cursor-pointer group" title="Click to upload or change your photo">
+        {avatarUrl
+          ? <img src={avatarUrl} alt={userName} className="w-14 h-14 rounded-full object-cover ring-2 ring-blue-100"/>
+          : <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold ring-2 ring-blue-100 ${avatarColor(currentUser||'')}`}>{userName?.charAt(0).toUpperCase()}</div>
+        }
+        <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition">
+          {uploading ? <span className="text-white text-[10px]">...</span> : <span className="text-white text-xs opacity-0 group-hover:opacity-100">📷</span>}
+        </div>
+        <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={handleUpload}/>
+      </label>
+      <div>
+        <p className="text-sm font-semibold text-gray-900">{userName}</p>
+        <p className="text-xs text-gray-500">{avatarUrl ? 'Click your photo to change it' : 'Click your photo to add one — it shows on the Org Chart too'}</p>
+      </div>
+    </div>
+  )
+}
+
 export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string, bgUrl?: string | null }) {
   const [leaderboardKey, setLeaderboardKey] = useState(0)
   const stored = typeof window !== 'undefined' ? localStorage.getItem('kpi_user') : null
@@ -715,8 +769,13 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl 
         </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-hidden">
-          <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="px-4 pt-4">
+            <MyProfileCard currentUser={currentUser} userName={userName} showToast={showToast} />
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
+          </div>
         </div>
       )}
     </div>
@@ -1214,7 +1273,7 @@ export default function KPIApp() {
           {(view === 'announcements' || view === 'gaming-hub') ? (
             <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} />
           ) : (
-          <div className="max-w-6xl mx-auto px-4 pt-4 pb-6 relative z-10">
+          <div className={`mx-auto px-4 pt-4 pb-6 relative z-10 ${view === 'org-chart' ? 'max-w-[1600px]' : 'max-w-6xl'}`}>
           <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'dashboard-team' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
           {/* Preview mode banner */}
           {(userRole === 'super_admin' || userRole === 'admin') && (
@@ -2752,16 +2811,16 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
   const matchesSearch = (name: string) => !searchQ || name.toLowerCase().includes(searchQ.toLowerCase())
 
   const PersonCard = ({ name, empType, client, avatarUrl, isLead }: { name: string, empType?: string|null, client?: string|null, avatarUrl?: string|null, isLead?: boolean }) => (
-    <div className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 transition ${isLead ? 'bg-blue-900 border-blue-900 shadow-md' : 'bg-white border-gray-200 hover:border-blue-200'} ${searchQ && !matchesSearch(name) ? 'opacity-30' : ''}`}>
+    <div className={`flex items-center gap-3 rounded-xl border transition ${isLead ? 'bg-blue-900 border-blue-900 shadow-md px-4 py-3.5' : 'bg-white border-gray-200 hover:border-blue-200 px-3 py-2.5'} ${searchQ && !matchesSearch(name) ? 'opacity-30' : ''}`}>
       {avatarUrl
-        ? <img src={avatarUrl} alt={name} className={`w-8 h-8 rounded-full object-cover flex-shrink-0 ${isLead ? 'ring-2 ring-white/40' : ''}`}/>
-        : <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white ${isLead ? 'bg-white/20' : avatarColor(name)}`}>{initial(name)}</div>
+        ? <img src={avatarUrl} alt={name} className={`rounded-full object-cover flex-shrink-0 ${isLead ? 'w-12 h-12 ring-2 ring-white/40' : 'w-8 h-8'}`}/>
+        : <div className={`rounded-full flex items-center justify-center font-bold flex-shrink-0 text-white ${isLead ? 'w-12 h-12 text-base bg-white/20' : 'w-8 h-8 text-xs ' + avatarColor(name)}`}>{initial(name)}</div>
       }
       <div className="min-w-0">
-        <p className={`text-sm font-semibold truncate ${isLead ? 'text-white' : 'text-gray-900'}`}>{name.split(',').reverse().join(' ').trim()}</p>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {empType && <span className={`text-[10px] px-1 py-0 rounded font-medium ${isLead ? 'bg-white/20 text-white' : EMPLOYMENT_TYPE_COLORS[empType] || 'bg-gray-100 text-gray-600'}`}>{empType}</span>}
-          {client && <span className={`text-[10px] px-1 py-0 rounded font-medium ${isLead ? 'bg-white/20 text-white' : CLIENT_COLORS[client] || 'bg-gray-100 text-gray-600'}`}>{client}</span>}
+        <p className={`font-semibold truncate ${isLead ? 'text-base text-white' : 'text-sm text-gray-900'}`}>{name.split(',').reverse().join(' ').trim()}</p>
+        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+          {empType && <span className={`${isLead ? 'text-xs px-1.5 py-0.5' : 'text-[10px] px-1 py-0'} rounded font-medium ${isLead ? 'bg-white/20 text-white' : EMPLOYMENT_TYPE_COLORS[empType] || 'bg-gray-100 text-gray-600'}`}>{empType}</span>}
+          {client && <span className={`${isLead ? 'text-xs px-1.5 py-0.5' : 'text-[10px] px-1 py-0'} rounded font-medium ${isLead ? 'bg-white/20 text-white' : CLIENT_COLORS[client] || 'bg-gray-100 text-gray-600'}`}>{client}</span>}
         </div>
       </div>
     </div>
@@ -2799,7 +2858,7 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
                 <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${DEPT_BADGE_COLORS[dept] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>{dept}</span>
                 <div className="flex-1 h-px bg-gray-200"/>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {deptTeams.map(team => {
                   const teamMembers = members.filter(m => m.team_id === team.id)
                   const leadName = team.team_lead?.name
