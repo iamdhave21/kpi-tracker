@@ -1212,7 +1212,7 @@ export default function KPIApp() {
             {view === 'observations' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Observations require Team Lead access or higher</p></div>}
             {view === 'settings' && <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'org-chart' && <ComingSoon title="Org Chart" description="Interactive organizational chart with employee photos and roles. Coming soon!" icon="👥" />}
-            {view === 'tickets' && <ComingSoon title="Tickets" description="Internal ticket tracker for managing team requests and issues. Coming soon!" icon="🎫" />}
+            {view === 'tickets' && <TicketsPanel currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='viewer'?'employee_email':'agent_acknowledged', userRole==='viewer'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
             {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
@@ -2584,6 +2584,225 @@ function ComingSoon({ title, description, icon }: { title: string, description: 
       <h2 className="text-2xl font-bold text-blue-900 mb-2">{title}</h2>
       <p className="text-gray-500 max-w-md">{description}</p>
       <div className="mt-6 px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">Coming in next session 🚀</div>
+    </div>
+  )
+}
+
+// -- Tickets ------------------------------------------------------------------
+type TicketAttachment = { name: string, url: string, type: string }
+type Ticket = {
+  id: string
+  title: string
+  description: string
+  category: string
+  priority: 'Low' | 'Medium' | 'High' | 'Urgent'
+  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed'
+  created_by: string
+  assigned_to: string | null
+  attachments: TicketAttachment[]
+  created_at: string
+  updated_at: string
+}
+
+const TICKET_CATEGORIES = ['IT / Systems Access', 'HR / Payroll', 'Equipment', 'Facilities', 'Client / Account Issue', 'Other']
+const PRIORITY_COLORS: Record<string, string> = { Low: 'bg-gray-100 text-gray-600', Medium: 'bg-amber-100 text-amber-700', High: 'bg-orange-100 text-orange-700', Urgent: 'bg-red-100 text-red-700' }
+const STATUS_COLORS: Record<string, string> = { Open: 'bg-blue-100 text-blue-700', 'In Progress': 'bg-purple-100 text-purple-700', Resolved: 'bg-emerald-100 text-emerald-700', Closed: 'bg-gray-100 text-gray-500' }
+
+function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const [tickets, setTickets] = useState<Ticket[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [attachments, setAttachments] = useState<TicketAttachment[]>([])
+  const [filterStatus, setFilterStatus] = useState<string>('All')
+  const [scope, setScope] = useState<'mine' | 'all'>(canManage ? 'all' : 'mine')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [form, setForm] = useState({ title: '', description: '', category: TICKET_CATEGORIES[0], priority: 'Medium' as Ticket['priority'] })
+
+  async function loadTickets() {
+    setLoading(true)
+    let query = supabase.from('tickets').select('*').order('created_at', { ascending: false })
+    if (scope === 'mine') query = query.eq('created_by', currentUser)
+    const { data, error } = await query
+    if (!error) setTickets((data || []) as Ticket[])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadTickets() }, [scope])
+
+  async function uploadFile(file: File) {
+    setUploading(true)
+    const path = `tickets/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const isImage = file.type.startsWith('image/')
+    const fileType = isImage ? 'image' : file.type.includes('pdf') ? 'pdf' : 'doc'
+    setAttachments(prev => [...prev, { name: file.name, url: urlData.publicUrl, type: fileType }])
+    setUploading(false)
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files) return
+    for (const file of Array.from(files)) { await uploadFile(file) }
+  }
+
+  async function submitTicket() {
+    if (!form.title.trim() || !form.description.trim()) { showToast('Please fill in a title and description.', 'error'); return }
+    setPosting(true)
+    const { data, error } = await supabase.from('tickets').insert({
+      title: form.title.trim(),
+      description: form.description.trim(),
+      category: form.category,
+      priority: form.priority,
+      status: 'Open',
+      created_by: currentUser,
+      attachments,
+    }).select().single()
+    setPosting(false)
+    if (error) { showToast(error.message, 'error'); return }
+    setForm({ title: '', description: '', category: TICKET_CATEGORIES[0], priority: 'Medium' })
+    setAttachments([])
+    setShowForm(false)
+    showToast('Ticket submitted!', 'success')
+    loadTickets()
+    fetch('/api/notify/ticket-created', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketId: data?.id, title: form.title.trim(), category: form.category, priority: form.priority, createdBy: currentUser })
+    }).catch(() => {})
+  }
+
+  async function updateStatus(id: string, status: Ticket['status']) {
+    const { error } = await supabase.from('tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) { showToast(error.message, 'error'); return }
+    showToast('Status updated', 'success')
+    loadTickets()
+  }
+
+  async function deleteTicket(id: string) {
+    if (!confirm('Delete this ticket permanently?')) return
+    const { error } = await supabase.from('tickets').delete().eq('id', id)
+    if (error) { showToast(error.message, 'error'); return }
+    showToast('Ticket deleted', 'success')
+    loadTickets()
+  }
+
+  const filtered = tickets.filter(t => filterStatus === 'All' || t.status === filterStatus)
+  const openCount = tickets.filter(t => t.status === 'Open').length
+  const inProgressCount = tickets.filter(t => t.status === 'In Progress').length
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Tickets</h2>
+          <p className="text-sm text-gray-500">{tickets.length} ticket{tickets.length !== 1 ? 's' : ''} {scope === 'mine' ? '(yours)' : '(all)'} - {openCount} open, {inProgressCount} in progress</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {canManage && (
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+              <button onClick={() => setScope('mine')} className={`px-3 py-1.5 font-medium transition ${scope === 'mine' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>My Tickets</button>
+              <button onClick={() => setScope('all')} className={`px-3 py-1.5 font-medium transition ${scope === 'all' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>All Tickets</button>
+            </div>
+          )}
+          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ New Ticket'}</button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Brief summary of the issue..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Describe the issue in detail..." rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+          <div className="flex items-center gap-3 flex-wrap">
+            <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+              {TICKET_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+            <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as Ticket['priority'] }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+              <option>Low</option><option>Medium</option><option>High</option><option>Urgent</option>
+            </select>
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">{uploading ? 'Uploading...' : '📎 Attach'}</button>
+            <span className="text-xs text-gray-400">Screenshots, PDFs, Word</span>
+            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleFileChange} className="hidden" />
+          </div>
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((att, i) => (
+                <div key={i} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs">
+                  <span>{att.type === 'image' ? '🖼' : att.type === 'pdf' ? '📄' : '📝'}</span>
+                  <span className="text-gray-700 max-w-xs truncate">{att.name}</span>
+                  <button onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 ml-1">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <button onClick={submitTicket} disabled={posting || uploading} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Submitting...' : 'Submit Ticket'}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        {['All', 'Open', 'In Progress', 'Resolved', 'Closed'].map(s => (
+          <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading tickets...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 text-sm">No tickets found.</div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(t => (
+            <div key={t.id} className={`bg-white border rounded-xl p-4 space-y-2 ${t.priority === 'Urgent' ? 'border-red-300' : 'border-gray-200'}`}>
+              <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[t.priority]}`}>{t.priority}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status]}`}>{t.status}</span>
+                  <h3 className="font-semibold text-gray-900 text-sm">{t.title}</h3>
+                </div>
+                {canManage && <button onClick={(e) => { e.stopPropagation(); deleteTicket(t.id) }} className="text-gray-300 hover:text-red-500 text-xs transition">×</button>}
+              </div>
+              <p className="text-xs text-gray-400">{t.category} · By {t.created_by.split('@')[0]} · {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              {expandedId === t.id && (
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{t.description}</p>
+                  {t.attachments && t.attachments.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        {t.attachments.filter(a => a.type !== 'image').map((att, i) => (
+                          <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
+                            <span>{att.type === 'pdf' ? '📄' : '📝'}</span><span className="max-w-xs truncate">{att.name}</span>
+                          </a>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {t.attachments.filter(a => a.type === 'image').map((att, i) => (
+                          <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
+                            <img src={att.url} alt={att.name} className="h-24 w-auto rounded-lg border border-gray-200 object-cover hover:opacity-90 transition" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {canManage && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-xs text-gray-500">Update status:</span>
+                      {(['Open', 'In Progress', 'Resolved', 'Closed'] as Ticket['status'][]).map(s => (
+                        <button key={s} onClick={() => updateStatus(t.id, s)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${t.status === s ? STATUS_COLORS[s] + ' ring-1 ring-offset-1 ring-blue-300' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{s}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
