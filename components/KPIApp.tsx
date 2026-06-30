@@ -2396,6 +2396,9 @@ function TeamManager({ employees, showToast }:
   const [newLeadId, setNewLeadId] = useState('')
   const [selTeam, setSelTeam] = useState<string|null>(null)
   const [addMemberId, setAddMemberId] = useState('')
+  const [editTeamId, setEditTeamId] = useState<string|null>(null)
+  const [editTeamName, setEditTeamName] = useState('')
+  const [editTeamDept, setEditTeamDept] = useState('')
 
   async function loadTeams() {
     setLoading(true)
@@ -2414,6 +2417,13 @@ function TeamManager({ employees, showToast }:
   async function deleteTeam(id: string) {
     if (!confirm('Delete this team?')) return
     await supabase.from('teams').delete().eq('id',id); setSelTeam(null); loadTeams(); showToast('Team deleted')
+  }
+
+  async function updateTeam(id: string) {
+    if (!editTeamName.trim()) { showToast('Team name cannot be empty', 'error'); return }
+    const {error} = await supabase.from('teams').update({name: editTeamName.trim(), department: editTeamDept.trim()}).eq('id', id)
+    if (error) { showToast(error.message, 'error'); return }
+    setEditTeamId(null); loadTeams(); showToast('Team updated!')
   }
 
   async function notifyTeamChange(action: 'added'|'removed', employeeName: string, employeeEmail: string|null, teamName: string, leadEmail: string|null) {
@@ -2474,9 +2484,23 @@ function TeamManager({ employees, showToast }:
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50"><h3 className="font-semibold text-gray-700 text-sm">All Teams</h3></div>
           {loading?<div className="p-8 text-center text-gray-400">Loading...</div>:teams.length===0?<div className="p-8 text-center text-gray-400 text-sm">No teams yet.</div>:teams.map((team,i)=>(
-            <div key={team.id} onClick={()=>setSelTeam(team.id)} className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition ${i>0?'border-t border-gray-100':''} ${selTeam===team.id?'bg-blue-50':'hover:bg-gray-50'}`}>
-              <div className="flex-1 min-w-0"><p className="font-medium text-gray-900 text-sm">{team.name}</p><p className="text-xs text-gray-500">{team.department}{team.team_lead?.name?` - Lead: ${team.team_lead.name.split(',')[0]}`:' - No lead'}</p><p className="text-xs text-gray-400">{members.filter(m=>m.team_id===team.id).length} members</p></div>
-              <button onClick={e=>{e.stopPropagation();deleteTeam(team.id)}} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
+            <div key={team.id} onClick={()=>editTeamId!==team.id && setSelTeam(team.id)} className={`flex items-center gap-3 px-4 py-3 ${editTeamId===team.id?'':'cursor-pointer'} transition ${i>0?'border-t border-gray-100':''} ${selTeam===team.id?'bg-blue-50':'hover:bg-gray-50'}`}>
+              {editTeamId===team.id ? (
+                <div className="flex-1 flex flex-col sm:flex-row gap-2" onClick={e=>e.stopPropagation()}>
+                  <input value={editTeamName} onChange={e=>setEditTeamName(e.target.value)} placeholder="Team name" className="flex-1 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                  <input value={editTeamDept} onChange={e=>setEditTeamDept(e.target.value)} placeholder="Department" className="flex-1 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                  <div className="flex gap-1">
+                    <button onClick={()=>updateTeam(team.id)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition">Save</button>
+                    <button onClick={()=>setEditTeamId(null)} className="text-gray-500 hover:text-gray-700 px-2 py-1.5 text-xs transition">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 min-w-0"><p className="font-medium text-gray-900 text-sm">{team.name}</p><p className="text-xs text-gray-500">{team.department}{team.team_lead?.name?` - Lead: ${team.team_lead.name.split(',')[0]}`:' - No lead'}</p><p className="text-xs text-gray-400">{members.filter(m=>m.team_id===team.id).length} members</p></div>
+                  <button onClick={e=>{e.stopPropagation();setEditTeamId(team.id);setEditTeamName(team.name);setEditTeamDept(team.department||'')}} className="text-gray-400 hover:text-blue-600 p-1 transition"><Edit2 className="w-4 h-4"/></button>
+                  <button onClick={e=>{e.stopPropagation();deleteTeam(team.id)}} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
+                </>
+              )}
             </div>
           ))}
         </div>
