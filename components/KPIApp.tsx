@@ -4287,6 +4287,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], type: 'Performance', initiated_by: 'Team Lead', discussion: '', action_items: '', next_session_date: '', send_for_ack: false }
   const [form, setForm] = useState<any>({ ...emptyForm })
   const [ackLoading, setAckLoading] = useState<string|null>(null)
+  const [editingDraftId, setEditingDraftId] = useState<string|null>(null)
 
   async function loadLogs() {
     setLoading(true)
@@ -4314,13 +4315,16 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
     loadLogs()
   }
 
-  async function handleSave() {
-    if (!form.employee_id || !form.date || !form.discussion.trim()) {
+  async function handleSave(asDraft: boolean = false) {
+    if (!asDraft && (!form.employee_id || !form.date || !form.discussion.trim())) {
       showToast('Please fill in employee, date, and discussion points.', 'error'); return
+    }
+    if (asDraft && !form.employee_id) {
+      showToast('Please at least select an employee before saving as draft.', 'error'); return
     }
     setSaving(true)
     const emp = employees.find(e => e.id === form.employee_id)
-    const { error } = await supabase.from('coaching_logs').insert({
+    const payload = {
       employee_id: form.employee_id,
       employee_name: emp?.name || '',
       employee_email: emp?.email || '',
@@ -4331,15 +4335,35 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
       discussion: form.discussion.trim(),
       action_items: form.action_items.trim(),
       next_session_date: form.next_session_date || null,
-      requires_acknowledgment: form.send_for_ack,
+      requires_acknowledgment: asDraft ? false : form.send_for_ack,
       agent_acknowledged: false,
-    })
+      status: asDraft ? 'Draft' : 'Final',
+    }
+    const { error } = editingDraftId
+      ? await supabase.from('coaching_logs').update(payload).eq('id', editingDraftId)
+      : await supabase.from('coaching_logs').insert(payload)
     setSaving(false)
     if (error) { showToast('Failed to save: ' + error.message, 'error'); return }
-    showToast(form.send_for_ack ? 'Coaching log saved! Agent will see it for acknowledgment.' : 'Coaching log saved!')
+    showToast(asDraft ? 'Saved as draft — come back anytime to finish it.' : (form.send_for_ack ? 'Coaching log saved! Agent will see it for acknowledgment.' : 'Coaching log saved!'))
     setForm({ ...emptyForm })
+    setEditingDraftId(null)
     setShowForm(false)
     loadLogs()
+  }
+
+  function resumeDraft(draft: any) {
+    setForm({
+      employee_id: draft.employee_id,
+      date: draft.date,
+      type: draft.type,
+      initiated_by: draft.initiated_by,
+      discussion: draft.discussion || '',
+      action_items: draft.action_items || '',
+      next_session_date: draft.next_session_date || '',
+      send_for_ack: draft.requires_acknowledgment || false,
+    })
+    setEditingDraftId(draft.id)
+    setShowForm(true)
   }
 
   async function handleDelete(id: string) {
@@ -4351,10 +4375,13 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   }
 
   const filtered = logs.filter(l => {
+    if (l.status === 'Draft') return false
     if (filterEmp && l.employee_id !== filterEmp) return false
     if (filterMonth && !l.date.startsWith(filterMonth)) return false
     return true
   })
+
+  const myDrafts = logs.filter(l => l.status === 'Draft' && l.coached_by === currentUser)
 
   const COACHING_TYPES = ['Performance', 'Behavior', 'Development', 'Recognition', 'Corrective Action']
   const INITIATED_BY = ['Team Lead', 'Agent', 'Manager', 'HR']
@@ -4414,6 +4441,24 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
         )}
       </div>
 
+      {canManage && myDrafts.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">📝 Your Drafts ({myDrafts.length}) — pick up where you left off</p>
+          {myDrafts.map(d => (
+            <div key={d.id} className="flex items-center justify-between bg-white border border-amber-100 rounded-lg px-3 py-2">
+              <div>
+                <span className="text-sm font-medium text-gray-800">{d.employee_name || 'No employee yet'}</span>
+                <span className="text-xs text-gray-400 ml-2">{d.type} · {d.date ? new Date(d.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No date set'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => resumeDraft(d)} className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg font-medium transition">Resume</button>
+                <button onClick={() => handleDelete(d.id)} className="text-gray-400 hover:text-red-500 p-1 transition"><Trash2 className="w-3.5 h-3.5"/></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Add form */}
       {showForm && canManage && (
         <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
@@ -4472,11 +4517,15 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
             </label>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSave} disabled={saving}
+            <button onClick={() => handleSave(false)} disabled={saving}
               className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
-              <Save className="w-4 h-4" />{saving ? 'Saving…' : 'Save Session'}
+              <Save className="w-4 h-4" />{saving ? 'Saving…' : (editingDraftId ? 'Finalize Session' : 'Save Session')}
             </button>
-            <button onClick={() => { setShowForm(false); setForm({...emptyForm}) }}
+            <button onClick={() => handleSave(true)} disabled={saving || !form.employee_id}
+              className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+              <Save className="w-4 h-4" />Save as Draft
+            </button>
+            <button onClick={() => { setShowForm(false); setForm({...emptyForm}); setEditingDraftId(null) }}
               className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
           </div>
         </div>
