@@ -707,8 +707,15 @@ function MyProfileCard({ currentUser, userName, showToast }: { currentUser: stri
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
       const publicUrl = urlData.publicUrl + '?t=' + Date.now()
-      const { error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', currentUser.toLowerCase())
+      // .select() forces Supabase to return the updated row(s) so we can tell
+      // a genuine "0 rows matched" apart from a real success — .update() alone
+      // returns no error even when nothing matched, which silently looked like
+      // success before while actually saving nothing.
+      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', currentUser.toLowerCase()).select()
       if (dbErr) throw dbErr
+      if (!updated || updated.length === 0) {
+        throw new Error(`No account found for "${currentUser}" — your photo was uploaded but couldn't be linked to your login. Please flag this in Matrix with your exact login email.`)
+      }
       setAvatarUrl(publicUrl)
       showToast('Photo updated!', 'success')
     } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Upload failed', 'error') }
