@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet } from 'lucide-react'
+import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star } from 'lucide-react'
 
 type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records'
 
@@ -1030,7 +1030,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePa
 
 
 // -- Collapsible Sidebar -----------------------------------------------------
-function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, userRole }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, userRole: string }) {
+function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, hris: false, dir: false, sys: false
   })
@@ -1056,17 +1056,93 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     </button>
   )
 
-  const NavItem = ({ id, label, icon, badge, dotColor }: { id: string, label: string, icon: React.ReactNode, badge?: number, dotColor?: string }) => (
-    <button onClick={() => { setView(id); setMobileMenuOpen(false) }} className={itemStyle(id)}>
-      {dotColor && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />}
-      {icon}
-      <span className="truncate font-semibold">{label}</span>
-      {badge && badge > 0 ? <span className="ml-auto bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center">{badge}</span> : view === id ? <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/> : null}
-    </button>
-  )
+  const NavItem = ({ id, label, icon, badge, dotColor }: { id: string, label: string, icon: React.ReactNode, badge?: number, dotColor?: string }) => {
+    const isFavorited = favoriteViews.includes(id)
+    return (
+      <button onClick={() => { setView(id); setMobileMenuOpen(false) }} className={`group ${itemStyle(id)}`}>
+        {dotColor && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />}
+        {icon}
+        <span className="truncate font-semibold">{label}</span>
+        {onToggleFavorite && (
+          <span
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite(id) }}
+            className={`ml-auto flex-shrink-0 transition ${isFavorited ? 'text-amber-400' : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-amber-400'}`}
+            title={isFavorited ? 'Remove from Favorites' : 'Add to Favorites'}
+          >
+            <Star className="w-3.5 h-3.5" fill={isFavorited ? 'currentColor' : 'none'} />
+          </span>
+        )}
+        {badge && badge > 0 ? <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center">{badge}</span> : view === id && !onToggleFavorite ? <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/> : null}
+      </button>
+    )
+  }
+
+  // Metadata lookup so Favorites can render the same label/icon/color
+  // without duplicating JSX -- single source of truth per nav item.
+  const NAV_META: Record<string, { label: string, icon: React.ReactNode, dotColor: string }> = {
+    'announcements': { label: 'Announcements', icon: <Bell className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-sky-400' },
+    'gaming-hub': { label: 'Gaming Hub', icon: <Gamepad2 className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-sky-400' },
+    'tickets': { label: 'Tickets', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
+    'tasks': { label: 'Tasks', icon: <CheckCircle className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
+    'bcp': { label: 'BCP', icon: <Shield className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
+    'links': { label: 'Links', icon: <TrendingUp className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
+    'resources': { label: 'Resources', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
+    'hris-referral': { label: 'Employee Referral', icon: <UserPlus className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
+    'hris-records': { label: 'Employee Records', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
+    'entry': { label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
+    'observations': { label: 'Observations', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
+    'tl-tools': { label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
+    'cadence': { label: 'Operating Cadence', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
+    'dashboard-month': { label: 'Dashboard', icon: <BarChart2 className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-emerald-400' },
+    'dashboard-employee': { label: 'Employee Trends', icon: <TrendingUp className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-emerald-400' },
+    'dashboard-team': { label: 'Team View', icon: <Users className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-emerald-400' },
+    'employees': { label: 'Employees', icon: <UserPlus className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-amber-400' },
+    'teams': { label: 'Teams', icon: <Award className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-amber-400' },
+    'org-chart': { label: 'Org Chart', icon: <Users className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-amber-400' },
+    'matrix': { label: 'Matrix', icon: <FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-rose-400' },
+    'settings': { label: 'Settings', icon: <Shield className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-rose-400' },
+  }
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+
+  function handleDrop(targetIndex: number) {
+    if (dragIndex === null || dragIndex === targetIndex || !onReorderFavorites) return
+    const next = [...favoriteViews]
+    const [moved] = next.splice(dragIndex, 1)
+    next.splice(targetIndex, 0, moved)
+    onReorderFavorites(next)
+    setDragIndex(null)
+  }
 
   return (
     <div className="flex-1 overflow-y-auto py-3">
+
+      {/* FAVORITES -- personal, drag-to-reorder shortcuts. Purely additive;
+          does not remove or alter anything from the full sidebar below. */}
+      {favoriteViews.length > 0 && (
+        <div className="px-2 pb-2 mb-1 border-b border-gray-200">
+          <p className="px-3 pt-1 pb-1.5 text-[11px] font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1"><Star className="w-3 h-3 fill-amber-400 text-amber-400"/>Favorites</p>
+          <div className="space-y-0.5">
+            {favoriteViews.map((id, i) => {
+              const meta = NAV_META[id]
+              if (!meta) return null
+              return (
+                <div
+                  key={id}
+                  draggable
+                  onDragStart={() => setDragIndex(i)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDrop(i)}
+                  className={`cursor-move ${dragIndex === i ? 'opacity-40' : ''}`}
+                >
+                  <NavItem id={id} label={meta.label} icon={meta.icon} dotColor={meta.dotColor}
+                    badge={id === 'tl-tools' ? pendingCoachingCount : id === 'tasks' ? pendingTaskCount : undefined} />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Collapse All / Expand All */}
       <div className="px-3 pb-2">
@@ -1174,6 +1250,7 @@ export default function KPIApp() {
   const [userRole, setUserRole] = useState<string>('viewer')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
   const [pendingTaskCount, setPendingTaskCount] = useState(0)
+  const [favoriteViews, setFavoriteViews] = useState<string[]>([])
   const [bgUrl, setBgUrl] = useState<string|null>(null)
 
   useEffect(() => {
@@ -1289,6 +1366,27 @@ export default function KPIApp() {
     loadPendingTasks()
   }, [user, userRole])
 
+  // Load this user's favorited sidebar items (persisted per-account, not
+  // device-specific) and a helper to save changes back.
+  useEffect(() => {
+    if (!user) return
+    supabase.from('app_users').select('favorite_views').eq('username', user.toLowerCase()).single()
+      .then(({ data }) => { if (data?.favorite_views) setFavoriteViews(data.favorite_views) })
+  }, [user])
+
+  async function saveFavorites(next: string[]) {
+    setFavoriteViews(next)
+    if (!user) return
+    await supabase.from('app_users').update({ favorite_views: next }).eq('username', user.toLowerCase())
+  }
+
+  function toggleFavorite(viewId: string) {
+    const next = favoriteViews.includes(viewId)
+      ? favoriteViews.filter(v => v !== viewId)
+      : [...favoriteViews, viewId]
+    saveFavorites(next)
+  }
+
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
     setToast({ msg, type }); setTimeout(() => setToast(null), 3500)
   }
@@ -1350,7 +1448,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={userRole} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={userRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} />
 
           {/* User info at bottom of sidebar */}
           <div className="border-t border-gray-200 p-3 flex items-center gap-3 bg-white">
