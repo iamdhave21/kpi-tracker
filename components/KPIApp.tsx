@@ -2978,14 +2978,14 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
 
   const initial = (name: string) => name.trim().charAt(0).toUpperCase()
 
-  // Group teams by department
-  const deptMap = new Map<string, any[]>()
+  // Group teams by the client their team lead supports (falls back to 'Unassigned')
+  const clientMap = new Map<string, any[]>()
   teams.forEach(t => {
-    const dept = t.department || 'Unassigned'
-    if (!deptMap.has(dept)) deptMap.set(dept, [])
-    deptMap.get(dept)!.push(t)
+    const client = t.team_lead?.client || 'Unassigned'
+    if (!clientMap.has(client)) clientMap.set(client, [])
+    clientMap.get(client)!.push(t)
   })
-  const deptEntries = Array.from(deptMap.entries()).sort(([a],[b]) => a.localeCompare(b))
+  const clientEntries = Array.from(clientMap.entries()).sort(([a],[b]) => a.localeCompare(b))
 
   const matchesSearch = (name: string) => !searchQ || name.toLowerCase().includes(searchQ.toLowerCase())
 
@@ -3013,7 +3013,7 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Org Chart</h2>
-          <p className="text-sm text-gray-500">{deptEntries.length} department{deptEntries.length !== 1 ? 's' : ''} - {totalTeams} team{totalTeams !== 1 ? 's' : ''} - {totalMembers} member{totalMembers !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-gray-500">{clientEntries.length} client{clientEntries.length !== 1 ? 's' : ''} - {totalTeams} team{totalTeams !== 1 ? 's' : ''} - {totalMembers} member{totalMembers !== 1 ? 's' : ''}</p>
         </div>
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
@@ -3031,14 +3031,14 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
         </div>
       ) : (
         <div className="space-y-8">
-          {deptEntries.map(([dept, deptTeams]) => (
-            <div key={dept} className="space-y-4">
+          {clientEntries.map(([client, clientTeams]) => (
+            <div key={client} className="space-y-4">
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${DEPT_BADGE_COLORS[dept] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>{dept}</span>
+                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${CLIENT_COLORS[client] ? CLIENT_COLORS[client] + ' border-transparent' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>{client}</span>
                 <div className="flex-1 h-px bg-gray-200"/>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {deptTeams.map(team => {
+              <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+                {clientTeams.map(team => {
                   const teamMembers = members.filter(m => m.team_id === team.id)
                   const leadName = team.team_lead?.name
                   return (
