@@ -13,6 +13,10 @@ const DEPT_BADGE_COLORS: Record<string, string> = { Payroll: 'bg-emerald-50 text
 // Employment Type — used by Employees (classification) and Org Chart (hierarchy/labeling)
 const EMPLOYMENT_TYPES = ['Manager', 'Team Lead', 'Agent', 'Contractor', 'Intern', 'Probationary']
 const EMPLOYMENT_TYPE_COLORS: Record<string, string> = { Manager: 'bg-rose-100 text-rose-700', 'Team Lead': 'bg-indigo-100 text-indigo-700', Agent: 'bg-blue-100 text-blue-700', Contractor: 'bg-amber-100 text-amber-700', Intern: 'bg-teal-100 text-teal-700', Probationary: 'bg-gray-200 text-gray-700' }
+
+// Client support — used by Employees to tag which client account a role serves
+const CLIENTS = ['EMMA', 'AB BSS', 'Harlan + Holden']
+const CLIENT_COLORS: Record<string, string> = { EMMA: 'bg-fuchsia-100 text-fuchsia-700', 'AB BSS': 'bg-cyan-100 text-cyan-700', 'Harlan + Holden': 'bg-lime-100 text-lime-700' }
 type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type Toast = { msg: string; type: 'success' | 'error' }
 
@@ -1787,6 +1791,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [newEmpId, setNewEmpId] = useState('')
   const [newDepartments, setNewDepartments] = useState<string[]>([])
   const [newEmpType, setNewEmpType] = useState('Agent')
+  const [newClient, setNewClient] = useState(CLIENTS[0])
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
   const [editName, setEditName] = useState('')
@@ -1795,7 +1800,9 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [editEmpId, setEditEmpId] = useState('')
   const [editDepartments, setEditDepartments] = useState<string[]>([])
   const [editEmpType, setEditEmpType] = useState('Agent')
+  const [editClient, setEditClient] = useState(CLIENTS[0])
   const [searchQ, setSearchQ] = useState('')
+  const [filterClient, setFilterClient] = useState('All')
   const [showInactive, setShowInactive] = useState(false)
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
   const canExport = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
@@ -1809,11 +1816,14 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         'Employee ID': e.employee_id || '',
         'Name': e.name,
         'Designation / Project': e.designation,
+        'Employment Type': e.employment_type || '',
+        'Client': e.client || '',
+        'Department(s)': (e.departments || []).join(', '),
         'Work Email': e.email || '',
         'Status': e.active ? 'Active' : 'Inactive',
       }))
     const ws = XLSX.utils.json_to_sheet(rows)
-    ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 32 }, { wch: 10 }]
+    ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 24 }, { wch: 32 }, { wch: 10 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Employees')
     const dateStr = new Date().toISOString().slice(0, 10)
@@ -1833,16 +1843,17 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       employee_id: newEmpId.trim()||null,
       departments: newDepartments.length ? newDepartments : null,
       employment_type: newEmpType,
+      client: newClient,
       active:true
     })
     if (error) showToast(error.message,'error')
-    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); onChanged() }
+    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClient(CLIENTS[0]); onChanged() }
     setAdding(false)
   }
 
   async function saveEdit(id: string) {
     const emp = employees.find(e=>e.id===id)
-    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType}).eq('id',id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,client:editClient}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
     // If email provided, upsert app_users so they can log in
     if (editEmail && editEmail.trim()) {
@@ -1892,7 +1903,8 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const filtered = employees.filter(e => {
     const matchSearch = !searchQ || e.name.toLowerCase().includes(searchQ.toLowerCase()) || e.designation.toLowerCase().includes(searchQ.toLowerCase())
     const matchActive = showInactive ? true : e.active
-    return matchSearch && matchActive
+    const matchClient = filterClient === 'All' || e.client === filterClient
+    return matchSearch && matchActive && matchClient
   })
 
   // Build grouped structure
@@ -1928,6 +1940,9 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           <select value={newEmpType} onChange={e=>setNewEmpType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
+          <select value={newClient} onChange={e=>setNewClient(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+            {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
           <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
@@ -1946,6 +1961,13 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       </div>
 
       <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name or designation..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/></div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-400 font-medium">Client:</span>
+        {['All', ...CLIENTS].map(c => (
+          <button key={c} onClick={()=>setFilterClient(c)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterClient===c ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{c}</button>
+        ))}
+      </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {groupEntries.length === 0 && <div className="text-center py-12 text-gray-400 text-sm">No employees found.</div>}
@@ -1970,6 +1992,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-xs text-gray-500">{emps[0].designation}</p>
                       {emps[0].employment_type && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${EMPLOYMENT_TYPE_COLORS[emps[0].employment_type] || 'bg-gray-100 text-gray-600'}`}>{emps[0].employment_type}</span>}
+                      {emps[0].client && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[emps[0].client] || 'bg-gray-100 text-gray-600'}`}>{emps[0].client}</span>}
                       {emps[0].employee_id && <span className="text-xs font-mono bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{emps[0].employee_id}</span>}
                       {emps[0].departments && emps[0].departments.map(d => (
                         <span key={d} className={`text-xs px-1.5 py-0.5 rounded border ${DEPT_BADGE_COLORS[d] || 'bg-gray-50 text-gray-500 border-gray-200'}`}>{d}</span>
@@ -1983,7 +2006,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                 {!isMulti && (
                   <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
                     <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                    <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent')}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0])}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                     <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                   </div>
                 )}
@@ -2012,6 +2035,12 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                       <label className="block text-xs font-medium text-gray-500 mb-1">Employment Type</label>
                       <select value={editEmpType} onChange={e=>setEditEmpType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                         {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Client Supported</label>
+                      <select value={editClient} onChange={e=>setEditClient(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                        {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                     <div>
@@ -2048,13 +2077,14 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                       <span className={`text-sm ${emp.active ? 'text-gray-700' : 'text-gray-400'}`}>{emp.designation}</span>
                       {emp.employment_type && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${EMPLOYMENT_TYPE_COLORS[emp.employment_type] || 'bg-gray-100 text-gray-600'}`}>{emp.employment_type}</span>}
+                      {emp.client && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[emp.client] || 'bg-gray-100 text-gray-600'}`}>{emp.client}</span>}
                       {emp.employee_id && <span className="text-xs font-mono bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{emp.employee_id}</span>}
                       {emp.departments && emp.departments.map(d => (
                         <span key={d} className={`text-xs px-1.5 py-0.5 rounded border ${DEPT_BADGE_COLORS[d] || 'bg-gray-50 text-gray-500 border-gray-200'}`}>{d}</span>
                       ))}
                     </div>
                     <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                    <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent')}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0])}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                     <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                   </>
                   {editId === emp.id && (
@@ -2069,6 +2099,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Employment Type</label>
                           <select value={editEmpType} onChange={e=>setEditEmpType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select></div>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Client Supported</label>
+                          <select value={editClient} onChange={e=>setEditClient(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                            {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
                           </select></div>
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
                           <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/></div>
@@ -2660,8 +2694,8 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
     async function load() {
       setLoading(true)
       const [{data:t},{data:m}] = await Promise.all([
-        supabase.from('teams').select('*, team_lead:employees(id, name, designation, employment_type)').eq('active', true).order('department').order('name'),
-        supabase.from('team_members').select('*, employee:employees(id, name, designation, employment_type, employee_id)')
+        supabase.from('teams').select('*, team_lead:employees(id, name, designation, employment_type, client)').eq('active', true).order('department').order('name'),
+        supabase.from('team_members').select('*, employee:employees(id, name, designation, employment_type, employee_id, client)')
       ])
       setTeams(t||[]); setMembers(m||[]); setLoading(false)
     }
@@ -2681,7 +2715,7 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
 
   const matchesSearch = (name: string) => !searchQ || name.toLowerCase().includes(searchQ.toLowerCase())
 
-  const PersonCard = ({ name, role, empType, isLead }: { name: string, role: string, empType?: string|null, isLead?: boolean }) => (
+  const PersonCard = ({ name, role, empType, client, isLead }: { name: string, role: string, empType?: string|null, client?: string|null, isLead?: boolean }) => (
     <div className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 transition ${isLead ? 'bg-blue-900 border-blue-900 shadow-md' : 'bg-white border-gray-200 hover:border-blue-200'} ${searchQ && !matchesSearch(name) ? 'opacity-30' : ''}`}>
       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white ${isLead ? 'bg-white/20' : avatarColor(name)}`}>{initial(name)}</div>
       <div className="min-w-0">
@@ -2689,6 +2723,7 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
         <div className="flex items-center gap-1.5 flex-wrap">
           <p className={`text-xs truncate ${isLead ? 'text-blue-200' : 'text-gray-500'}`}>{role}</p>
           {empType && <span className={`text-[10px] px-1 py-0 rounded font-medium ${isLead ? 'bg-white/20 text-white' : EMPLOYMENT_TYPE_COLORS[empType] || 'bg-gray-100 text-gray-600'}`}>{empType}</span>}
+          {client && <span className={`text-[10px] px-1 py-0 rounded font-medium ${isLead ? 'bg-white/20 text-white' : CLIENT_COLORS[client] || 'bg-gray-100 text-gray-600'}`}>{client}</span>}
         </div>
       </div>
     </div>
@@ -2734,14 +2769,14 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
                     <div key={team.id} className="bg-gray-50 rounded-2xl border border-gray-200 p-4 space-y-3">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{team.name}</p>
                       {leadName ? (
-                        <PersonCard name={leadName} role={team.team_lead.designation} empType={team.team_lead.employment_type} isLead />
+                        <PersonCard name={leadName} role={team.team_lead.designation} empType={team.team_lead.employment_type} client={team.team_lead.client} isLead />
                       ) : (
                         <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-gray-300 px-3 py-2.5 text-xs text-gray-400">No team lead assigned</div>
                       )}
                       {teamMembers.length > 0 && (
                         <div className="pl-3 border-l-2 border-blue-100 ml-4 space-y-2">
                           {teamMembers.map(m => (
-                            <PersonCard key={m.id} name={m.employee?.name || 'Unknown'} role={m.employee?.designation || ''} empType={m.employee?.employment_type} />
+                            <PersonCard key={m.id} name={m.employee?.name || 'Unknown'} role={m.employee?.designation || ''} empType={m.employee?.employment_type} client={m.employee?.client} />
                           ))}
                         </div>
                       )}
