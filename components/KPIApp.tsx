@@ -2289,7 +2289,7 @@ function TeamManager({ employees, showToast }:
 
   async function loadTeams() {
     setLoading(true)
-    const [{data:t},{data:m}] = await Promise.all([supabase.from('teams').select('*, team_lead:employees(name)').order('name'),supabase.from('team_members').select('*, employee:employees(name, designation, employment_type, client)')])
+    const [{data:t},{data:m}] = await Promise.all([supabase.from('teams').select('*, team_lead:employees(name, email)').order('name'),supabase.from('team_members').select('*, employee:employees(name, designation, employment_type, client, email)')])
     setTeams(t||[]); setMembers(m||[]); setLoading(false)
   }
   useEffect(()=>{loadTeams()},[])
@@ -2306,14 +2306,33 @@ function TeamManager({ employees, showToast }:
     await supabase.from('teams').delete().eq('id',id); setSelTeam(null); loadTeams(); showToast('Team deleted')
   }
 
-  async function addMember() {
-    if (!selTeam||!addMemberId) return
-    const {error} = await supabase.from('team_members').insert({team_id:selTeam,employee_id:addMemberId})
-    if (error) showToast('Member already in team','error')
-    else { setAddMemberId(''); loadTeams(); showToast('Member added!') }
+  function notifyTeamChange(action: 'added'|'removed', employeeName: string, employeeEmail: string|null, teamName: string, leadEmail: string|null) {
+    if (!employeeEmail) return
+    fetch('/api/notify/team-change', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, employeeName, employeeEmail, teamName, leadEmail })
+    }).catch(() => {})
   }
 
-  async function removeMember(id: string) { await supabase.from('team_members').delete().eq('id',id); loadTeams() }
+  async function addMember() {
+    if (!selTeam||!addMemberId) return
+    const emp = employees.find(e => e.id === addMemberId)
+    const team = teams.find(t => t.id === selTeam)
+    const {error} = await supabase.from('team_members').insert({team_id:selTeam,employee_id:addMemberId})
+    if (error) showToast('Member already in team','error')
+    else {
+      setAddMemberId(''); loadTeams(); showToast('Member added!')
+      if (emp && team) notifyTeamChange('added', emp.name, emp.email, team.name, team.team_lead?.email)
+    }
+  }
+
+  async function removeMember(id: string) {
+    const member = members.find(m => m.id === id)
+    const team = teams.find(t => t.id === selTeam)
+    await supabase.from('team_members').delete().eq('id',id)
+    loadTeams()
+    if (member?.employee && team) notifyTeamChange('removed', member.employee.name, member.employee.email, team.name, team.team_lead?.email)
+  }
   async function updateLead(teamId: string, leadId: string) { await supabase.from('teams').update({team_lead_id:leadId||null}).eq('id',teamId); loadTeams() }
 
   const teamMembers = members.filter(m=>m.team_id===selTeam)
@@ -2447,6 +2466,18 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
     loadUsers()
   }
 
+  async function changeUserRole(u: any, newRole: string) {
+    if (newRole === u.role) return
+    const { error } = await supabase.from('app_users').update({ role: newRole }).eq('id', u.id)
+    if (error) { showToast(error.message, 'error'); return }
+    showToast(`Role updated for ${u.username}`)
+    loadUsers()
+    fetch('/api/notify/role-changed', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u.username, oldRole: u.role, newRole, changedBy: currentUser || 'admin' })
+    }).catch(() => {})
+  }
+
   async function deleteUser(u: any) {
     if (!confirm(`Delete user "${u.username}"?`)) return
     await supabase.from('app_users').delete().eq('id', u.id)
@@ -2510,7 +2541,20 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
                     <p className={`text-sm font-medium ${u.active ? 'text-gray-900' : 'text-gray-400'}`}>{u.username}</p>
                     <p className="text-xs text-gray-400">Added {new Date(u.created_at).toLocaleDateString()}</p>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}>{roleLabels[u.role]||u.role}</span>
+                  {(currentUserRole === 'super_admin' || (currentUserRole === 'admin' && u.role !== 'super_admin')) ? (
+                    <select
+                      value={u.role}
+                      onChange={(e) => changeUserRole(u, e.target.value)}
+                      className={`text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}
+                    >
+                      {currentUserRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
+                      <option value="admin">Manager</option>
+                      <option value="team_lead">Team Lead</option>
+                      <option value="viewer">Agent</option>
+                    </select>
+                  ) : (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}>{roleLabels[u.role]||u.role}</span>
+                  )}
                   <button onClick={() => toggleUserActive(u)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${u.active ? 'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600' : 'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{u.active ? 'Active' : 'Inactive'}</button>
                   {(currentUserRole === 'super_admin' || (currentUserRole === 'admin' && u.role !== 'super_admin' && u.role !== 'admin')) && (
                     <button onClick={() => { setResetUserId(resetUserId === u.id ? null : u.id); setResetPass('') }} className="text-gray-400 hover:text-orange-500 p-1 transition" title="Reset password"><Key className="w-4 h-4"/></button>
