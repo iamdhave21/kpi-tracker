@@ -3387,6 +3387,37 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({ title: '', description: '', category: TICKET_CATEGORIES[0], department: DEPARTMENTS[1], priority: 'Medium' as Ticket['priority'] })
+  const [comments, setComments] = useState<Record<string, any[]>>({})
+  const [commentDraft, setCommentDraft] = useState('')
+  const [postingComment, setPostingComment] = useState(false)
+
+  async function loadComments(ticketId: string) {
+    const { data } = await supabase.from('ticket_comments').select('*').eq('ticket_id', ticketId).order('created_at', { ascending: true })
+    setComments(prev => ({ ...prev, [ticketId]: data || [] }))
+  }
+
+  async function postComment(ticket: Ticket) {
+    if (!commentDraft.trim()) return
+    setPostingComment(true)
+    const { error } = await supabase.from('ticket_comments').insert({
+      ticket_id: ticket.id,
+      comment: commentDraft.trim(),
+      commented_by: currentUser,
+      // Team Lead+ comments are flagged as resolution notes/status updates,
+      // distinct from the original submitter just adding extra context.
+      is_resolution: canManage,
+    })
+    setPostingComment(false)
+    if (error) { showToast(error.message, 'error'); return }
+    setCommentDraft('')
+    loadComments(ticket.id)
+  }
+
+  function toggleExpand(ticket: Ticket) {
+    const next = expandedId === ticket.id ? null : ticket.id
+    setExpandedId(next)
+    if (next) loadComments(ticket.id)
+  }
 
   async function loadTickets() {
     setLoading(true)
@@ -3533,7 +3564,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
         <div className="space-y-3">
           {filtered.map(t => (
             <div key={t.id} className={`bg-white border rounded-xl p-4 space-y-2 ${t.priority === 'Urgent' ? 'border-red-300' : 'border-gray-200'}`}>
-              <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
+              <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => toggleExpand(t)}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${DEPT_BADGE_COLORS[t.department] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>📨 {t.department}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[t.priority]}`}>{t.priority}</span>
@@ -3542,7 +3573,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
                 </div>
                 {canManage && <button onClick={(e) => { e.stopPropagation(); deleteTicket(t.id) }} className="text-gray-300 hover:text-red-500 text-xs transition">×</button>}
               </div>
-              <p className="text-xs text-gray-400 cursor-pointer" onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
+              <p className="text-xs text-gray-400 cursor-pointer" onClick={() => toggleExpand(t)}>
                 {t.category} · By {t.created_by.split('@')[0]} · {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 {' · '}<span className="text-blue-500 font-medium">{expandedId === t.id ? '▲ Hide details' : '▼ View details'}</span>
               </p>
@@ -3575,6 +3606,35 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
                       </div>
                     </div>
                   )}
+
+                  {/* Progress notes / comment thread -- submitter can add supplementary
+                      details, Team Lead+ can add status updates/resolution notes.
+                      Core fields (title, category, priority) stay locked after creation. */}
+                  <div className="pt-2 border-t border-gray-100 space-y-2">
+                    <p className="text-xs font-medium text-gray-500">Progress Notes</p>
+                    {(comments[t.id] || []).length === 0 ? (
+                      <p className="text-xs text-gray-400">No notes yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {(comments[t.id] || []).map((c: any) => (
+                          <div key={c.id} className={`rounded-lg px-3 py-2 text-sm ${c.is_resolution ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50 border border-gray-100'}`}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-semibold text-gray-700">{c.commented_by?.split('@')[0]}</span>
+                              {c.is_resolution && <span className="text-[10px] px-1.5 py-0 rounded-full bg-blue-100 text-blue-700 font-medium">Team Lead Update</span>}
+                              <span className="text-xs text-gray-400 ml-auto">{new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                            </div>
+                            <p className="text-gray-700 whitespace-pre-wrap">{c.comment}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(canManage || t.created_by === currentUser) && (
+                      <div className="flex gap-2 pt-1">
+                        <input value={commentDraft} onChange={e => setCommentDraft(e.target.value)} placeholder={canManage ? "Add a status update or resolution note..." : "Add additional details for this ticket..."} className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" onKeyDown={e => { if (e.key === 'Enter') postComment(t) }} />
+                        <button onClick={() => postComment(t)} disabled={postingComment || !commentDraft.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50">{postingComment ? '...' : 'Add'}</button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
