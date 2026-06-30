@@ -3843,6 +3843,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">Settings</h2><p className="text-sm text-gray-500">Manage app users, activity, and security</p></div>
+      <p className="text-xs bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-lg inline-block">DEBUG: userRole = "{userRole}" (length: {userRole?.length})</p>
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         {([['users','App Users'],['activity','Audit Log'],['password','Change Password'],...(userRole === 'super_admin' || userRole === 'admin' ? [['matrix','Matrix']] : [])] as [string,string][]).map(([t,l])=>(
           <button key={t} onClick={()=>setActiveTab(t as any)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab===t?'bg-white shadow text-blue-900':'text-gray-600 hover:text-gray-900'}`}>{l}</button>
