@@ -35,6 +35,22 @@ function avatarColor(name: string) {
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
 }
+
+// Auto-generates the internal designation/project tag from Role + Client.
+// Designation still exists in the data model (KPI records, multi-role grouping,
+// Org Chart, Teams dropdowns all key off it) but is no longer manually typed —
+// it's derived so it always stays in sync with Role/Client.
+// If a person already has another role with the same Role+Client combo,
+// appends "(2)", "(3)", etc. so multi-role rows stay distinguishable.
+function generateDesignation(empType: string, client: string, existingForPerson: Employee[], excludeId?: string): string {
+  const base = `${empType}_${client}`
+  const siblings = existingForPerson.filter(e => e.id !== excludeId)
+  const taken = new Set(siblings.map(e => e.designation))
+  if (!taken.has(base)) return base
+  let n = 2
+  while (taken.has(`${base} (${n})`)) n++
+  return `${base} (${n})`
+}
 function Avatar({ name, avatarUrl, size = 'md' }: { name: string, avatarUrl?: string | null, size?: 'sm'|'md'|'lg' }) {
   const sizes = { sm: 'w-7 h-7 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-14 h-14 text-xl' }
   const initial = name?.charAt(0)?.toUpperCase() || '?'
@@ -1541,7 +1557,7 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
     setLoading(true)
     const [{ data: t }, { data: m }] = await Promise.all([
       supabase.from('teams').select('*, team_lead:employees(name)').order('name'),
-      supabase.from('team_members').select('*, employee:employees(name, designation)')
+      supabase.from('team_members').select('*, employee:employees(name, designation, employment_type, client)')
     ])
     setTeams(t || []); setMembers(m || [])
     if (t && t.length > 0 && !selTeam) setSelTeam(t[0].id)
@@ -1786,7 +1802,6 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
 function EmployeeManager({ employees, onChanged, showToast, currentUser, userRole }:
   { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string }) {
   const [newName, setNewName] = useState('')
-  const [newDesig, setNewDesig] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [newEmpId, setNewEmpId] = useState('')
   const [newDepartments, setNewDepartments] = useState<string[]>([])
@@ -1795,7 +1810,6 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
   const [editName, setEditName] = useState('')
-  const [editDesig, setEditDesig] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editEmpId, setEditEmpId] = useState('')
   const [editDepartments, setEditDepartments] = useState<string[]>([])
@@ -1815,8 +1829,8 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       .map(e => ({
         'Employee ID': e.employee_id || '',
         'Name': e.name,
-        'Designation / Project': e.designation,
-        'Employment Type': e.employment_type || '',
+        'Internal Tag (auto-generated)': e.designation,
+        'Role': e.employment_type || '',
         'Client': e.client || '',
         'Department(s)': (e.departments || []).join(', '),
         'Work Email': e.email || '',
@@ -1837,8 +1851,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
 
   async function addEmployee() {
     if (!newName.trim()) return; setAdding(true)
+    const existingForPerson = employees.filter(e => e.name.trim().toLowerCase() === newName.trim().toLowerCase())
+    const generatedDesig = generateDesignation(newEmpType, newClient, existingForPerson)
     const {error} = await supabase.from('employees').insert({
-      name:newName.trim(), designation:newDesig.trim(),
+      name:newName.trim(), designation:generatedDesig,
       email:newEmail.trim()||null,
       employee_id: newEmpId.trim()||null,
       departments: newDepartments.length ? newDepartments : null,
@@ -1847,13 +1863,15 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       active:true
     })
     if (error) showToast(error.message,'error')
-    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewDesig(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClient(CLIENTS[0]); onChanged() }
+    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClient(CLIENTS[0]); onChanged() }
     setAdding(false)
   }
 
   async function saveEdit(id: string) {
     const emp = employees.find(e=>e.id===id)
-    const {error} = await supabase.from('employees').update({name:editName,designation:editDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,client:editClient}).eq('id',id)
+    const existingForPerson = employees.filter(e => e.name.trim().toLowerCase() === editName.trim().toLowerCase())
+    const generatedDesig = generateDesignation(editEmpType, editClient, existingForPerson, id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,client:editClient}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
     // If email provided, upsert app_users so they can log in
     if (editEmail && editEmail.trim()) {
@@ -1873,7 +1891,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         showToast(`Email updated — login already exists for ${emailLower}`, 'success')
       }
     }
-    await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Name/Designation',emp?.name||'',editName)
+    await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Role/Client',emp?.designation||'',generatedDesig)
     setEditId(null); onChanged()
   }
 
@@ -1936,7 +1954,6 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <input value={newEmpId} onChange={e=>setNewEmpId(e.target.value)} placeholder="Employee ID (ABBSS-XXXXXX)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name (Last, First)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-          <input value={newDesig} onChange={e=>setNewDesig(e.target.value)} placeholder="Designation / Project" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <select value={newEmpType} onChange={e=>setNewEmpType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
@@ -1957,10 +1974,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
             ))}
           </div>
         </div>
-        <p className="text-xs text-gray-400 mt-2">Work email links to app login. Same person with multiple projects = add again with different designation.</p>
+        <p className="text-xs text-gray-400 mt-2">Work email links to app login. Same person supporting multiple roles/clients? Add them again with a different Role and/or Client.</p>
       </div>
 
-      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name or designation..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/></div>
+      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search by name, role, or client..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/></div>
 
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-400 font-medium">Client:</span>
@@ -1986,11 +2003,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${someActive ? 'text-gray-900' : 'text-gray-400'}`}>{name}</p>
                   {!isExpanded && isMulti && (
-                    <p className="text-xs text-gray-500">{emps.map(e=>e.designation).join(' - ')}</p>
+                    <p className="text-xs text-gray-500">{emps.map(e=>`${e.employment_type||'Agent'} (${e.client||'AB BSS'})`).join(' - ')}</p>
                   )}
                   {!isMulti && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-xs text-gray-500">{emps[0].designation}</p>
                       {emps[0].employment_type && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${EMPLOYMENT_TYPE_COLORS[emps[0].employment_type] || 'bg-gray-100 text-gray-600'}`}>{emps[0].employment_type}</span>}
                       {emps[0].client && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[emps[0].client] || 'bg-gray-100 text-gray-600'}`}>{emps[0].client}</span>}
                       {emps[0].employee_id && <span className="text-xs font-mono bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{emps[0].employee_id}</span>}
@@ -2006,7 +2022,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                 {!isMulti && (
                   <div className="flex items-center gap-1" onClick={e=>e.stopPropagation()}>
                     <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                    <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditDesig(emps[0].designation);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0])}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0])}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                     <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                   </div>
                 )}
@@ -2028,11 +2044,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                       <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Last, First"/>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Designation / Project</label>
-                      <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Designation"/>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Employment Type</label>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Role</label>
                       <select value={editEmpType} onChange={e=>setEditEmpType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                         {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
@@ -2075,7 +2087,6 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                   </div>
                   <>
                     <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-                      <span className={`text-sm ${emp.active ? 'text-gray-700' : 'text-gray-400'}`}>{emp.designation}</span>
                       {emp.employment_type && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${EMPLOYMENT_TYPE_COLORS[emp.employment_type] || 'bg-gray-100 text-gray-600'}`}>{emp.employment_type}</span>}
                       {emp.client && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[emp.client] || 'bg-gray-100 text-gray-600'}`}>{emp.client}</span>}
                       {emp.employee_id && <span className="text-xs font-mono bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{emp.employee_id}</span>}
@@ -2084,7 +2095,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                       ))}
                     </div>
                     <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                    <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditDesig(emp.designation);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0])}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0])}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                     <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                   </>
                   {editId === emp.id && (
@@ -2094,9 +2105,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                           <input value={editEmpId} onChange={e=>setEditEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="ABBSS-XXXXXX"/></div>
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Full Name</label>
                           <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Last, First"/></div>
-                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Designation</label>
-                          <input value={editDesig} onChange={e=>setEditDesig(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Designation"/></div>
-                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Employment Type</label>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Role</label>
                           <select value={editEmpType} onChange={e=>setEditEmpType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select></div>
@@ -2149,7 +2158,7 @@ function TeamManager({ employees, showToast }:
 
   async function loadTeams() {
     setLoading(true)
-    const [{data:t},{data:m}] = await Promise.all([supabase.from('teams').select('*, team_lead:employees(name)').order('name'),supabase.from('team_members').select('*, employee:employees(name, designation)')])
+    const [{data:t},{data:m}] = await Promise.all([supabase.from('teams').select('*, team_lead:employees(name)').order('name'),supabase.from('team_members').select('*, employee:employees(name, designation, employment_type, client)')])
     setTeams(t||[]); setMembers(m||[]); setLoading(false)
   }
   useEffect(()=>{loadTeams()},[])
@@ -2217,7 +2226,7 @@ function TeamManager({ employees, showToast }:
                 {teamMembers.length===0?<div className="p-6 text-center text-gray-400 text-sm">No members yet</div>:teamMembers.map((m,i)=>(
                   <div key={m.id} className={`flex items-center gap-3 px-4 py-2.5 ${i>0?'border-t border-gray-100':''}`}>
                     <div className="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">{m.employee?.name?.split(',')[0]?.charAt(0)||'?'}</div>
-                    <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-900 truncate">{m.employee?.name}</p><p className="text-xs text-gray-500">{m.employee?.designation}</p></div>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-900 truncate">{m.employee?.name}</p><p className="text-xs text-gray-500">{m.employee?.employment_type||'Agent'} ({m.employee?.client||'AB BSS'})</p></div>
                     <button onClick={()=>removeMember(m.id)} className="text-gray-400 hover:text-red-600 p-1 transition"><X className="w-3.5 h-3.5"/></button>
                   </div>
                 ))}
@@ -2715,13 +2724,12 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
 
   const matchesSearch = (name: string) => !searchQ || name.toLowerCase().includes(searchQ.toLowerCase())
 
-  const PersonCard = ({ name, role, empType, client, isLead }: { name: string, role: string, empType?: string|null, client?: string|null, isLead?: boolean }) => (
+  const PersonCard = ({ name, empType, client, isLead }: { name: string, empType?: string|null, client?: string|null, isLead?: boolean }) => (
     <div className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 transition ${isLead ? 'bg-blue-900 border-blue-900 shadow-md' : 'bg-white border-gray-200 hover:border-blue-200'} ${searchQ && !matchesSearch(name) ? 'opacity-30' : ''}`}>
       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white ${isLead ? 'bg-white/20' : avatarColor(name)}`}>{initial(name)}</div>
       <div className="min-w-0">
         <p className={`text-sm font-semibold truncate ${isLead ? 'text-white' : 'text-gray-900'}`}>{name.split(',').reverse().join(' ').trim()}</p>
         <div className="flex items-center gap-1.5 flex-wrap">
-          <p className={`text-xs truncate ${isLead ? 'text-blue-200' : 'text-gray-500'}`}>{role}</p>
           {empType && <span className={`text-[10px] px-1 py-0 rounded font-medium ${isLead ? 'bg-white/20 text-white' : EMPLOYMENT_TYPE_COLORS[empType] || 'bg-gray-100 text-gray-600'}`}>{empType}</span>}
           {client && <span className={`text-[10px] px-1 py-0 rounded font-medium ${isLead ? 'bg-white/20 text-white' : CLIENT_COLORS[client] || 'bg-gray-100 text-gray-600'}`}>{client}</span>}
         </div>
@@ -2769,14 +2777,14 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
                     <div key={team.id} className="bg-gray-50 rounded-2xl border border-gray-200 p-4 space-y-3">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{team.name}</p>
                       {leadName ? (
-                        <PersonCard name={leadName} role={team.team_lead.designation} empType={team.team_lead.employment_type} client={team.team_lead.client} isLead />
+                        <PersonCard name={leadName} empType={team.team_lead.employment_type} client={team.team_lead.client} isLead />
                       ) : (
                         <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-gray-300 px-3 py-2.5 text-xs text-gray-400">No team lead assigned</div>
                       )}
                       {teamMembers.length > 0 && (
                         <div className="pl-3 border-l-2 border-blue-100 ml-4 space-y-2">
                           {teamMembers.map(m => (
-                            <PersonCard key={m.id} name={m.employee?.name || 'Unknown'} role={m.employee?.designation || ''} empType={m.employee?.employment_type} client={m.employee?.client} />
+                            <PersonCard key={m.id} name={m.employee?.name || 'Unknown'} empType={m.employee?.employment_type} client={m.employee?.client} />
                           ))}
                         </div>
                       )}
@@ -3104,7 +3112,7 @@ function ObservationsPanel({ employees, currentUser, showToast }:
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Employee</label>
               <select value={selEmp} onChange={e => setSelEmp(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>)}
+                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name} — {e.employment_type||'Agent'} ({e.client||'AB BSS'})</option>)}
               </select>
             </div>
             <div>
@@ -3135,7 +3143,7 @@ function ObservationsPanel({ employees, currentUser, showToast }:
           <div className="flex flex-wrap items-center gap-2">
             <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
               <option value="all">All Employees</option>
-              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name.split(',')[0]} — {e.designation}</option>)}
+              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name.split(',')[0]} — {e.employment_type||'Agent'} ({e.client||'AB BSS'})</option>)}
             </select>
             <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
               <option value="all">All Months</option>
