@@ -1415,13 +1415,15 @@ export default function KPIApp() {
         const { data: appUser } = await supabase.from('app_users').select('*').eq('email', email).single()
         let role = 'viewer'
         let displayName = email.split('@')[0]
+        let mustChange = false
         if (appUser) {
           role = appUser.role
           displayName = appUser.display_name || appUser.name || email
+          mustChange = !!appUser.must_change_password
         }
-        const userData = { username: email, role, display_name: displayName }
+        const userData = { username: email, role, display_name: displayName, mustChangePassword: mustChange }
         localStorage.setItem('kpi_user', JSON.stringify(userData))
-        setUser(email); setUserRole(role); setDisplayName(displayName)
+        setUser(email); setUserRole(role); setDisplayName(displayName); setMustChangePassword(mustChange)
         return
       }
       setLoading(false)
