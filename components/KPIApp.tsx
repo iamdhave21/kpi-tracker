@@ -2323,34 +2323,23 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     const generatedDesig = generateDesignation(editEmpType, editClient, existingForPerson, id)
     const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,client:editClient}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
-    // If email provided, upsert app_users so they can log in
+    // Always sync portal role to app_users if email is present
     if (editEmail && editEmail.trim()) {
       const emailLower = editEmail.trim().toLowerCase()
-      // Check if user already exists
-      const {data: existingUser} = await supabase.from('app_users').select('id').eq('email', emailLower).single()
+      const {data: existingUser} = await supabase.from('app_users').select('id,role').or(`email.eq.${emailLower},username.eq.${emailLower}`).maybeSingle()
       if (!existingUser) {
-        // Create new app_user with a unique random temporary password
-        // (not a shared known default) and force a change on first login.
         const tempPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 100)
         await supabase.from('app_users').insert({
-          email: emailLower,
-          name: editName,
-          role: editPortalRole || 'agent',
-          password_hash: tempPassword,
-          must_change_password: true,
+          username: emailLower, email: emailLower, name: editName,
+          role: editPortalRole || 'agent', password_hash: tempPassword,
+          must_change_password: true, active: true,
         })
-        showToast(`Login created for ${emailLower} — temporary password: ${tempPassword} (they'll be required to set their own on first login)`, 'success')
-      } else {
-        // Update role if super_admin is editing — try both email and username columns
-        if (userRole === 'super_admin') {
-          const { error: roleErr } = await supabase.from('app_users')
-            .update({ role: editPortalRole })
-            .or(`email.eq.${emailLower},username.eq.${emailLower}`)
-          if (roleErr) showToast('Portal role update failed: ' + roleErr.message, 'error')
-          else showToast(`Portal role updated to ${editPortalRole}`, 'success')
-        } else {
-          showToast(`Email updated — login already exists for ${emailLower}`, 'success')
-        }
+        showToast(`Login created for ${emailLower.split('@')[0]} — temp password: ${tempPassword}`, 'success')
+        fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailLower, newRole: editPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
+      } else if (existingUser.role !== editPortalRole && userRole === 'super_admin') {
+        await supabase.from('app_users').update({ role: editPortalRole }).eq('id', existingUser.id)
+        showToast(`Portal role updated to ${editPortalRole} for ${emailLower.split('@')[0]}`, 'success')
+        fetch('/api/notify/role-changed', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: emailLower, oldRole: existingUser.role, newRole: editPortalRole, changedBy: currentUser || 'admin' }) }).catch(() => {})
       }
     }
     await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Role/Client',emp?.designation||'',generatedDesig)
