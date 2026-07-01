@@ -5675,7 +5675,11 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
 
   useEffect(() => {
     if (isManager) loadTLList()
-    else { setSelectedTL(currentUser?.toLowerCase() || ''); }
+    else {
+      // Look up employee ID by email for the current TL
+      supabase.from('employees').select('id').ilike('email', currentUser?.toLowerCase() || '').maybeSingle()
+        .then(({ data }) => { if (data?.id) setSelectedTL(data.id) })
+    }
   }, [])
 
   useEffect(() => {
@@ -5685,22 +5689,22 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   async function loadTLList() {
     const { data } = await supabase
       .from('teams')
-      .select('team_lead_id, name, employees!teams_team_lead_id_fkey(id, name, email)')
+      .select('team_lead_id, name, employees!teams_team_lead_id_fkey(id, name, email, avatar_url)')
       .eq('active', true)
       .not('team_lead_id', 'is', null)
-    // Deduplicate by email — one TL can lead multiple teams
+    // Deduplicate by employee id — one TL can lead multiple teams
     const seen = new Set<string>()
-    const list: {email:string, name:string}[] = []
+    const list: {empId:string, email:string, name:string, photo:string|null}[] = []
     ;(data||[]).forEach((t:any) => {
       const emp = t.employees
-      if (emp?.email && !seen.has(emp.email.toLowerCase())) {
-        seen.add(emp.email.toLowerCase())
-        list.push({ email: emp.email.toLowerCase(), name: emp.name })
+      if (emp?.id && !seen.has(emp.id)) {
+        seen.add(emp.id)
+        list.push({ empId: emp.id, email: emp.email?.toLowerCase() || '', name: emp.name, photo: emp.avatar_url || null })
       }
     })
     list.sort((a,b) => a.name.localeCompare(b.name))
-    setTlList(list)
-    if (list.length > 0 && !selectedTL) setSelectedTL(list[0].email)
+    setTlList(list as any)
+    if (list.length > 0 && !selectedTL) setSelectedTL(list[0].empId)
   }
 
   async function loadScorecard() {
@@ -5764,15 +5768,16 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
     const complianceScore = (cadenceScore + coachScore + obsScore + ticketScore + huddleScore + kpiScore) / 6
 
     // Get TL photo
-    const { data: tlEmpInfo } = await supabase.from('employees').select('id,name,avatar_url').ilike('email', selectedTL).maybeSingle()
+    // selectedTL is now employee UUID from teams table
+    const { data: tlEmpInfo } = await supabase.from('employees').select('id,name,avatar_url,email').eq('id', selectedTL).maybeSingle()
     const tlPhoto = tlEmpInfo?.avatar_url || null
-    const tlName = tlEmpInfo?.name || selectedTL.split('@')[0]
+    const tlName = tlEmpInfo?.name || 'Unknown'
 
-    // Get teams led by this TL for per-team breakdown
-    const { data: tlTeamsData } = await supabase.from('teams').select('id,name,department').eq('team_lead_id', tlEmpInfo?.id || '').eq('active', true)
+    // Get teams led by this TL
+    const { data: tlTeamsData } = await supabase.from('teams').select('id,name,department').eq('team_lead_id', selectedTL).eq('active', true)
     let teamPerfScore = 0
     if (tlEmpInfo) {
-      const { data: tlTeams } = await supabase.from('teams').select('id').eq('team_lead_id', tlEmpInfo.id).eq('active', true)
+      const { data: tlTeams } = await supabase.from('teams').select('id').eq('team_lead_id', selectedTL).eq('active', true)
       const teamIds = (tlTeams||[]).map((t:any) => t.id)
       if (teamIds.length > 0) {
         const { data: memberIds } = await supabase.from('team_members').select('employee_id').in('team_id', teamIds)
@@ -5792,7 +5797,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
     let attendanceScore = 0
     if (tlEmpInfo) {
       const { data: tlKPI } = await supabase.from('kpi_records').select('attendance')
-        .eq('employee_id', tlEmpInfo.id).eq('month_label', monthLabel).maybeSingle()
+        .eq('employee_id', selectedTL).eq('month_label', monthLabel).maybeSingle()
       attendanceScore = tlKPI?.attendance || 0
     }
 
@@ -5863,7 +5868,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
         <div className="flex items-center gap-2">
           {isManager && tlList.length > 0 && (
             <select value={selectedTL} onChange={e=>setSelectedTL(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900">
-              {tlList.map(tl => <option key={tl.email} value={tl.email}>{tl.name}</option>)}
+              {tlList.map((tl:any) => <option key={tl.empId} value={tl.empId}>{tl.name}</option>)}
             </select>
           )}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
