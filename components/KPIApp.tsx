@@ -5786,10 +5786,10 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
         const { data: memberIds } = await supabase.from('team_members').select('employee_id').in('team_id', teamIds)
         const empIds = (memberIds||[]).map((m:any) => m.employee_id)
         if (empIds.length > 0) {
-          const { data: kpiData } = await supabase.from('kpi_records').select('productivity,quality,attendance')
+          const { data: kpiData } = await supabase.from('kpi_records').select('attendance,accuracy,efficiency,feedback,overall_score')
             .in('employee_id', empIds).eq('month_label', monthLabel)
           if ((kpiData||[]).length > 0) {
-            const avg = (kpiData||[]).reduce((sum:number, r:any) => sum + ((r.productivity||0)+(r.quality||0)+(r.attendance||0))/3, 0) / (kpiData||[]).length
+            const avg = (kpiData||[]).reduce((sum:number, r:any) => sum + (r.overall_score||((r.attendance||0)+(r.accuracy||0)+(r.efficiency||0)+(r.feedback||0))/4), 0) / (kpiData||[]).length
             teamPerfScore = Math.min(avg, 100)
           }
         }
@@ -5799,9 +5799,9 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
     // --- INDIVIDUAL ATTENDANCE (20%) ---
     let attendanceScore = 0
     if (tlEmpInfo) {
-      const { data: tlKPI } = await supabase.from('kpi_records').select('attendance')
+      const { data: tlKPI } = await supabase.from('kpi_records').select('attendance,overall_score')
         .eq('employee_id', selectedTL).eq('month_label', monthLabel).maybeSingle()
-      attendanceScore = tlKPI?.attendance || 0
+      attendanceScore = (tlKPI?.attendance || 0) * 100
     }
 
     // --- OVERALL ---
