@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import bcrypt from 'bcryptjs'
 
 function getSupabase() {
   return createClient(
@@ -26,13 +27,15 @@ export async function POST(req: NextRequest) {
 
     if (!resetRecord) return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 })
     if (new Date(resetRecord.expires_at) < new Date()) {
-      return NextResponse.json({ error: 'Reset link has expired. Please request a new one.' }, { status: 400 })
+      return NextResponse.json({ error: 'Reset link has expired. Please request a new one.' }, { status: 400 })\
     }
 
-    // Update password
+    // Hash new password before storing
+    const hash = await bcrypt.hash(newPassword, 12)
+
     const { error } = await supabase
       .from('app_users')
-      .update({ password_hash: newPassword, updated_at: new Date().toISOString() })
+      .update({ password_hash: hash, updated_at: new Date().toISOString() })
       .eq('email', resetRecord.email)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
