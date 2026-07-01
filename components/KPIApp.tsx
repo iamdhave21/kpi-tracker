@@ -5697,12 +5697,12 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
       if (uniqueIds.length === 0) { setLoading(false); return }
       // Step 2: get employee details for those IDs
       const { data: emps, error: empsErr } = await supabase
-        .from('employees').select('id, name, email, avatar_url').in('id', uniqueIds)
+        .from('employees').select('id, name, email').in('id', uniqueIds)
       if (empsErr) { console.error('emps error:', empsErr); setLoading(false); return }
       const list = (emps||[]).map((e:any) => ({
         empId: e.id, name: e.name,
         email: e.email?.toLowerCase() || '',
-        photo: e.avatar_url || null
+        photo: null
       })).sort((a:any,b:any) => a.name.localeCompare(b.name))
       setTlList(list as any)
       if (list.length > 0) setSelectedTL(list[0].empId)
@@ -5772,8 +5772,8 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
 
     // Get TL photo
     // selectedTL is now employee UUID from teams table
-    const { data: tlEmpInfo } = await supabase.from('employees').select('id,name,avatar_url,email').eq('id', selectedTL).maybeSingle()
-    const tlPhoto = tlEmpInfo?.avatar_url || null
+    const { data: tlEmpInfo } = await supabase.from('employees').select('id,name,email').eq('id', selectedTL).maybeSingle()
+    const tlPhoto = null
     const tlName = tlEmpInfo?.name || 'Unknown'
 
     // Get teams led by this TL
