@@ -5655,7 +5655,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   const isManager = userRole === 'super_admin' || userRole === 'admin'
   const [period, setPeriod] = useState<'mtd'|'weekly'>('mtd')
   const [selectedTL, setSelectedTL] = useState<string>('')
-  const [tlList, setTlList] = useState<{email:string,name:string}[]>([])
+  const [tlList, setTlList] = useState<{empId:string,email:string,name:string,photo:string|null}[]>([])
   const [score, setScore] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
