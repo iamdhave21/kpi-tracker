@@ -5683,9 +5683,24 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   }, [selectedTL, period])
 
   async function loadTLList() {
-    const { data } = await supabase.from('app_users').select('username,display_name').eq('role','Team Lead').eq('active',true)
-    setTlList((data||[]).map((u:any) => ({ email: u.username, name: u.display_name || u.username.split('@')[0] })))
-    if (data && data.length > 0 && !selectedTL) setSelectedTL(data[0].username)
+    const { data } = await supabase
+      .from('teams')
+      .select('team_lead_id, name, employees!teams_team_lead_id_fkey(id, name, email)')
+      .eq('active', true)
+      .not('team_lead_id', 'is', null)
+    // Deduplicate by email — one TL can lead multiple teams
+    const seen = new Set<string>()
+    const list: {email:string, name:string}[] = []
+    ;(data||[]).forEach((t:any) => {
+      const emp = t.employees
+      if (emp?.email && !seen.has(emp.email.toLowerCase())) {
+        seen.add(emp.email.toLowerCase())
+        list.push({ email: emp.email.toLowerCase(), name: emp.name })
+      }
+    })
+    list.sort((a,b) => a.name.localeCompare(b.name))
+    setTlList(list)
+    if (list.length > 0 && !selectedTL) setSelectedTL(list[0].email)
   }
 
   async function loadScorecard() {
@@ -5749,30 +5764,32 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
     const complianceScore = (cadenceScore + coachScore + obsScore + ticketScore + huddleScore + kpiScore) / 6
 
     // --- TEAM PERFORMANCE (50%) ---
-    // Get employees in teams led by this TL
-    const { data: tlTeams } = await supabase.from('teams').select('id').eq('active',true)
-    const teamIds = (tlTeams||[]).map((t:any)=>t.id)
+    // Get the TL's employee ID first
+    const { data: tlEmpData } = await supabase.from('employees').select('id').ilike('email', selectedTL).maybeSingle()
     let teamPerfScore = 0
-    if (teamIds.length > 0) {
-      const { data: memberIds } = await supabase.from('team_members').select('employee_id').in('team_id',teamIds)
-      const empIds = (memberIds||[]).map((m:any)=>m.employee_id)
-      if (empIds.length > 0) {
-        const { data: kpiData } = await supabase.from('kpi_records').select('productivity,quality,attendance')
-          .in('employee_id',empIds).eq('month_label',monthLabel)
-        if ((kpiData||[]).length > 0) {
-          const avg = (kpiData||[]).reduce((sum:number,r:any) => sum + ((r.productivity||0)+(r.quality||0)+(r.attendance||0))/3,0) / (kpiData||[]).length
-          teamPerfScore = Math.min(avg,100)
+    if (tlEmpData) {
+      // Get teams led by this TL
+      const { data: tlTeams } = await supabase.from('teams').select('id').eq('team_lead_id', tlEmpData.id).eq('active', true)
+      const teamIds = (tlTeams||[]).map((t:any) => t.id)
+      if (teamIds.length > 0) {
+        const { data: memberIds } = await supabase.from('team_members').select('employee_id').in('team_id', teamIds)
+        const empIds = (memberIds||[]).map((m:any) => m.employee_id)
+        if (empIds.length > 0) {
+          const { data: kpiData } = await supabase.from('kpi_records').select('productivity,quality,attendance')
+            .in('employee_id', empIds).eq('month_label', monthLabel)
+          if ((kpiData||[]).length > 0) {
+            const avg = (kpiData||[]).reduce((sum:number, r:any) => sum + ((r.productivity||0)+(r.quality||0)+(r.attendance||0))/3, 0) / (kpiData||[]).length
+            teamPerfScore = Math.min(avg, 100)
+          }
         }
       }
     }
 
     // --- INDIVIDUAL ATTENDANCE (20%) ---
-    // TL's own attendance KPI for the month
-    const { data: tlEmployee } = await supabase.from('employees').select('id').ilike('email',selectedTL).maybeSingle()
     let attendanceScore = 0
-    if (tlEmployee) {
+    if (tlEmpData) {
       const { data: tlKPI } = await supabase.from('kpi_records').select('attendance')
-        .eq('employee_id',tlEmployee.id).eq('month_label',monthLabel).maybeSingle()
+        .eq('employee_id', tlEmpData.id).eq('month_label', monthLabel).maybeSingle()
       attendanceScore = tlKPI?.attendance || 0
     }
 
