@@ -2938,7 +2938,7 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
     showToast('User deleted'); loadUsers()
   }
 
-  const roleColors: Record<string,string> = { super_admin: 'bg-purple-50 text-purple-700', admin: 'bg-blue-50 text-blue-700', team_lead: 'bg-emerald-50 text-emerald-700', viewer: 'bg-gray-100 text-gray-600' }
+  const roleColors: Record<string,string> = { super_admin: 'bg-purple-50 text-purple-700', admin: 'bg-blue-50 text-blue-700', 'Team Lead': 'bg-emerald-50 text-emerald-700', agent: 'bg-gray-100 text-gray-600' }
   const roleLabels = ROLE_LABELS
 
   return (
