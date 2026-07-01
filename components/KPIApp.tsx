@@ -3065,16 +3065,28 @@ function historicalPeriodKeys(frequency: 'daily' | 'weekly' | 'monthly', count: 
 }
 
 function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'>('daily')
+  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'>('daily')
   const [completions, setCompletions] = useState<Record<string, { done: boolean, note: string }>>({})
+  const [cadenceItems, setCadenceItems] = useState<CadenceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const canViewCompliance = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const canManageItems = userRole === 'super_admin' || userRole === 'admin'
 
-  async function loadCompletions() {
-    if (!currentUser) { setLoading(false); return }
-    setLoading(true)
-    const periods = CADENCE_ITEMS.map(it => currentPeriodKey(it.frequency))
+  // Add task form state
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addForm, setAddForm] = useState({ label: '', frequency: 'daily' as 'daily'|'weekly'|'monthly' })
+  const [addSaving, setAddSaving] = useState(false)
+
+  async function loadCadenceItems() {
+    const { data } = await supabase.from('cadence_items').select('*').is('retired_at', null).order('frequency').order('sort_order')
+    setCadenceItems((data || []) as CadenceItem[])
+    return data || []
+  }
+
+  async function loadCompletions(items: CadenceItem[]) {
+    if (!currentUser || items.length === 0) { setLoading(false); return }
+    const periods = items.map(it => currentPeriodKey(it.frequency))
     const { data } = await supabase.from('cadence_completions')
       .select('*')
       .eq('team_lead_email', currentUser.toLowerCase())
@@ -3085,7 +3097,10 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
     setLoading(false)
   }
 
-  useEffect(() => { loadCompletions() }, [currentUser])
+  useEffect(() => {
+    setLoading(true)
+    loadCadenceItems().then(items => loadCompletions(items as CadenceItem[]))
+  }, [currentUser])
 
   function keyFor(item: CadenceItem) { return `${item.id}__${currentPeriodKey(item.frequency)}` }
 
@@ -3120,6 +3135,35 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
       note,
     }, { onConflict: 'team_lead_email,item_id,period_key' })
     setCompletions(prev => ({ ...prev, [k]: { done: current?.done || false, note } }))
+  }
+
+  async function addItem() {
+    if (!addForm.label.trim()) return
+    setAddSaving(true)
+    const id = `${addForm.frequency.charAt(0)}-${addForm.label.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').slice(0,30)}-${Date.now()}`
+    const maxOrder = cadenceItems.filter(i => i.frequency === addForm.frequency).length + 1
+    const { error } = await supabase.from('cadence_items').insert({
+      id, frequency: addForm.frequency, label: addForm.label.trim(), sort_order: maxOrder
+    })
+    if (error) { showToast(error.message, 'error') }
+    else {
+      showToast('Task added!', 'success')
+      setAddForm({ label: '', frequency: 'daily' })
+      setShowAddForm(false)
+      const items = await loadCadenceItems()
+      await loadCompletions(items as CadenceItem[])
+    }
+    setAddSaving(false)
+  }
+
+  async function retireItem(id: string) {
+    const { error } = await supabase.from('cadence_items').update({ retired_at: new Date().toISOString() }).eq('id', id)
+    if (error) { showToast(error.message, 'error') }
+    else {
+      showToast('Task retired (hidden from checklist, history preserved)', 'success')
+      const items = await loadCadenceItems()
+      await loadCompletions(items as CadenceItem[])
+    }
   }
 
   const CheckItem = ({ item }: { item: CadenceItem }) => {
@@ -3158,13 +3202,19 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
   const Card = ({ title, items }: { title: string, items: CadenceItem[] }) => (
     <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
       <h4 className="font-semibold text-gray-900 text-sm mb-1">{title}</h4>
-      {items.map(item => <CheckItem key={item.id} item={item} />)}
+      {items.length === 0 ? <p className="text-sm text-gray-400">No tasks yet.</p> : items.map(item => <CheckItem key={item.id} item={item} />)}
     </div>
   )
 
-  const dailyItems = CADENCE_ITEMS.filter(i => i.frequency === 'daily')
-  const weeklyItems = CADENCE_ITEMS.filter(i => i.frequency === 'weekly')
-  const monthlyItems = CADENCE_ITEMS.filter(i => i.frequency === 'monthly')
+  const dailyItems = cadenceItems.filter(i => i.frequency === 'daily')
+  const weeklyItems = cadenceItems.filter(i => i.frequency === 'weekly')
+  const monthlyItems = cadenceItems.filter(i => i.frequency === 'monthly')
+
+  const tabs: [string,string][] = [
+    ['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['deliverables','Deliverables'],
+    ...(canViewCompliance ? [['compliance','Compliance']] as [string,string][] : []),
+    ...(canManageItems ? [['manage','⚙ Manage Tasks']] as [string,string][] : []),
+  ]
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -3175,7 +3225,7 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
 
       {/* Tabs */}
       <div className="flex gap-2 flex-wrap">
-        {([['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['deliverables','Deliverables'],...(canViewCompliance ? [['compliance','Compliance']] : [])] as [string,string][]).map(([key,label]) => (
+        {tabs.map(([key,label]) => (
           <button key={key} onClick={() => setTab(key as any)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${tab===key ? 'bg-blue-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{label}</button>
         ))}
       </div>
@@ -3187,8 +3237,7 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
       {tab === 'daily' && (
         <div className="space-y-3">
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800">⏱️ <strong>15-30 minutes</strong> at the start of each shift — resets automatically each new day</div>
-          <Card title="1. Daily Operations Check" items={dailyItems.slice(0, 5)} />
-          <Card title="2. Employee Support (throughout the day)" items={dailyItems.slice(5)} />
+          <Card title="Daily Operations Check" items={dailyItems} />
           <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-sm text-green-800"><strong>Output:</strong> Risks identified + immediate action plan</div>
         </div>
       )}
@@ -3226,7 +3275,6 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
               <li>• <strong>Weekly</strong> ops sync (30-45 min)</li>
               <li>• <strong>Monthly</strong> 1-on-1 (45-60 min)</li>
               <li>• <strong>Monthly</strong> business review</li>
-
               <li>• <strong>Quarterly</strong> leadership review</li>
             </ul>
           </div>
@@ -3234,7 +3282,64 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
       )}
 
       {tab === 'compliance' && canViewCompliance && (
-        <CadenceCompliance currentUser={currentUser} userRole={userRole} showToast={showToast} />
+        <CadenceCompliance currentUser={currentUser} userRole={userRole} cadenceItems={cadenceItems} showToast={showToast} />
+      )}
+
+      {tab === 'manage' && canManageItems && (
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm text-amber-800">
+            ⚠️ <strong>Retiring a task</strong> hides it from the checklist but preserves all historical completion data. Scores from past periods are not affected.
+          </div>
+
+          {/* Add new task */}
+          <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-gray-900 text-sm">Add New Task</h4>
+              <button onClick={() => setShowAddForm(v => !v)} className="text-xs bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showAddForm ? 'Cancel' : '+ Add Task'}</button>
+            </div>
+            {showAddForm && (
+              <div className="space-y-3 pt-1">
+                <input value={addForm.label} onChange={e => setAddForm(p=>({...p,label:e.target.value}))} placeholder="Task description..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+                <div className="flex items-center gap-3">
+                  <select value={addForm.frequency} onChange={e => setAddForm(p=>({...p,frequency:e.target.value as any}))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                  <button onClick={addItem} disabled={addSaving || !addForm.label.trim()} className="ml-auto bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{addSaving ? 'Adding...' : 'Add Task'}</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Current active tasks by frequency */}
+          {(['daily','weekly','monthly'] as const).map(freq => {
+            const items = cadenceItems.filter(i => i.frequency === freq)
+            return (
+              <div key={freq} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                  <span className="font-semibold text-gray-700 text-sm capitalize">{freq} Tasks</span>
+                  <span className="text-xs text-gray-400">{items.length} active</span>
+                </div>
+                {items.length === 0 ? (
+                  <p className="px-4 py-3 text-sm text-gray-400">No active tasks.</p>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {items.map(item => (
+                      <div key={item.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition">
+                        <span className="text-sm text-gray-700">{item.label}</span>
+                        <button onClick={() => { if (confirm(`Retire "${item.label}"? It will be hidden from checklists but history is preserved.`)) retireItem(item.id) }}
+                          className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 px-2 py-1 rounded-lg transition flex-shrink-0 ml-4">
+                          Retire
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       )}
       </>
       )}
@@ -3244,9 +3349,8 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
 
 // -- Cadence Compliance: % of cadence items completed, per Team Lead.
 // Manager/Super Admin see everyone; Team Lead sees only their own.
-// Designed so this rate can be reused later in the planned Team Lead
-// Scorecard feature, not locked to this page only.
-function CadenceCompliance({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+// Uses live cadence_items count so scores stay accurate after add/retire.
+function CadenceCompliance({ currentUser, userRole, cadenceItems, showToast }: { currentUser: string | null, userRole: string, cadenceItems: CadenceItem[], showToast: (m: string, t?: 'success'|'error') => void }) {
   const isManager = userRole === 'super_admin' || userRole === 'admin'
   const [currentRates, setCurrentRates] = useState<{ email: string, daily: number, weekly: number, monthly: number }[]>([])
   const [loadingCurrent, setLoadingCurrent] = useState(true)
@@ -3258,8 +3362,6 @@ function CadenceCompliance({ currentUser, userRole, showToast }: { currentUser: 
 
   const FREQ_HISTORY_LENGTH = { daily: 14, weekly: 8, monthly: 6 }
 
-  // Per-frequency rate for the CURRENT period, separately -- per spec,
-  // Daily/Weekly/Monthly each get their own % instead of one combined number.
   async function loadCurrentRates() {
     setLoadingCurrent(true)
     const byFreq: Record<'daily'|'weekly'|'monthly', string> = {
@@ -3271,9 +3373,9 @@ function CadenceCompliance({ currentUser, userRole, showToast }: { currentUser: 
     const { data } = await q
 
     const totals = {
-      daily: CADENCE_ITEMS.filter(i => i.frequency === 'daily').length,
-      weekly: CADENCE_ITEMS.filter(i => i.frequency === 'weekly').length,
-      monthly: CADENCE_ITEMS.filter(i => i.frequency === 'monthly').length,
+      daily: cadenceItems.filter(i => i.frequency === 'daily').length,
+      weekly: cadenceItems.filter(i => i.frequency === 'weekly').length,
+      monthly: cadenceItems.filter(i => i.frequency === 'monthly').length,
     }
     const byEmail: Record<string, { daily: number, weekly: number, monthly: number }> = {}
     ;(data || []).forEach((row: any) => {
@@ -3297,9 +3399,6 @@ function CadenceCompliance({ currentUser, userRole, showToast }: { currentUser: 
     setLoadingCurrent(false)
   }
 
-  // Historical rate per period for the selected Team Lead + selected
-  // frequency tab -- this feeds the graph so dips/missed periods are
-  // visible at a glance instead of scanning a list of numbers.
   async function loadHistory() {
     if (!selectedEmail) { setHistoryData([]); setLoadingHistory(false); return }
     setLoadingHistory(true)
@@ -3311,7 +3410,7 @@ function CadenceCompliance({ currentUser, userRole, showToast }: { currentUser: 
       .eq('frequency', historyFreq)
       .in('period_key', periodKeys)
 
-    const total = CADENCE_ITEMS.filter(i => i.frequency === historyFreq).length
+    const total = cadenceItems.filter(i => i.frequency === historyFreq).length
     const doneByPeriod: Record<string, number> = {}
     ;(data || []).forEach((row: any) => { if (row.done) doneByPeriod[row.period_key] = (doneByPeriod[row.period_key] || 0) + 1 })
 
@@ -3323,8 +3422,8 @@ function CadenceCompliance({ currentUser, userRole, showToast }: { currentUser: 
     setLoadingHistory(false)
   }
 
-  useEffect(() => { loadCurrentRates() }, [currentUser, userRole])
-  useEffect(() => { loadHistory() }, [selectedEmail, historyFreq])
+  useEffect(() => { loadCurrentRates() }, [currentUser, userRole, cadenceItems])
+  useEffect(() => { loadHistory() }, [selectedEmail, historyFreq, cadenceItems])
 
   const RateBadge = ({ label, value }: { label: string, value: number }) => (
     <div className="text-center">
