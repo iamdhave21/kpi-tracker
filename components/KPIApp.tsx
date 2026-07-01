@@ -4192,19 +4192,46 @@ type Ticket = {
   title: string
   description: string
   category: string
+  ticket_type: string | null
   department: string
   priority: 'Low' | 'Medium' | 'High' | 'Urgent'
   status: 'Open' | 'In Progress' | 'Resolved' | 'Closed'
   created_by: string
+  requested_by: string | null
   assigned_to: string | null
+  owner: string | null
   attachments: TicketAttachment[]
+  sla_hours: number
+  sla_deadline: string | null
   created_at: string
   updated_at: string
 }
 
-const TICKET_CATEGORIES = ['IT / Systems Access', 'HR / Payroll', 'Equipment', 'Facilities', 'Client / Account Issue', 'Other']
+const TICKET_CATEGORIES = ['Management', 'HR', 'Admin', 'IT', 'Logistics', 'Operations']
+const TICKET_TYPES: Record<string, string[]> = {
+  'Management': ['ICA / CEO Request', 'Escalation', 'Policy Decision', 'Other'],
+  'HR': ['Leave Request', 'Payroll Concern', 'Policy Clarification', 'Disciplinary', 'Other'],
+  'Admin': ['Document Request', 'Supplies', 'Scheduling', 'Other'],
+  'IT': ['Access Request', 'Hardware Issue', 'Software Issue', 'Network Problem', 'Other'],
+  'Logistics': ['Delivery', 'Inventory', 'Vendor', 'Other'],
+  'Operations': ['Process Issue', 'Reporting', 'Client Concern', 'Workflow', 'Other'],
+}
 const PRIORITY_COLORS: Record<string, string> = { Low: 'bg-gray-100 text-gray-600', Medium: 'bg-amber-100 text-amber-700', High: 'bg-orange-100 text-orange-700', Urgent: 'bg-red-100 text-red-700' }
 const STATUS_COLORS: Record<string, string> = { Open: 'bg-blue-100 text-blue-700', 'In Progress': 'bg-purple-100 text-purple-700', Resolved: 'bg-emerald-100 text-emerald-700', Closed: 'bg-gray-100 text-gray-500' }
+
+function getSLAStatus(ticket: Ticket): { label: string, color: string, urgent: boolean } {
+  if (!ticket.sla_deadline || ticket.status === 'Resolved' || ticket.status === 'Closed') {
+    return { label: ticket.status === 'Resolved' || ticket.status === 'Closed' ? 'SLA Met' : 'No SLA', color: 'text-gray-400', urgent: false }
+  }
+  const now = new Date()
+  const deadline = new Date(ticket.sla_deadline)
+  const diffMs = deadline.getTime() - now.getTime()
+  const diffHrs = diffMs / (1000 * 60 * 60)
+  if (diffMs < 0) return { label: `Overdue by ${Math.abs(Math.round(diffHrs))}h`, color: 'text-red-600', urgent: true }
+  if (diffHrs < 4) return { label: `${Math.round(diffHrs)}h left`, color: 'text-orange-500', urgent: true }
+  if (diffHrs < 8) return { label: `${Math.round(diffHrs)}h left`, color: 'text-amber-500', urgent: false }
+  return { label: `${Math.round(diffHrs)}h left`, color: 'text-emerald-600', urgent: false }
+}
 
 // -- BCP (Business Continuity Planning): Task List + who's trained --------
 type BCPTask = {
@@ -4565,49 +4592,42 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
 }
 
 function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
+  const canManage = userRole === 'super_admin' || userRole === 'admin'
+  const canEdit = (t: Ticket) => canManage || t.created_by === currentUser
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const [allEmployees, setAllEmployees] = useState<{name:string,email:string}[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [posting, setPosting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [attachments, setAttachments] = useState<TicketAttachment[]>([])
   const [filterStatus, setFilterStatus] = useState<string>('All')
-  const [filterDept, setFilterDept] = useState<string>('All')
-  const [scope, setScope] = useState<'mine' | 'all'>(canManage ? 'all' : 'mine')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [filterCat, setFilterCat] = useState<string>('All')
+  const [scope, setScope] = useState<'mine'|'all'>(canManage ? 'all' : 'mine')
+  const [expandedId, setExpandedId] = useState<string|null>(null)
+  const [editingId, setEditingId] = useState<string|null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [form, setForm] = useState({ title: '', description: '', category: TICKET_CATEGORIES[0], department: DEPARTMENTS[1], priority: 'Medium' as Ticket['priority'] })
-  const [comments, setComments] = useState<Record<string, any[]>>({})
+  const [form, setForm] = useState({
+    title: '', description: '', category: TICKET_CATEGORIES[0],
+    ticket_type: TICKET_TYPES[TICKET_CATEGORIES[0]][0],
+    priority: 'Medium' as Ticket['priority'],
+    owner: '', sla_hours: 24
+  })
+  const [editForm, setEditForm] = useState<Partial<Ticket>>({})
+  const [comments, setComments] = useState<Record<string,any[]>>({})
   const [commentDraft, setCommentDraft] = useState('')
   const [postingComment, setPostingComment] = useState(false)
+  const [ownerSearch, setOwnerSearch] = useState('')
+  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false)
 
-  async function loadComments(ticketId: string) {
-    const { data } = await supabase.from('ticket_comments').select('*').eq('ticket_id', ticketId).order('created_at', { ascending: true })
-    setComments(prev => ({ ...prev, [ticketId]: data || [] }))
-  }
+  useEffect(() => {
+    loadTickets()
+    loadEmployees()
+  }, [scope])
 
-  async function postComment(ticket: Ticket) {
-    if (!commentDraft.trim()) return
-    setPostingComment(true)
-    const { error } = await supabase.from('ticket_comments').insert({
-      ticket_id: ticket.id,
-      comment: commentDraft.trim(),
-      commented_by: currentUser,
-      // Team Lead+ comments are flagged as resolution notes/status updates,
-      // distinct from the original submitter just adding extra context.
-      is_resolution: canManage,
-    })
-    setPostingComment(false)
-    if (error) { showToast(error.message, 'error'); return }
-    setCommentDraft('')
-    loadComments(ticket.id)
-  }
-
-  function toggleExpand(ticket: Ticket) {
-    const next = expandedId === ticket.id ? null : ticket.id
-    setExpandedId(next)
-    if (next) loadComments(ticket.id)
+  async function loadEmployees() {
+    const { data } = await supabase.from('employees').select('name, email').eq('active', true).order('name')
+    setAllEmployees((data || []).filter((e:any) => e.email))
   }
 
   async function loadTickets() {
@@ -4619,7 +4639,28 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     setLoading(false)
   }
 
-  useEffect(() => { loadTickets() }, [scope])
+  async function loadComments(ticketId: string) {
+    const { data } = await supabase.from('ticket_comments').select('*').eq('ticket_id', ticketId).order('created_at', { ascending: true })
+    setComments(prev => ({ ...prev, [ticketId]: data || [] }))
+  }
+
+  async function postComment(ticket: Ticket) {
+    if (!commentDraft.trim()) return
+    setPostingComment(true)
+    await supabase.from('ticket_comments').insert({
+      ticket_id: ticket.id, comment: commentDraft.trim(),
+      commented_by: currentUser, is_resolution: canManage,
+    })
+    setPostingComment(false)
+    setCommentDraft('')
+    loadComments(ticket.id)
+  }
+
+  function toggleExpand(ticket: Ticket) {
+    const next = expandedId === ticket.id ? null : ticket.id
+    setExpandedId(next)
+    if (next) loadComments(ticket.id)
+  }
 
   async function uploadFile(file: File) {
     setUploading(true)
@@ -4627,209 +4668,316 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
     if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
     const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
-    const isImage = file.type.startsWith('image/')
-    const fileType = isImage ? 'image' : file.type.includes('pdf') ? 'pdf' : 'doc'
+    const fileType = file.type.startsWith('image/') ? 'image' : file.type.includes('pdf') ? 'pdf' : 'doc'
     setAttachments(prev => [...prev, { name: file.name, url: urlData.publicUrl, type: fileType }])
     setUploading(false)
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files
-    if (!files) return
-    for (const file of Array.from(files)) { await uploadFile(file) }
-  }
-
   async function submitTicket() {
-    if (!form.title.trim() || !form.description.trim()) { showToast('Please fill in a title and description.', 'error'); return }
+    if (!form.title.trim() || !form.description.trim()) { showToast('Please fill in title and description.', 'error'); return }
     setPosting(true)
+    const slaDeadline = new Date(Date.now() + form.sla_hours * 60 * 60 * 1000).toISOString()
     const { data, error } = await supabase.from('tickets').insert({
-      title: form.title.trim(),
-      description: form.description.trim(),
-      category: form.category,
-      department: form.department,
-      priority: form.priority,
-      status: 'Open',
-      created_by: currentUser,
+      title: form.title.trim(), description: form.description.trim(),
+      category: form.category, ticket_type: form.ticket_type,
+      priority: form.priority, status: 'Open',
+      created_by: currentUser, requested_by: currentUser,
+      owner: form.owner || null,
+      sla_hours: form.sla_hours, sla_deadline: slaDeadline,
       attachments,
     }).select().single()
     setPosting(false)
     if (error) { showToast(error.message, 'error'); return }
-    setForm({ title: '', description: '', category: TICKET_CATEGORIES[0], department: DEPARTMENTS[1], priority: 'Medium' })
-    setAttachments([])
-    setShowForm(false)
+    setForm({ title: '', description: '', category: TICKET_CATEGORIES[0], ticket_type: TICKET_TYPES[TICKET_CATEGORIES[0]][0], priority: 'Medium', owner: '', sla_hours: 24 })
+    setAttachments([]); setShowForm(false)
     showToast('Ticket submitted!', 'success')
     loadTickets()
     fetch('/api/notify/ticket-created', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticketId: data?.id, title: form.title.trim(), category: form.category, department: form.department, priority: form.priority, createdBy: currentUser })
+      body: JSON.stringify({ ticketId: data?.id, title: form.title.trim(), category: form.category, priority: form.priority, createdBy: currentUser, owner: form.owner })
     }).catch(() => {})
   }
 
-  async function updateStatus(id: string, status: Ticket['status']) {
-    const { error } = await supabase.from('tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+  async function saveEdit(id: string) {
+    const { error } = await supabase.from('tickets').update({
+      ...editForm, updated_at: new Date().toISOString()
+    }).eq('id', id)
     if (error) { showToast(error.message, 'error'); return }
-    showToast('Status updated', 'success')
-    loadTickets()
+    showToast('Ticket updated!', 'success')
+    setEditingId(null); loadTickets()
+  }
+
+  async function updateStatus(id: string, status: Ticket['status']) {
+    await supabase.from('tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+    showToast('Status updated', 'success'); loadTickets()
   }
 
   async function deleteTicket(id: string) {
     if (!confirm('Delete this ticket permanently?')) return
-    const { error } = await supabase.from('tickets').delete().eq('id', id)
-    if (error) { showToast(error.message, 'error'); return }
-    showToast('Ticket deleted', 'success')
-    loadTickets()
+    await supabase.from('tickets').delete().eq('id', id)
+    showToast('Ticket deleted', 'success'); loadTickets()
   }
 
-  const filtered = tickets.filter(t => (filterStatus === 'All' || t.status === filterStatus) && (filterDept === 'All' || t.department === filterDept))
+  const filtered = tickets.filter(t =>
+    (filterStatus === 'All' || t.status === filterStatus) &&
+    (filterCat === 'All' || t.category === filterCat)
+  )
   const openCount = tickets.filter(t => t.status === 'Open').length
   const inProgressCount = tickets.filter(t => t.status === 'In Progress').length
+  const overdueCount = tickets.filter(t => getSLAStatus(t).label.startsWith('Overdue')).length
+
+  const OwnerPicker = ({ value, onChange }: { value: string, onChange: (v:string) => void }) => (
+    <div className="relative">
+      <input value={ownerSearch || value} onChange={e => { setOwnerSearch(e.target.value); onChange(e.target.value); setShowOwnerDropdown(true) }}
+        onFocus={() => setShowOwnerDropdown(true)}
+        placeholder="Search and assign owner..."
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+      {showOwnerDropdown && (
+        <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto mt-1">
+          {allEmployees.filter(e => !ownerSearch || e.name.toLowerCase().includes(ownerSearch.toLowerCase()) || (e.email||'').toLowerCase().includes(ownerSearch.toLowerCase()))
+            .map(e => (
+              <button key={e.email} onClick={() => { onChange(e.email); setOwnerSearch(e.name); setShowOwnerDropdown(false) }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-gray-900">
+                <span className="font-medium">{e.name}</span>
+                <span className="text-gray-400 text-xs ml-2">{e.email}</span>
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Tickets</h2>
-          <p className="text-sm text-gray-500">{tickets.length} ticket{tickets.length !== 1 ? 's' : ''} {scope === 'mine' ? '(yours)' : '(all)'} - {openCount} open, {inProgressCount} in progress</p>
+          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+            <p className="text-sm text-gray-500">{openCount} open · {inProgressCount} in progress</p>
+            {overdueCount > 0 && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">⚠ {overdueCount} SLA overdue</span>}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {canManage && (
             <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
-              <button onClick={() => setScope('mine')} className={`px-3 py-1.5 font-medium transition ${scope === 'mine' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>My Tickets</button>
-              <button onClick={() => setScope('all')} className={`px-3 py-1.5 font-medium transition ${scope === 'all' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>All Tickets</button>
+              <button onClick={() => setScope('mine')} className={`px-3 py-1.5 font-medium transition ${scope==='mine'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>My Tickets</button>
+              <button onClick={() => setScope('all')} className={`px-3 py-1.5 font-medium transition ${scope==='all'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>All Tickets</button>
             </div>
           )}
           <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ New Ticket'}</button>
         </div>
       </div>
 
+      {/* Create form */}
       {showForm && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-          <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Brief summary of the issue..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Describe the issue in detail..." rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
-          <div className="flex items-center gap-3 flex-wrap">
-            <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
-              {TICKET_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-            </select>
-            <select value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
-              {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-            </select>
-            <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as Ticket['priority'] }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
-              <option>Low</option><option>Medium</option><option>High</option><option>Urgent</option>
-            </select>
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-4">
+          <h4 className="font-semibold text-gray-900 text-sm">New Ticket</h4>
+          <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Brief summary of the issue..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <textarea value={form.description} onChange={e => setForm(p=>({...p,description:e.target.value}))} placeholder="Describe the issue in detail..." rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Category</label>
+              <select value={form.category} onChange={e => setForm(p=>({...p,category:e.target.value,ticket_type:TICKET_TYPES[e.target.value][0]}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                {TICKET_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Ticket Type</label>
+              <select value={form.ticket_type} onChange={e => setForm(p=>({...p,ticket_type:e.target.value}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                {(TICKET_TYPES[form.category]||[]).map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Priority</label>
+              <select value={form.priority} onChange={e => setForm(p=>({...p,priority:e.target.value as Ticket['priority']}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                <option>Low</option><option>Medium</option><option>High</option><option>Urgent</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">SLA (hours)</label>
+              <input type="number" min={1} value={form.sla_hours} onChange={e => setForm(p=>({...p,sla_hours:parseInt(e.target.value)||24}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Assign Owner</label>
+            <div className="mt-1">
+              <OwnerPicker value={form.owner} onChange={v => setForm(p=>({...p,owner:v}))} />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">{uploading ? 'Uploading...' : '📎 Attach'}</button>
-            <span className="text-xs text-gray-400">Screenshots, PDFs, Word</span>
-            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleFileChange} className="hidden" />
+            <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={e => { Array.from(e.target.files||[]).forEach(uploadFile) }} className="hidden" />
           </div>
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {attachments.map((att, i) => (
+              {attachments.map((att,i) => (
                 <div key={i} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs">
-                  <span>{att.type === 'image' ? '🖼' : att.type === 'pdf' ? '📄' : '📝'}</span>
+                  <span>{att.type==='image'?'🖼':att.type==='pdf'?'📄':'📝'}</span>
                   <span className="text-gray-700 max-w-xs truncate">{att.name}</span>
-                  <button onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 ml-1">×</button>
+                  <button onClick={() => setAttachments(prev=>prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">×</button>
                 </div>
               ))}
             </div>
           )}
           <div className="flex justify-end">
-            <button onClick={submitTicket} disabled={posting || uploading} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Submitting...' : 'Submit Ticket'}</button>
+            <button onClick={submitTicket} disabled={posting||uploading} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting?'Submitting...':'Submit Ticket'}</button>
           </div>
         </div>
       )}
 
+      {/* Filters */}
       <div className="flex items-center gap-2 flex-wrap">
-        {['All', 'Open', 'In Progress', 'Resolved', 'Closed'].map(s => (
-          <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
+        {['All','Open','In Progress','Resolved','Closed'].map(s => (
+          <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus===s?'bg-blue-900 text-white border-blue-900':'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
         ))}
         <span className="text-gray-300">|</span>
-        {['All', ...DEPARTMENTS].map(d => (
-          <button key={d} onClick={() => setFilterDept(d)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterDept === d ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{d}</button>
+        {['All',...TICKET_CATEGORIES].map(c => (
+          <button key={c} onClick={() => setFilterCat(c)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterCat===c?'bg-blue-900 text-white border-blue-900':'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{c}</button>
         ))}
       </div>
 
+      {/* Ticket list */}
       {loading ? (
         <div className="text-center py-8 text-gray-400 text-sm">Loading tickets...</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-8 text-gray-500 text-sm">No tickets found.</div>
       ) : (
         <div className="space-y-3">
-          {filtered.map(t => (
-            <div key={t.id} className={`bg-white border rounded-xl p-4 space-y-2 ${t.priority === 'Urgent' ? 'border-red-300' : 'border-gray-200'}`}>
-              <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => toggleExpand(t)}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${DEPT_BADGE_COLORS[t.department] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>📨 {t.department}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[t.priority]}`}>{t.priority}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status]}`}>{t.status}</span>
-                  <h3 className="font-semibold text-gray-900 text-sm">{t.title}</h3>
-                </div>
-                {canManage && <button onClick={(e) => { e.stopPropagation(); deleteTicket(t.id) }} className="text-gray-300 hover:text-red-500 text-xs transition">×</button>}
-              </div>
-              <p className="text-xs text-gray-400 cursor-pointer" onClick={() => toggleExpand(t)}>
-                {t.category} · By {t.created_by.split('@')[0]} · {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                {' · '}<span className="text-blue-500 font-medium">{expandedId === t.id ? '▲ Hide details' : '▼ View details'}</span>
-              </p>
-              {canManage && (
-                <div className="flex items-center gap-2 pt-1 flex-wrap">
-                  <span className="text-xs text-gray-500">Status:</span>
-                  {(['Open', 'In Progress', 'Resolved', 'Closed'] as Ticket['status'][]).map(s => (
-                    <button key={s} onClick={() => updateStatus(t.id, s)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${t.status === s ? STATUS_COLORS[s] + ' ring-1 ring-offset-1 ring-blue-300' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{s}</button>
-                  ))}
-                </div>
-              )}
-              {expandedId === t.id && (
-                <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{t.description}</p>
-                  {t.attachments && t.attachments.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap gap-2">
-                        {t.attachments.filter(a => a.type !== 'image').map((att, i) => (
-                          <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
-                            <span>{att.type === 'pdf' ? '📄' : '📝'}</span><span className="max-w-xs truncate">{att.name}</span>
-                          </a>
-                        ))}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {t.attachments.filter(a => a.type === 'image').map((att, i) => (
-                          <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
-                            <img src={att.url} alt={att.name} className="h-24 w-auto rounded-lg border border-gray-200 object-cover hover:opacity-90 transition" />
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+          {filtered.map(t => {
+            const sla = getSLAStatus(t)
+            const isEditing = editingId === t.id
+            return (
+              <div key={t.id} className={`bg-white border rounded-xl p-4 space-y-3 ${sla.urgent && t.status !== 'Resolved' && t.status !== 'Closed' ? 'border-red-300' : t.priority === 'Urgent' ? 'border-orange-200' : 'border-gray-200'}`}>
 
-                  {/* Progress notes / comment thread -- submitter can add supplementary
-                      details, Team Lead+ can add status updates/resolution notes.
-                      Core fields (title, category, priority) stay locked after creation. */}
-                  <div className="pt-2 border-t border-gray-100 space-y-2">
-                    <p className="text-xs font-medium text-gray-500">Progress Notes</p>
-                    {(comments[t.id] || []).length === 0 ? (
-                      <p className="text-xs text-gray-400">No notes yet.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {(comments[t.id] || []).map((c: any) => (
-                          <div key={c.id} className={`rounded-lg px-3 py-2 text-sm ${c.is_resolution ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50 border border-gray-100'}`}>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs font-semibold text-gray-700">{c.commented_by?.split('@')[0]}</span>
-                              {c.is_resolution && <span className="text-[10px] px-1.5 py-0 rounded-full bg-blue-100 text-blue-700 font-medium">Team Lead Update</span>}
-                              <span className="text-xs text-gray-400 ml-auto">{new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
-                            </div>
-                            <p className="text-gray-700 whitespace-pre-wrap">{c.comment}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {(canManage || t.created_by === currentUser) && (
-                      <div className="flex gap-2 pt-1">
-                        <input value={commentDraft} onChange={e => setCommentDraft(e.target.value)} placeholder={canManage ? "Add a status update or resolution note..." : "Add additional details for this ticket..."} className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" onKeyDown={e => { if (e.key === 'Enter') postComment(t) }} />
-                        <button onClick={() => postComment(t)} disabled={postingComment || !commentDraft.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50">{postingComment ? '...' : 'Add'}</button>
-                      </div>
-                    )}
+                {/* Ticket header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpand(t)}>
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[t.priority]}`}>{t.priority}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status]}`}>{t.status}</span>
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{t.category}</span>
+                      {t.ticket_type && <span className="text-xs text-gray-400">→ {t.ticket_type}</span>}
+                    </div>
+                    <h3 className="font-semibold text-gray-900 text-sm">{t.title}</h3>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {canEdit(t) && !isEditing && <button onClick={() => { setEditingId(t.id); setEditForm({ status: t.status, priority: t.priority, owner: t.owner||'', category: t.category, ticket_type: t.ticket_type||'', sla_hours: t.sla_hours }) }} className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition">✎ Edit</button>}
+                    {canManage && <button onClick={() => deleteTicket(t.id)} className="text-gray-300 hover:text-red-500 text-sm transition ml-1">×</button>}
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Ticket meta row */}
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 sm:grid-cols-4">
+                  <div><span className="text-gray-400">Requested by</span><br/><span className="text-gray-700 font-medium">{(t.requested_by||t.created_by).split('@')[0]}</span></div>
+                  <div><span className="text-gray-400">Owner</span><br/><span className="text-gray-700 font-medium">{t.owner ? t.owner.split('@')[0] : <span className="text-gray-300 italic">Unassigned</span>}</span></div>
+                  <div><span className="text-gray-400">SLA</span><br/><span className={`font-medium ${sla.color}`}>{sla.label}</span></div>
+                  <div><span className="text-gray-400">Submitted</span><br/><span className="text-gray-700">{new Date(t.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
+                </div>
+
+                {/* Edit form */}
+                {isEditing && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-semibold text-gray-700">Edit Ticket</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-500">Category</label>
+                        <select value={editForm.category||''} onChange={e=>setEditForm(p=>({...p,category:e.target.value,ticket_type:TICKET_TYPES[e.target.value][0]}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                          {TICKET_CATEGORIES.map(c=><option key={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Ticket Type</label>
+                        <select value={editForm.ticket_type||''} onChange={e=>setEditForm(p=>({...p,ticket_type:e.target.value}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                          {(TICKET_TYPES[editForm.category||'IT']||[]).map(tp=><option key={tp}>{tp}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Status</label>
+                        <select value={editForm.status||''} onChange={e=>setEditForm(p=>({...p,status:e.target.value as Ticket['status']}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                          {['Open','In Progress','Resolved','Closed'].map(s=><option key={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Priority</label>
+                        <select value={editForm.priority||''} onChange={e=>setEditForm(p=>({...p,priority:e.target.value as Ticket['priority']}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                          {['Low','Medium','High','Urgent'].map(s=><option key={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">SLA (hours)</label>
+                        <input type="number" min={1} value={editForm.sla_hours||24} onChange={e=>setEditForm(p=>({...p,sla_hours:parseInt(e.target.value)||24}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Owner</label>
+                        <select value={editForm.owner||''} onChange={e=>setEditForm(p=>({...p,owner:e.target.value}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                          <option value="">Unassigned</option>
+                          {allEmployees.map(e=><option key={e.email} value={e.email}>{e.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => setEditingId(null)} className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+                      <button onClick={() => saveEdit(t.id)} className="text-sm px-3 py-1.5 rounded-lg bg-blue-900 text-white hover:bg-blue-800 transition">Save Changes</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Expanded details */}
+                {expandedId === t.id && !isEditing && (
+                  <div className="space-y-3 pt-2 border-t border-gray-100">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Details</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{t.description}</p>
+                    </div>
+                    {t.attachments && t.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {t.attachments.map((att,i) => (
+                          <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-2 py-1.5 text-xs text-blue-700 transition">
+                            <span>{att.type==='image'?'🖼':att.type==='pdf'?'📄':'📝'}</span><span>{att.name}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {/* Comments */}
+                    <div className="pt-2 border-t border-gray-100 space-y-2">
+                      <p className="text-xs font-medium text-gray-500">Progress Notes</p>
+                      {(comments[t.id]||[]).length === 0 ? (
+                        <p className="text-xs text-gray-400">No notes yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {(comments[t.id]||[]).map((c:any) => (
+                            <div key={c.id} className={`rounded-lg px-3 py-2 text-sm ${c.is_resolution?'bg-blue-50 border border-blue-100':'bg-gray-50 border border-gray-100'}`}>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-semibold text-gray-700">{c.commented_by?.split('@')[0]}</span>
+                                {c.is_resolution && <span className="text-[10px] px-1.5 py-0 rounded-full bg-blue-100 text-blue-700 font-medium">Admin Update</span>}
+                                <span className="text-xs text-gray-400 ml-auto">{new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span>
+                              </div>
+                              <p className="text-gray-700 whitespace-pre-wrap">{c.comment}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {(canManage || t.created_by === currentUser) && (
+                        <div className="flex gap-2 pt-1">
+                          <input value={commentDraft} onChange={e=>setCommentDraft(e.target.value)} placeholder={canManage?'Add a status update or resolution note...':'Add additional details...'} className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" onKeyDown={e=>{if(e.key==='Enter')postComment(t)}} />
+                          <button onClick={() => postComment(t)} disabled={postingComment||!commentDraft.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50">{postingComment?'...':'Add'}</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick expand toggle */}
+                {expandedId !== t.id && (
+                  <button onClick={() => toggleExpand(t)} className="text-xs text-blue-500 hover:underline">▼ View details</button>
+                )}
+                {expandedId === t.id && !isEditing && (
+                  <button onClick={() => setExpandedId(null)} className="text-xs text-blue-500 hover:underline">▲ Hide details</button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
