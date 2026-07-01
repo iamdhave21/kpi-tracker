@@ -5650,6 +5650,7 @@ function ViewerCoachingBanner({ currentUser }: { currentUser: string | null }) {
 }
 
 // -- TL Scorecard -------------------------------------------------------------
+// TLScorecard v3
 function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m:string,t?:'success'|'error')=>void }) {
   const isManager = userRole === 'super_admin' || userRole === 'admin'
   const [period, setPeriod] = useState<'mtd'|'weekly'>('mtd')
