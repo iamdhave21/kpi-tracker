@@ -1732,23 +1732,8 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
     if (fbN !== record.feedback) changes.push({ field: 'Feedback', old: pct(record.feedback), nw: pct(fbN) })
     if (notes !== record.notes) changes.push({ field: 'Notes', old: record.notes || '', nw: notes })
 
-    // Calculate compliance: (acknowledged coaching + acknowledged announcements) / (total requiring ack)
-    let complianceScore = 0
-    if (selEmp?.email) {
-      const empEmail = selEmp.email.toLowerCase()
-      const [coachAllRes, coachAckedRes, annAllRes, annAckedRes] = await Promise.all([
-        supabase.from('coaching_logs').select('id').eq('employee_email', empEmail).eq('requires_acknowledgment', true),
-        supabase.from('coaching_logs').select('id').eq('employee_email', empEmail).eq('requires_acknowledgment', true).eq('agent_acknowledged', true),
-        supabase.from('announcements').select('id').eq('active', true),
-        supabase.from('announcement_acknowledgements').select('id').eq('user_email', empEmail),
-      ])
-      const coachTotal = (coachAllRes.data||[]).length
-      const coachAcked = (coachAckedRes.data||[]).length
-      const annTotal = (annAllRes.data||[]).length
-      const annAcked = Math.min((annAckedRes.data||[]).length, annTotal)
-      const totalRequired = coachTotal + annTotal
-      complianceScore = totalRequired > 0 ? (coachAcked + annAcked) / totalRequired : 1
-    }
+    // Compliance score — keep existing value from record (calculated separately on KPI Entry save)
+    const complianceScore = record.compliance_score ?? 0
     const finalOverall = (attN||0)*0.2 + (accN||0)*0.3 + (effN||0)*0.3 + (fbN||0)*0.15 + (complianceScore*0.05)
     const { error } = await supabase.from('kpi_records').update({ attendance: attN, accuracy: accN, efficiency: effN, feedback: fbN, compliance_score: complianceScore, overall_score: finalOverall, notes, updated_at: new Date().toISOString() }).eq('id', record.id)
     if (error) { showToast(error.message, 'error'); setSaving(false); return }
