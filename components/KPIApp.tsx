@@ -1798,6 +1798,10 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
   const [teams, setTeams] = useState<any[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [selTeam, setSelTeam] = useState<string>('all')
+  const [selClient, setSelClient] = useState<string>('All')
+  const [showAtRisk, setShowAtRisk] = useState(false)
+  const CLIENTS_FILTER = ['All', 'EMMA', 'AB BSS', 'Harlan + Holden']
+  const CLIENT_COLORS: Record<string,string> = { 'EMMA': '#3b82f6', 'AB BSS': '#10b981', 'Harlan + Holden': '#f59e0b' }
 
   const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
 
@@ -1827,7 +1831,9 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
     const teamEmpIds = selTeam === 'all' ? null : new Set(members.filter(m => m.team_id === selTeam).map(m => m.employee_id))
     // Viewers only see their own team members
     const viewerFilter = userRole === 'agent' && myTeamEmpIds ? myTeamEmpIds : null
-    let base = records.filter(r => activeEmpIds.has(r.employee_id) && (teamEmpIds === null || teamEmpIds.has(r.employee_id)) && (viewerFilter === null || viewerFilter.has(r.employee_id)))
+    // Client filter
+    const clientEmpIds = selClient === 'All' ? null : new Set(employees.filter(e => e.client === selClient).map(e => e.id))
+    let base = records.filter(r => activeEmpIds.has(r.employee_id) && (teamEmpIds === null || teamEmpIds.has(r.employee_id)) && (viewerFilter === null || viewerFilter.has(r.employee_id)) && (clientEmpIds === null || clientEmpIds.has(r.employee_id)))
     if (perfView === 'monthly' || perfView === 'weekly') {
       base = base.filter(r => (r.month_label||'').toLowerCase().includes(selMonth.toLowerCase()) && (r.month_label||'').includes(selYear))
     } else if (perfView === 'quarterly') {
@@ -1885,19 +1891,63 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
         </div>
       </div>
 
+      {/* Client filter tabs */}
+      <div className="flex gap-2 flex-wrap">
+        {CLIENTS_FILTER.map(c => (
+          <button key={c} onClick={() => setSelClient(c)}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold border transition ${selClient===c ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+            style={selClient===c ? {background: c==='All' ? '#1e3a8a' : CLIENT_COLORS[c]||'#1e3a8a'} : {}}>
+            {c}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           {label:'Employees',value:ranked.length,icon:<Users className="w-5 h-5 text-blue-500"/>,bg:'bg-blue-50'},
           {label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A',icon:<BarChart2 className="w-5 h-5 text-purple-500"/>,bg:'bg-purple-50'},
           {label:'Perfect (100%)',value:ranked.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
-          {label:'At Risk (<97%)',value:ranked.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50'},
+          {label:'At Risk (<97%)',value:ranked.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50',clickable:true},
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
+          <div key={c.label} onClick={(c as any).clickable ? () => setShowAtRisk(v=>!v) : undefined}
+            className={`bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${(c as any).clickable ? 'cursor-pointer hover:border-red-300' : ''}`}>
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
-            <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
+            <div>
+              <p className="text-xs text-gray-500">{c.label}{(c as any).clickable && <span className="ml-1 text-blue-500 text-xs">{showAtRisk ? '▲' : '▼'}</span>}</p>
+              <p className="text-lg font-bold text-gray-900">{c.value}</p>
+            </div>
           </div>
         ))}
       </div>
+
+      {/* At Risk panel */}
+      {showAtRisk && ranked.filter(r=>(r.overall_score||0)<0.97).length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-red-800">⚠️ At Risk Employees ({ranked.filter(r=>(r.overall_score||0)<0.97).length})</p>
+            <button onClick={() => setShowAtRisk(false)} className="text-red-400 hover:text-red-600 text-sm">✕</button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {ranked.filter(r=>(r.overall_score||0)<0.97).map(r => {
+              const emp = employees.find(e => e.id === r.employee_id)
+              return (
+                <div key={r.id} className="bg-white border border-red-100 rounded-lg px-3 py-2 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{r.employee_name}</p>
+                    <p className="text-xs text-gray-400">{emp?.client || ''} · {r.designation}</p>
+                  </div>
+                  <span className={`text-xs font-bold px-2 py-1 rounded-lg ${(r.overall_score||0) >= 0.94 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                    {pct(r.overall_score)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {showAtRisk && ranked.filter(r=>(r.overall_score||0)<0.97).length === 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center text-sm text-emerald-700">✅ No at-risk employees for this period!</div>
+      )}
 
       {ranked.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -1911,13 +1961,17 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
               <Tooltip formatter={(v:unknown) => typeof v==='number' ? v.toFixed(2)+'%' : String(v)} labelFormatter={(label:unknown) => String(label)}/>
               <ReferenceLine x={97} stroke="#fbbf24" strokeDasharray="4 4"/>
               <Bar dataKey="overall" radius={[0,4,4,0]}>
-                {ranked.map((r) => (
-                  <Cell key={r.id} fill={
+                {ranked.map((r) => {
+                  const emp = employees.find(e => e.id === r.employee_id)
+                  const clientColor = emp?.client && selClient !== 'All' ? CLIENT_COLORS[emp.client] || '#6b7280' : null
+                  return (
+                  <Cell key={r.id} fill={clientColor || (
                     (r.overall_score||0) >= 0.9999 ? '#10b981' :
                     (r.overall_score||0) >= 0.97 ? '#3b82f6' :
                     (r.overall_score||0) >= 0.94 ? '#f59e0b' : '#ef4444'
-                  }/>
-                ))}
+                  )}/>
+                  )
+                })}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -2029,9 +2083,13 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
           {label:'Perfect (100%)',value:teamRecords.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
           {label:'At Risk (<97%)',value:teamRecords.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50'},
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
+          <div key={c.label} onClick={(c as any).clickable ? () => setShowAtRisk(v=>!v) : undefined}
+            className={`bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${(c as any).clickable ? 'cursor-pointer hover:border-red-300' : ''}`}>
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
-            <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
+            <div>
+              <p className="text-xs text-gray-500">{c.label}{(c as any).clickable && <span className="ml-1 text-blue-500 text-xs">{showAtRisk ? '▲' : '▼'}</span>}</p>
+              <p className="text-lg font-bold text-gray-900">{c.value}</p>
+            </div>
           </div>
         ))}
       </div>
