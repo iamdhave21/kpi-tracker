@@ -501,9 +501,9 @@ function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackD
                 <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
               </div>
               {canManage && (
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => onEdit(a)} className="text-gray-300 hover:text-blue-500 text-xs transition" title="Edit">✎</button>
-                  <button onClick={() => onDelete(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition" title="Delete">✕</button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button onClick={() => onEdit(a)} className="text-xs px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition font-medium" title="Edit">✎ Edit</button>
+                  <button onClick={() => onDelete(a.id)} className="text-gray-400 hover:text-red-500 text-sm transition" title="Delete">✕</button>
                 </div>
               )}
             </div>
