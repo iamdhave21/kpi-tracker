@@ -646,6 +646,10 @@ function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string,
 
 // -- Monthly Leaderboard -----------------------------------------------------
 function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: number, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const now = new Date()
+  const [lbMonth, setLbMonth] = useState(now.getMonth() + 1) // 1-indexed
+  const [lbYear, setLbYear] = useState(now.getFullYear())
   const [scores, setScores] = useState<any[]>([])
   const [pending, setPending] = useState<any[]>([])
   const [approving, setApproving] = useState<string|null>(null)
@@ -655,7 +659,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
 
   async function loadScores() {
     const now = new Date()
-    const monthYear = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+    const monthYear = `${lbYear}-${String(lbMonth).padStart(2,'0')}`
     const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url,played_at').eq('game_key','game_of_month').eq('month_year',monthYear).order('score',{ascending:false})
     const best: Record<string,any> = {}
     data?.forEach((row:any) => { if (!best[row.user_email]||row.score>best[row.user_email].score) best[row.user_email]=row })
@@ -1707,7 +1711,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
     const effN = eff !== '' ? parseFloat(eff)/100 : null
     const fbN = fb !== '' ? parseFloat(fb)/100 : null
     const overall = (attN !== null && accN !== null && effN !== null && fbN !== null)
-      ? attN*0.2 + accN*0.3 + effN*0.3 + fbN*0.2 : record.overall_score
+      ? attN*0.2 + accN*0.3 + effN*0.3 + fbN*0.15 + ((record.compliance_score||0)*0.05) : record.overall_score
 
     // Build audit entries for changed fields
     const changes: {field: string, old: string, nw: string}[] = []
@@ -1748,7 +1752,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
             { label: 'Attendance (20%)', val: att, set: setAtt },
             { label: 'Accuracy (30%)', val: acc, set: setAcc },
             { label: 'Efficiency (30%)', val: eff, set: setEff },
-            { label: 'Feedback (20%)', val: fb, set: setFb },
+            { label: 'Feedback (15%)', val: fb, set: setFb },
           ].map(f => (
             <div key={f.label}>
               <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
@@ -1915,8 +1919,8 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
-              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall',...(userRole !== 'agent' ? ['Notes',''] : [])].map(h => (
-                <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
+              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 15%','Compliance 5%','Overall',...(userRole !== 'agent' ? ['Notes',''] : [])].map(h => (
+                <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 15%','Compliance 5%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
@@ -2021,8 +2025,8 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
-              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall','Notes'].map(h => (
-                <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
+              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 15%','Compliance 5%','Overall','Notes'].map(h => (
+                <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 15%','Compliance 5%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
@@ -2160,7 +2164,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
     } else { setEditId(null); setAttendance(''); setAccuracy(''); setEfficiency(''); setFeedback(''); setNotes(''); setCoached(false) }
   }, [empId, monthLabel])
 
-  function calcOverall() { const a=parseFloat(attendance)/100,b=parseFloat(accuracy)/100,c=parseFloat(efficiency)/100,d=parseFloat(feedback)/100; if([a,b,c,d].some(isNaN))return null; return a*0.2+b*0.3+c*0.3+d*0.2 }
+  function calcOverall(compliancePct=0) { const a=parseFloat(attendance)/100,b=parseFloat(accuracy)/100,c=parseFloat(efficiency)/100,d=parseFloat(feedback)/100; if([a,b,c,d].some(isNaN))return null; return a*0.2+b*0.3+c*0.3+d*0.15+(compliancePct*0.05) }
   const overall = calcOverall()
   const allMonths = ['2024','2025','2026','2027','2028','2029','2030'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
 
