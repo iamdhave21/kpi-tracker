@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import bcrypt from 'bcryptjs'
 
 function getSupabase() {
   return createClient(
@@ -18,10 +19,24 @@ export async function POST(req: NextRequest) {
 
     if (!adminReset) {
       const { data: user } = await supabase.from('app_users').select('password_hash').eq('username', username).single()
-      if (!user || user.password_hash !== oldPassword) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 })
+      if (!user) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 })
+
+      const stored = user.password_hash as string
+      let valid = false
+      if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
+        valid = await bcrypt.compare(oldPassword, stored)
+      } else {
+        valid = stored === oldPassword
+      }
+      if (!valid) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 })
     }
 
-    const { error } = await supabase.from('app_users').update({ password_hash: newPassword, must_change_password: false, updated_at: new Date().toISOString() }).eq('username', username)
+    const hash = await bcrypt.hash(newPassword, 12)
+    const { error } = await supabase.from('app_users').update({
+      password_hash: hash,
+      must_change_password: false,
+      updated_at: new Date().toISOString()
+    }).eq('username', username)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ success: true })
