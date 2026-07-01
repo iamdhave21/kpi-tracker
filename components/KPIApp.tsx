@@ -1751,7 +1751,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
       const totalAcked = (coachAcked||0) + Math.min((annAcked||0), (annTotal||0))
       complianceScore = totalRequired > 0 ? totalAcked / totalRequired : 1
     }
-    const finalOverall = attN*0.2 + accN*0.3 + effN*0.3 + fbN*0.15 + (complianceScore*0.05)
+    const finalOverall = (attN||0)*0.2 + (accN||0)*0.3 + (effN||0)*0.3 + (fbN||0)*0.15 + (complianceScore*0.05)
     const { error } = await supabase.from('kpi_records').update({ attendance: attN, accuracy: accN, efficiency: effN, feedback: fbN, compliance_score: complianceScore, overall_score: finalOverall, notes, updated_at: new Date().toISOString() }).eq('id', record.id)
     if (error) { showToast(error.message, 'error'); setSaving(false); return }
 
