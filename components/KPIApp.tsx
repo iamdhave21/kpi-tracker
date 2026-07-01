@@ -4207,14 +4207,22 @@ type Ticket = {
   updated_at: string
 }
 
-const TICKET_CATEGORIES = ['Management', 'HR', 'Admin', 'IT', 'Logistics', 'Operations']
+const TICKET_CATEGORIES = ['General']
 const TICKET_TYPES: Record<string, string[]> = {
-  'Management': ['ICA / CEO Request', 'Escalation', 'Policy Decision', 'Other'],
-  'HR': ['Leave Request', 'Payroll Concern', 'Policy Clarification', 'Disciplinary', 'Other'],
-  'Admin': ['Document Request', 'Supplies', 'Scheduling', 'Other'],
-  'IT': ['Access Request', 'Hardware Issue', 'Software Issue', 'Network Problem', 'Other'],
-  'Logistics': ['Delivery', 'Inventory', 'Vendor', 'Other'],
-  'Operations': ['Process Issue', 'Reporting', 'Client Concern', 'Workflow', 'Other'],
+  'General': [
+    'ICA / COE Request',
+    'Portal Request / Development / Issue',
+    'Equipment Request / Report',
+    'Open Door Policy',
+    'Process Improvement',
+  ],
+}
+const TICKET_TYPE_DEFINITIONS: Record<string, string> = {
+  'ICA / COE Request': 'Independent Contractor Agreement or Certificate of Employment request. Use this for any employment verification, contract renewals, or official documentation needs.',
+  'Portal Request / Development / Issue': 'Anything related to the AB BSS Operations Portal — feature requests, bug reports, access issues, or development improvements you\'d like to see.',
+  'Equipment Request / Report': 'Device or equipment requests, hardware issues, peripheral needs (keyboard, headset, etc.), or reporting damaged/missing equipment.',
+  'Open Door Policy': 'Request a sit-down or meeting with any team member, Team Lead, or Operations management. We encourage open communication at all levels.',
+  'Process Improvement': 'Suggestions for improving existing workflows, implementing new processes, or flagging inefficiencies you\'ve observed. All ideas are welcome.',
 }
 const PRIORITY_COLORS: Record<string, string> = { Low: 'bg-gray-100 text-gray-600', Medium: 'bg-amber-100 text-amber-700', High: 'bg-orange-100 text-orange-700', Urgent: 'bg-red-100 text-red-700' }
 const STATUS_COLORS: Record<string, string> = { Open: 'bg-blue-100 text-blue-700', 'In Progress': 'bg-purple-100 text-purple-700', Resolved: 'bg-emerald-100 text-emerald-700', Closed: 'bg-gray-100 text-gray-500' }
@@ -4608,8 +4616,8 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const [editingId, setEditingId] = useState<string|null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
-    title: '', description: '', category: TICKET_CATEGORIES[0],
-    ticket_type: TICKET_TYPES[TICKET_CATEGORIES[0]][0],
+    title: '', description: '', category: 'General',
+    ticket_type: TICKET_TYPES['General'][0],
     priority: 'Medium' as Ticket['priority'],
     owner: '', sla_hours: 24
   })
@@ -4688,7 +4696,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     }).select().single()
     setPosting(false)
     if (error) { showToast(error.message, 'error'); return }
-    setForm({ title: '', description: '', category: TICKET_CATEGORIES[0], ticket_type: TICKET_TYPES[TICKET_CATEGORIES[0]][0], priority: 'Medium', owner: '', sla_hours: 24 })
+    setForm({ title: '', description: '', category: 'General', ticket_type: TICKET_TYPES['General'][0], priority: 'Medium', owner: '', sla_hours: 24 })
     setAttachments([]); setShowForm(false)
     showToast('Ticket submitted!', 'success')
     loadTickets()
@@ -4782,11 +4790,16 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
                 {TICKET_CATEGORIES.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
-            <div>
+            <div className="col-span-2">
               <label className="text-xs text-gray-500 font-medium">Ticket Type</label>
               <select value={form.ticket_type} onChange={e => setForm(p=>({...p,ticket_type:e.target.value}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
                 {(TICKET_TYPES[form.category]||[]).map(t => <option key={t}>{t}</option>)}
               </select>
+              {TICKET_TYPE_DEFINITIONS[form.ticket_type] && (
+                <p className="mt-1.5 text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                  ℹ️ {TICKET_TYPE_DEFINITIONS[form.ticket_type]}
+                </p>
+              )}
             </div>
             <div>
               <label className="text-xs text-gray-500 font-medium">Priority</label>
@@ -4930,6 +4943,11 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
                       <p className="text-xs font-medium text-gray-500 mb-1">Details</p>
                       <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{t.description}</p>
                     </div>
+                    {t.ticket_type && TICKET_TYPE_DEFINITIONS[t.ticket_type] && (
+                      <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
+                        ℹ️ <strong>{t.ticket_type}:</strong> {TICKET_TYPE_DEFINITIONS[t.ticket_type]}
+                      </div>
+                    )}
                     {t.attachments && t.attachments.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {t.attachments.map((att,i) => (
