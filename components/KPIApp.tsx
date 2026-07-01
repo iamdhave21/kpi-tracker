@@ -2839,203 +2839,157 @@ function TeamManager({ employees, showToast, userRole }:
 // -- User Manager ------------------------------------------------------------
 function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (m: string, t?: 'success'|'error') => void, currentUserRole: string, currentUser: string | null }) {
   const [appUsers, setAppUsers] = useState<any[]>([])
-  const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedEmpId, setSelectedEmpId] = useState('')
-  const [newPass, setNewPass] = useState('')
-  const [newRole, setNewRole] = useState('agent')
-
+  const [resettingId, setResettingId] = useState<string|null>(null)
   const [saving, setSaving] = useState(false)
-  const [resetUserId, setResetUserId] = useState<string|null>(null)
-  const [resetPass, setResetPass] = useState('')
-  const [resetting, setResetting] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+
+  const roleColors: Record<string,string> = { super_admin: 'bg-purple-50 text-purple-700', admin: 'bg-blue-50 text-blue-700', 'Team Lead': 'bg-emerald-50 text-emerald-700', agent: 'bg-gray-100 text-gray-600' }
+  const roleLabels: Record<string,string> = { super_admin: 'Super Admin', admin: 'Admin', 'Team Lead': 'Team Lead', agent: 'Agent' }
 
   async function loadUsers() {
     setLoading(true)
-    const [{ data: users }, { data: emps }] = await Promise.all([
-      supabase.from('app_users').select('id,username,role,active,created_at').order('created_at'),
-      supabase.from('employees').select('*').eq('active', true).order('name'),
-    ])
-    setAppUsers(users || [])
-    setEmployees((emps || []) as Employee[])
+    const { data } = await supabase.from('app_users').select('id,username,email,role,active,created_at,must_change_password').order('role').order('username')
+    setAppUsers(data || [])
     setLoading(false)
   }
 
   useEffect(() => { loadUsers() }, [])
 
-  // Active employees who have a work email on file AND don't already have a login.
-  // Dedupe by email since multi-role employees can have several rows with the same email.
-  const existingLogins = new Set(appUsers.map(u => u.username.toLowerCase()))
-  const seenEmails = new Set<string>()
-  const employeesNeedingLogin = employees.filter(e => {
-    const email = e.email?.trim().toLowerCase()
-    if (!email || existingLogins.has(email) || seenEmails.has(email)) return false
-    seenEmails.add(email)
-    return true
-  })
-
-  const selectedEmp = employees.find(e => e.id === selectedEmpId)
-
-  async function addUser(e: React.FormEvent) {
-    e.preventDefault()
-    if (!selectedEmp?.email || !newPass.trim()) return
+  async function resetPassword(u: any) {
+    setResettingId(u.id)
     setSaving(true)
+    // Generate a secure temp password
+    const tempPass = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 900 + 100)
     try {
-      const email = selectedEmp.email.trim().toLowerCase()
-      const res = await fetch('/api/auth/add-user', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: email, password: newPass, role: newRole }) })
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ username: u.username, newPassword: tempPass, adminReset: true })
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
-
-      showToast(`Login created for ${selectedEmp.name} (${email})!`)
-      fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: email, newRole, addedBy: currentUser || 'admin' }) }).catch(() => {})
-      setSelectedEmpId(''); setNewPass(''); setNewRole('agent')
+      // Set must_change_password flag
+      await supabase.from('app_users').update({ must_change_password: true }).eq('id', u.id)
+      showToast(`Password reset! Temp: ${tempPass} — share with ${u.username.split('@')[0]} and they'll be prompted to change it on login.`, 'success')
       loadUsers()
     } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
     setSaving(false)
+    setResettingId(null)
   }
 
-  async function resetPassword(userId: string, username: string) {
-    if (!resetPass.trim()) return
-    setResetting(true)
-    try {
-      const res = await fetch('/api/auth/change-password', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username, newPassword: resetPass, adminReset: true }) })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed')
-      showToast(`Password for "${username}" updated!`)
-      setResetUserId(null); setResetPass('')
-    } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
-    setResetting(false)
-  }
-
-  async function toggleUserActive(u: any) {
-    await supabase.from('app_users').update({ active: !u.active }).eq('id', u.id)
-    loadUsers()
-  }
-
-  async function changeUserRole(u: any, newRole: string) {
+  async function changeRole(u: any, newRole: string) {
     if (newRole === u.role) return
     const { error } = await supabase.from('app_users').update({ role: newRole }).eq('id', u.id)
     if (error) { showToast(error.message, 'error'); return }
-    showToast(`Role updated for ${u.username}`)
+    showToast(`Role updated for ${u.username.split('@')[0]}`, 'success')
     loadUsers()
-    try {
-      const res = await fetch('/api/notify/role-changed', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: u.username, oldRole: u.role, newRole, changedBy: currentUser || 'admin' })
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        showToast(`Role saved, but the notification email failed: ${data.error || 'unknown error'}`, 'error')
-      }
-    } catch {
-      showToast('Role saved, but the notification email could not be sent (network error).', 'error')
-    }
+    fetch('/api/notify/role-changed', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username: u.username, oldRole: u.role, newRole, changedBy: currentUser || 'admin' })
+    }).catch(() => {})
+  }
+
+  async function toggleActive(u: any) {
+    await supabase.from('app_users').update({ active: !u.active }).eq('id', u.id)
+    showToast(`${u.username.split('@')[0]} ${!u.active ? 'activated' : 'deactivated'}`, 'success')
+    loadUsers()
   }
 
   async function deleteUser(u: any) {
-    if (!confirm(`Delete user "${u.username}"?`)) return
+    if (!confirm(`Permanently delete "${u.username}"? This cannot be undone.`)) return
     await supabase.from('app_users').delete().eq('id', u.id)
-    showToast('User deleted'); loadUsers()
+    showToast('User deleted', 'success')
+    loadUsers()
   }
 
-  const roleColors: Record<string,string> = { super_admin: 'bg-purple-50 text-purple-700', admin: 'bg-blue-50 text-blue-700', 'Team Lead': 'bg-emerald-50 text-emerald-700', agent: 'bg-gray-100 text-gray-600' }
-  const roleLabels = ROLE_LABELS
+  const filtered = appUsers.filter(u =>
+    !searchQ || u.username.toLowerCase().includes(searchQ.toLowerCase())
+  )
+
+  // Group by role
+  const grouped: Record<string, any[]> = {}
+  filtered.forEach(u => {
+    const r = u.role || 'agent'
+    if (!grouped[r]) grouped[r] = []
+    grouped[r].push(u)
+  })
+  const roleOrder = ['super_admin', 'admin', 'Team Lead', 'agent']
 
   return (
     <div className="space-y-5">
-      {/* Add user form - only super_admin and admin */}
-      {(currentUserRole === 'super_admin' || currentUserRole === 'admin') && <div className="space-y-3">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Grant Portal Access</p>
-        <p className="text-xs text-gray-400">Only people already in People → Employees can be given a login. This keeps every login tied to a real employee record and a verified work email — no more typos, no more bounced notification emails.</p>
-        {employeesNeedingLogin.length === 0 ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-500">
-            Everyone with a work email on file already has a login. Add a new person under People → Employees first (with their work email), then come back here.
-          </div>
-        ) : (
-          <form onSubmit={addUser} className="space-y-3">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <select value={selectedEmpId} onChange={e=>setSelectedEmpId(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                <option value="">Select employee...</option>
-                {employeesNeedingLogin.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.name} — {emp.email}</option>
-                ))}
-              </select>
-              <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Password (min 6 chars)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-              <select value={newRole} onChange={e=>setNewRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                {currentUserRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
-                {(currentUserRole === 'super_admin' || currentUserRole === 'admin') && <option value="admin">Manager</option>}
-                <option value="team_lead">Team Lead</option>
-                <option value="viewer">Agent</option>
-              </select>
-              <button type="submit" disabled={saving||!selectedEmpId||!newPass.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap flex items-center gap-2"><UserPlus className="w-4 h-4"/>Create Login</button>
-            </div>
-            {selectedEmp && (
-              <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
-                <span className="text-blue-500 text-lg">✓</span>
-                <div>
-                  <p className="text-sm font-semibold text-blue-800">{selectedEmp.name}{selectedEmp.employee_id ? ` — ${selectedEmp.employee_id}` : ''}</p>
-                  <p className="text-xs text-blue-600">Login will use: {selectedEmp.email}</p>
-                </div>
-              </div>
-            )}
-          </form>
-        )}
-      </div>}
-
-      {/* Users list */}
-      <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Current Users</p>
-        {loading ? <div className="text-center py-6 text-gray-400">Loading...</div> : (
-          <div className="border border-gray-200 rounded-xl overflow-hidden">
-            {appUsers.map((u, i) => (
-              <div key={u.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <UserAvatar username={u.username} size="sm" />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${u.active ? 'text-gray-900' : 'text-gray-400'}`}>{u.username}</p>
-                    <p className="text-xs text-gray-400">Added {new Date(u.created_at).toLocaleDateString()}</p>
-                  </div>
-                  {(currentUserRole === 'super_admin' || (currentUserRole === 'admin' && u.role !== 'super_admin')) ? (
-                    <select
-                      value={u.role}
-                      onChange={(e) => changeUserRole(u, e.target.value)}
-                      className={`text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}
-                    >
-                      {currentUserRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
-                      <option value="admin">Manager</option>
-                      <option value="team_lead">Team Lead</option>
-                      <option value="viewer">Agent</option>
-                    </select>
-                  ) : (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}>{roleLabels[u.role]||u.role}</span>
-                  )}
-                  <button onClick={() => toggleUserActive(u)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${u.active ? 'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600' : 'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{u.active ? 'Active' : 'Inactive'}</button>
-                  {(currentUserRole === 'super_admin' || (currentUserRole === 'admin' && u.role !== 'super_admin' && u.role !== 'admin')) && (
-                    <button onClick={() => { setResetUserId(resetUserId === u.id ? null : u.id); setResetPass('') }} className="text-gray-400 hover:text-orange-500 p-1 transition" title="Reset password"><Key className="w-4 h-4"/></button>
-                  )}
-                  {currentUserRole === 'super_admin' && (
-                    <button onClick={() => deleteUser(u)} className="text-gray-400 hover:text-red-600 p-1 transition"><Trash2 className="w-4 h-4"/></button>
-                  )}
-                </div>
-
-                {resetUserId === u.id && (
-                  <div className="px-4 pb-3 flex gap-2 bg-orange-50 border-t border-orange-100">
-                    <input type="password" value={resetPass} onChange={e=>setResetPass(e.target.value)} placeholder="New password" className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-400 mt-2" />
-                    <button onClick={() => resetPassword(u.id, u.username)} disabled={resetting||!resetPass.trim()} className="mt-2 bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap">Reset</button>
-                  </div>
-                )}
-              </div>
-            ))}
-            {appUsers.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No users found.</div>}
-          </div>
-        )}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <p className="text-xs text-gray-500 mt-0.5">Manage portal access, roles, and passwords. To grant new access, go to <span className="font-medium text-blue-700">People → Employees</span> and edit the employee's portal role.</p>
+        </div>
+        <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search users..." className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 w-56" />
       </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+      ) : (
+        <div className="space-y-4">
+          {roleOrder.filter(r => grouped[r]?.length > 0).map(role => (
+            <div key={role} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 flex items-center gap-2">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[role]}`}>{roleLabels[role] || role}</span>
+                <span className="text-xs text-gray-400">{grouped[role].length} user{grouped[role].length !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {grouped[role].map(u => (
+                  <div key={u.id} className="px-4 py-3 space-y-2">
+                    <div className="flex items-center gap-3">
+                      <UserAvatar username={u.username} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${u.active ? 'text-gray-900' : 'text-gray-400'}`}>{u.username}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs text-gray-400">Added {new Date(u.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
+                          {u.must_change_password && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0 rounded-full">Must change password</span>}
+                          {!u.active && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0 rounded-full">Inactive</span>}
+                        </div>
+                      </div>
+                      {/* Role selector — super_admin can change all, admin can't touch super_admin */}
+                      {(currentUserRole === 'super_admin' || (currentUserRole === 'admin' && u.role !== 'super_admin')) ? (
+                        <select value={u.role} onChange={e => changeRole(u, e.target.value)}
+                          className={`text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}>
+                          {currentUserRole === 'super_admin' && <option value="super_admin">Super Admin</option>}
+                          <option value="admin">Admin</option>
+                          <option value="Team Lead">Team Lead</option>
+                          <option value="agent">Agent</option>
+                        </select>
+                      ) : (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[u.role]||'bg-gray-100 text-gray-600'}`}>{roleLabels[u.role]||u.role}</span>
+                      )}
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button onClick={() => toggleActive(u)} title={u.active ? 'Deactivate' : 'Activate'}
+                          className={`text-xs px-2 py-1 rounded-lg transition ${u.active ? 'bg-gray-100 hover:bg-red-50 hover:text-red-600 text-gray-500' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600'}`}>
+                          {u.active ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button onClick={() => resetPassword(u)} disabled={saving && resettingId === u.id}
+                          className="text-xs px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition disabled:opacity-50">
+                          {saving && resettingId === u.id ? '...' : '🔑 Reset PW'}
+                        </button>
+                        {currentUserRole === 'super_admin' && u.username !== currentUser && (
+                          <button onClick={() => deleteUser(u)} className="text-xs px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition">×</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No users found.</div>}
+        </div>
+      )}
     </div>
   )
 }
 
 
 
+
+// -- Directory Links ---------------------------------------------------------
 
 // -- Directory Links ---------------------------------------------------------
 
