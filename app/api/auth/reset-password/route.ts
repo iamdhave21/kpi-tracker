@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     if (!resetRecord) return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 })
     if (new Date(resetRecord.expires_at) < new Date()) {
-      return NextResponse.json({ error: 'Reset link has expired. Please request a new one.' }, { status: 400 })\
+      return NextResponse.json({ error: 'Reset link has expired. Please request a new one.' }, { status: 400 })
     }
 
     // Hash new password before storing
