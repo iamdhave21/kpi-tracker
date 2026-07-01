@@ -2859,7 +2859,6 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
   async function resetPassword(u: any) {
     setResettingId(u.id)
     setSaving(true)
-    // Generate a secure temp password
     const tempPass = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 900 + 100)
     try {
       const res = await fetch('/api/auth/change-password', {
@@ -2868,9 +2867,13 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
-      // Set must_change_password flag
       await supabase.from('app_users').update({ must_change_password: true }).eq('id', u.id)
-      showToast(`Password reset! Temp: ${tempPass} — share with ${u.username.split('@')[0]} and they'll be prompted to change it on login.`, 'success')
+      // Send email notification to the user
+      fetch('/api/notify/password-reset', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ username: u.username, tempPassword: tempPass, resetBy: currentUser })
+      }).catch(() => {})
+      showToast(`Password reset! Email sent to ${u.username.split('@')[0]} with their temp password.`, 'success')
       loadUsers()
     } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
     setSaving(false)
