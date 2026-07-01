@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1311,11 +1311,12 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* HRIS */}
-      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records'].includes(view)} />
+      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records','hris-invoice'].includes(view)} />
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
+          <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
         </div>
       )}
 
@@ -1633,6 +1634,16 @@ export default function KPIApp() {
             {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
+            {view === 'hris-invoice' && (
+              <div className="max-w-lg mx-auto text-center py-20 space-y-4">
+                <div className="w-20 h-20 bg-pink-50 rounded-2xl flex items-center justify-center mx-auto">
+                  <FileText className="w-10 h-10 text-pink-400" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">Invoice</h2>
+                <p className="text-gray-500 text-sm">Invoice management is coming soon. This will allow you to log, track, and manage invoices directly from the portal.</p>
+                <span className="inline-block bg-pink-100 text-pink-700 text-xs font-semibold px-3 py-1.5 rounded-full">🚧 Coming Soon</span>
+              </div>
+            )}
             {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
             {view === 'cadence' && <OperatingCadence currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
