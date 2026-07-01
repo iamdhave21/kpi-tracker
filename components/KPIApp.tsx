@@ -3001,6 +3001,7 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [allUsers, setAllUsers] = useState<{username: string, display_name: string | null}[]>([])
+  const [participantSearch, setParticipantSearch] = useState('')
   const [viewHuddle, setViewHuddle] = useState<any | null>(null)
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
@@ -3026,8 +3027,8 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
   }
 
   async function loadUsers() {
-    const { data } = await supabase.from('app_users').select('username, display_name').eq('active', true).order('display_name')
-    setAllUsers(data || [])
+    const { data } = await supabase.from('employees').select('name, email').eq('active', true).order('name')
+    setAllUsers((data || []).map((e: any) => ({ username: e.email || e.name, display_name: e.name })))
   }
 
   function toggleParticipant(email: string) {
@@ -3182,14 +3183,51 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
                 {allUsers.every(u => form.participants.includes(u.username)) ? '✕ Deselect All' : '✓ Select All'}
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
-              {allUsers.map(u => (
-                <button key={u.username} onClick={() => toggleParticipant(u.username)}
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-left transition ${form.participants.includes(u.username) ? 'bg-blue-900 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-900'}`}>
-                  <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${form.participants.includes(u.username) ? 'bg-white border-white' : 'border-gray-400'}`} />
-                  {u.display_name || u.username.split('@')[0]}
-                </button>
-              ))}
+            {/* Search box */}
+            <input
+              value={participantSearch}
+              onChange={e => setParticipantSearch(e.target.value)}
+              placeholder="Search employees..."
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 mb-2"
+            />
+            {/* Selected chips */}
+            {form.participants.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {form.participants.map(email => {
+                  const u = allUsers.find(u => u.username === email)
+                  return (
+                    <span key={email} className="flex items-center gap-1 text-xs bg-blue-900 text-white px-2 py-1 rounded-full">
+                      {u?.display_name || email.split('@')[0]}
+                      <button onClick={() => toggleParticipant(email)} className="hover:text-blue-200 ml-0.5">×</button>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+            {/* Filtered dropdown list */}
+            <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
+              {allUsers
+                .filter(u => {
+                  const search = participantSearch.toLowerCase()
+                  return !search || (u.display_name || '').toLowerCase().includes(search) || u.username.toLowerCase().includes(search)
+                })
+                .map(u => (
+                  <button key={u.username} onClick={() => toggleParticipant(u.username)}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-sm text-left transition hover:bg-gray-50 ${form.participants.includes(u.username) ? 'bg-blue-50' : ''}`}>
+                    <div>
+                      <span className={`font-medium ${form.participants.includes(u.username) ? 'text-blue-900' : 'text-gray-900'}`}>{u.display_name || u.username.split('@')[0]}</span>
+                      {u.display_name && <span className="text-xs text-gray-400 ml-2">{u.username}</span>}
+                    </div>
+                    {form.participants.includes(u.username) && <span className="text-blue-600 text-xs font-medium">✓</span>}
+                  </button>
+                ))
+              }
+              {allUsers.filter(u => {
+                const s = participantSearch.toLowerCase()
+                return !s || (u.display_name||'').toLowerCase().includes(s) || u.username.toLowerCase().includes(s)
+              }).length === 0 && (
+                <p className="text-center text-sm text-gray-400 py-4">No employees found</p>
+              )}
             </div>
           </div>
           <div>
