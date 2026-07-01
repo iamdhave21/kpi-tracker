@@ -270,6 +270,34 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
       })
   }, [])
 
+  const [editingAnnouncement, setEditingAnnouncement] = useState<any|null>(null)
+  const [editForm, setEditForm] = useState({ title: '', body: '', tag: 'Info' })
+  const [saving, setSaving] = useState(false)
+
+  function openEdit(a: any) {
+    setEditingAnnouncement(a)
+    setEditForm({ title: a.title, body: a.body, tag: a.tag || 'Info' })
+  }
+
+  async function saveEdit() {
+    if (!editingAnnouncement) return
+    if (!editForm.title.trim() || !editForm.body.trim()) return
+    setSaving(true)
+    const { error } = await supabase.from('announcements').update({
+      title: editForm.title.trim(),
+      body: editForm.body.trim(),
+      tag: editForm.tag,
+      updated_at: new Date().toISOString()
+    }).eq('id', editingAnnouncement.id)
+    if (error) showToast(error.message, 'error')
+    else {
+      showToast('Announcement updated!', 'success')
+      setEditingAnnouncement(null)
+      loadAnnouncements()
+    }
+    setSaving(false)
+  }
+
   const [bgUploading, setBgUploading] = useState(false)
   const bgFileRef = useRef<HTMLInputElement>(null)
 
@@ -332,6 +360,29 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
         </div>
       )}
 
+      {/* Edit Modal */}
+      {editingAnnouncement && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 text-base">Edit Announcement</h3>
+              <button onClick={() => setEditingAnnouncement(null)} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+            </div>
+            <input value={editForm.title} onChange={e => setEditForm(p=>({...p,title:e.target.value}))} placeholder="Title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+            <textarea value={editForm.body} onChange={e => setEditForm(p=>({...p,body:e.target.value}))} placeholder="Write your announcement..." rows={5} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+            <div className="flex items-center gap-3">
+              <select value={editForm.tag} onChange={e => setEditForm(p=>({...p,tag:e.target.value}))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+                <option>Info</option><option>Urgent</option><option>Reminder</option><option>Policy</option>
+              </select>
+              <div className="ml-auto flex gap-2">
+                <button onClick={() => setEditingAnnouncement(null)} className="px-4 py-2 rounded-lg text-sm text-gray-600 border border-gray-300 hover:bg-gray-50 transition">Cancel</button>
+                <button onClick={saveEdit} disabled={saving} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{saving ? 'Saving...' : 'Save Changes'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -388,6 +439,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           canManage={canManage}
           bgUrl={bgUrl}
           onDelete={deleteAnnouncement}
+          onEdit={openEdit}
           onAck={acknowledge}
           onLoadAck={loadAckDetails}
           TAG_COLORS={TAG_COLORS}
@@ -401,10 +453,10 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
 }
 
 // -- Month Group (collapsible) -----------------------------------------------
-function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackDetails, canManage, bgUrl, onDelete, onAck, onLoadAck, TAG_COLORS }: {
+function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackDetails, canManage, bgUrl, onDelete, onEdit, onAck, onLoadAck, TAG_COLORS }: {
   monthKey: string, announcements: any[], defaultOpen: boolean, acks: Record<string,boolean>,
   showAcks: string|null, ackDetails: Record<string,any[]>, canManage: boolean, bgUrl: string|null|undefined,
-  onDelete: (id:string)=>void, onAck: (id:string)=>void, onLoadAck: (id:string)=>void, TAG_COLORS: Record<string,string>
+  onDelete: (id:string)=>void, onEdit: (a:any)=>void, onAck: (id:string)=>void, onLoadAck: (id:string)=>void, TAG_COLORS: Record<string,string>
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
@@ -448,7 +500,12 @@ function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackD
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAG_COLORS[a.tag]||TAG_COLORS.Info}`}>{a.tag}</span>
                 <h3 className="font-semibold text-gray-900 text-sm">{a.title}</h3>
               </div>
-              {canManage && <button onClick={() => onDelete(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">✕</button>}
+              {canManage && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => onEdit(a)} className="text-gray-300 hover:text-blue-500 text-xs transition" title="Edit">✎</button>
+                  <button onClick={() => onDelete(a.id)} className="text-gray-300 hover:text-red-500 text-xs transition" title="Delete">✕</button>
+                </div>
+              )}
             </div>
             <p className="text-sm text-gray-600 whitespace-pre-wrap">{displayBody}</p>
             {isLong && (
