@@ -5698,16 +5698,17 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   }, [])
 
   useEffect(() => {
-    if (selectedTL) {
-      loadTLTeams()
-      loadScorecard()
-    }
+    if (selectedTL) loadTLTeams(true)
+  }, [selectedTL])
+
+  useEffect(() => {
+    if (selectedTL) loadScorecard()
   }, [selectedTL, period, selectedMonth, selectedYear, selectedTeamId])
 
-  async function loadTLTeams() {
+  async function loadTLTeams(resetTeam = false) {
     const { data } = await supabase.from('teams').select('id,name').eq('team_lead_id', selectedTL).eq('active', true)
     setTlTeams(data || [])
-    setSelectedTeamId('all')
+    if (resetTeam) setSelectedTeamId('all')
   }
 
   async function loadTLList() {
@@ -5900,7 +5901,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
             </select>
           )}
           <div className="flex items-center gap-2 flex-wrap">
-            {tlTeams.length > 1 && (
+            {tlTeams.length > 0 && (
               <select value={selectedTeamId} onChange={e=>setSelectedTeamId(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-900">
                 <option value="all">All Teams</option>
                 {tlTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
