@@ -2979,6 +2979,34 @@ function currentPeriodKey(frequency: 'daily' | 'weekly' | 'monthly'): string {
   return monday.toISOString().slice(0, 10)
 }
 
+// Returns the last N period keys for a frequency, oldest first, so a
+// history graph can be built going backward from today -- e.g. last
+// 14 days, last 8 weeks (Mondays), last 6 months.
+function historicalPeriodKeys(frequency: 'daily' | 'weekly' | 'monthly', count: number): { key: string, label: string }[] {
+  const out: { key: string, label: string }[] = []
+  const now = new Date()
+  for (let i = count - 1; i >= 0; i--) {
+    if (frequency === 'daily') {
+      const d = new Date(now)
+      d.setDate(now.getDate() - i)
+      out.push({ key: d.toISOString().slice(0, 10), label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) })
+    } else if (frequency === 'monthly') {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      out.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) })
+    } else {
+      // weekly: i weeks before this week's Monday
+      const day = now.getDay()
+      const diffToMonday = day === 0 ? -6 : 1 - day
+      const thisMonday = new Date(now)
+      thisMonday.setDate(now.getDate() + diffToMonday)
+      const d = new Date(thisMonday)
+      d.setDate(thisMonday.getDate() - i * 7)
+      out.push({ key: d.toISOString().slice(0, 10), label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) })
+    }
+  }
+  return out
+}
+
 function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'>('daily')
   const [completions, setCompletions] = useState<Record<string, { done: boolean, note: string }>>({})
@@ -3162,59 +3190,148 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
 // Designed so this rate can be reused later in the planned Team Lead
 // Scorecard feature, not locked to this page only.
 function CadenceCompliance({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [rows, setRows] = useState<{ email: string, rate: number, done: number, total: number }[]>([])
-  const [loading, setLoading] = useState(true)
   const isManager = userRole === 'super_admin' || userRole === 'admin'
+  const [currentRates, setCurrentRates] = useState<{ email: string, daily: number, weekly: number, monthly: number }[]>([])
+  const [loadingCurrent, setLoadingCurrent] = useState(true)
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      const periods = Array.from(new Set(CADENCE_ITEMS.map(it => currentPeriodKey(it.frequency))))
-      let q = supabase.from('cadence_completions').select('team_lead_email, done').in('period_key', periods)
-      if (!isManager && currentUser) q = q.eq('team_lead_email', currentUser.toLowerCase())
-      const { data } = await q
+  const [historyFreq, setHistoryFreq] = useState<'daily'|'weekly'|'monthly'>('daily')
+  const [historyData, setHistoryData] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null)
 
-      // Compliance rate = (items marked done this period) / (total items
-      // that exist for that frequency) -- per Team Lead.
-      const byEmail: Record<string, number> = {}
-      ;(data || []).forEach((row: any) => { if (row.done) byEmail[row.team_lead_email] = (byEmail[row.team_lead_email] || 0) + 1 }
-      )
-      const total = CADENCE_ITEMS.length
-      const emails = isManager ? Object.keys(byEmail) : (currentUser ? [currentUser.toLowerCase()] : [])
-      // Manager view should still show Team Leads with 0 done, not just
-      // ones with at least one completion -- but without a team_leads
-      // list handy here, we show whoever has activity, which is the
-      // practical signal for "is anyone falling behind."
-      const result = emails.map(email => {
-        const done = byEmail[email] || 0
-        return { email, rate: total > 0 ? Math.round((done / total) * 100) : 0, done, total }
-      }).sort((a, b) => a.rate - b.rate)
-      setRows(result)
-      setLoading(false)
+  const FREQ_HISTORY_LENGTH = { daily: 14, weekly: 8, monthly: 6 }
+
+  // Per-frequency rate for the CURRENT period, separately -- per spec,
+  // Daily/Weekly/Monthly each get their own % instead of one combined number.
+  async function loadCurrentRates() {
+    setLoadingCurrent(true)
+    const byFreq: Record<'daily'|'weekly'|'monthly', string> = {
+      daily: currentPeriodKey('daily'), weekly: currentPeriodKey('weekly'), monthly: currentPeriodKey('monthly'),
     }
-    load()
-  }, [currentUser, userRole])
+    let q = supabase.from('cadence_completions').select('team_lead_email, frequency, done, period_key')
+      .in('period_key', Object.values(byFreq))
+    if (!isManager && currentUser) q = q.eq('team_lead_email', currentUser.toLowerCase())
+    const { data } = await q
+
+    const totals = {
+      daily: CADENCE_ITEMS.filter(i => i.frequency === 'daily').length,
+      weekly: CADENCE_ITEMS.filter(i => i.frequency === 'weekly').length,
+      monthly: CADENCE_ITEMS.filter(i => i.frequency === 'monthly').length,
+    }
+    const byEmail: Record<string, { daily: number, weekly: number, monthly: number }> = {}
+    ;(data || []).forEach((row: any) => {
+      if (row.period_key !== byFreq[row.frequency as 'daily'|'weekly'|'monthly']) return
+      if (!row.done) return
+      if (!byEmail[row.team_lead_email]) byEmail[row.team_lead_email] = { daily: 0, weekly: 0, monthly: 0 }
+      byEmail[row.team_lead_email][row.frequency as 'daily'|'weekly'|'monthly']++
+    })
+    const emails = isManager ? Object.keys(byEmail) : (currentUser ? [currentUser.toLowerCase()] : [])
+    const result = emails.map(email => {
+      const c = byEmail[email] || { daily: 0, weekly: 0, monthly: 0 }
+      return {
+        email,
+        daily: totals.daily ? Math.round((c.daily / totals.daily) * 100) : 0,
+        weekly: totals.weekly ? Math.round((c.weekly / totals.weekly) * 100) : 0,
+        monthly: totals.monthly ? Math.round((c.monthly / totals.monthly) * 100) : 0,
+      }
+    })
+    setCurrentRates(result)
+    if (!selectedEmail && result.length > 0) setSelectedEmail(result[0].email)
+    setLoadingCurrent(false)
+  }
+
+  // Historical rate per period for the selected Team Lead + selected
+  // frequency tab -- this feeds the graph so dips/missed periods are
+  // visible at a glance instead of scanning a list of numbers.
+  async function loadHistory() {
+    if (!selectedEmail) { setHistoryData([]); setLoadingHistory(false); return }
+    setLoadingHistory(true)
+    const periods = historicalPeriodKeys(historyFreq, FREQ_HISTORY_LENGTH[historyFreq])
+    const periodKeys = periods.map(p => p.key)
+    const { data } = await supabase.from('cadence_completions')
+      .select('period_key, done')
+      .eq('team_lead_email', selectedEmail)
+      .eq('frequency', historyFreq)
+      .in('period_key', periodKeys)
+
+    const total = CADENCE_ITEMS.filter(i => i.frequency === historyFreq).length
+    const doneByPeriod: Record<string, number> = {}
+    ;(data || []).forEach((row: any) => { if (row.done) doneByPeriod[row.period_key] = (doneByPeriod[row.period_key] || 0) + 1 })
+
+    const chartData = periods.map(p => ({
+      label: p.label,
+      rate: total > 0 ? Math.round(((doneByPeriod[p.key] || 0) / total) * 100) : 0,
+    }))
+    setHistoryData(chartData)
+    setLoadingHistory(false)
+  }
+
+  useEffect(() => { loadCurrentRates() }, [currentUser, userRole])
+  useEffect(() => { loadHistory() }, [selectedEmail, historyFreq])
+
+  const RateBadge = ({ label, value }: { label: string, value: number }) => (
+    <div className="text-center">
+      <div className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center text-sm font-bold ${value >= 80 ? 'bg-emerald-100 text-emerald-700' : value >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{value}%</div>
+      <p className="text-xs text-gray-500 mt-1">{label}</p>
+    </div>
+  )
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm text-gray-600">
-        Compliance = % of this period's cadence items (daily + weekly + monthly combined) marked done. {isManager ? 'Showing all Team Leads with activity this period.' : 'Showing your own compliance.'}
+        Daily, Weekly, and Monthly each show their own compliance rate for the current period. {isManager ? 'Showing all Team Leads with activity.' : 'Showing your own compliance.'}
       </div>
-      {loading ? (
+
+      {loadingCurrent ? (
         <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
-      ) : rows.length === 0 ? (
-        <div className="text-center py-8 text-gray-400 text-sm">No cadence activity recorded yet this period.</div>
+      ) : currentRates.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 text-sm">No cadence activity recorded yet.</div>
       ) : (
         <div className="space-y-2">
-          {rows.map(r => (
-            <div key={r.email} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${r.rate >= 80 ? 'bg-emerald-100 text-emerald-700' : r.rate >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{r.rate}%</div>
+          {currentRates.map(r => (
+            <button key={r.email} onClick={() => setSelectedEmail(r.email)}
+              className={`w-full bg-white border rounded-xl p-4 flex items-center gap-5 text-left transition ${selectedEmail === r.email ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-gray-300'}`}>
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-900">{r.email.split('@')[0]}</p>
-                <p className="text-xs text-gray-500">{r.done} of {r.total} cadence items completed this period</p>
+                <p className="text-xs text-gray-400 mt-0.5">{selectedEmail === r.email ? 'Viewing history below' : 'Click to view history'}</p>
               </div>
-            </div>
+              <div className="flex items-center gap-4 flex-shrink-0">
+                <RateBadge label="Daily" value={r.daily} />
+                <RateBadge label="Weekly" value={r.weekly} />
+                <RateBadge label="Monthly" value={r.monthly} />
+              </div>
+            </button>
           ))}
+        </div>
+      )}
+
+      {selectedEmail && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h4 className="font-semibold text-gray-900 text-sm">History — {selectedEmail.split('@')[0]}</h4>
+            <div className="flex gap-1">
+              {(['daily','weekly','monthly'] as const).map(f => (
+                <button key={f} onClick={() => setHistoryFreq(f)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${historyFreq === f ? 'bg-blue-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
+              ))}
+            </div>
+          </div>
+          {loadingHistory ? (
+            <div className="text-center py-8 text-gray-400 text-sm">Loading history...</div>
+          ) : (
+            <div style={{ width: '100%', height: 220 }}>
+              <ResponsiveContainer>
+                <LineChart data={historyData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v: any) => [`${v}%`, 'Compliance']} />
+                  <ReferenceLine y={80} stroke="#10b981" strokeDasharray="4 4" />
+                  <Line type="monotone" dataKey="rate" stroke="#1e3a8a" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <p className="text-xs text-gray-400">Green dashed line = 80% target. Dips below show missed days/weeks/months at a glance.</p>
         </div>
       )}
     </div>
