@@ -5654,25 +5654,37 @@ function ViewerCoachingBanner({ currentUser }: { currentUser: string | null }) {
 function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m:string,t?:'success'|'error')=>void }) {
   const isManager = userRole === 'super_admin' || userRole === 'admin'
   const [period, setPeriod] = useState<'mtd'|'weekly'>('mtd')
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()) // 0-indexed
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedTL, setSelectedTL] = useState<string>('')
   const [tlList, setTlList] = useState<{empId:string,email:string,name:string,photo:string|null}[]>([])
   const [score, setScore] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   // Period helpers
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const currentYear = new Date().getFullYear()
+  const years = Array.from({length: 3}, (_,i) => currentYear - i)
+
   function getPeriodBounds() {
-    const now = new Date()
     if (period === 'mtd') {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1)
-      return { start: start.toISOString(), end: now.toISOString(), label: now.toLocaleDateString('en-US',{month:'long',year:'numeric'}) }
+      const start = new Date(selectedYear, selectedMonth, 1)
+      const end = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59)
+      const isCurrentMonth = selectedMonth === new Date().getMonth() && selectedYear === new Date().getFullYear()
+      return {
+        start: start.toISOString(),
+        end: isCurrentMonth ? new Date().toISOString() : end.toISOString(),
+        label: `${MONTHS[selectedMonth]} ${selectedYear}`
+      }
     } else {
+      const now = new Date()
       const day = now.getDay()
       const monday = new Date(now); monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1)); monday.setHours(0,0,0,0)
       return { start: monday.toISOString(), end: now.toISOString(), label: `Week of ${monday.toLocaleDateString('en-US',{month:'short',day:'numeric'})}` }
     }
   }
 
-  const monthLabel = new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'})
+  const monthLabel = `${MONTHS[selectedMonth]} ${selectedYear}`
 
   useEffect(() => {
     if (isManager) loadTLList()
@@ -5685,7 +5697,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
 
   useEffect(() => {
     if (selectedTL) loadScorecard()
-  }, [selectedTL, period])
+  }, [selectedTL, period, selectedMonth, selectedYear])
 
   async function loadTLList() {
     try {
@@ -5874,9 +5886,21 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
               {tlList.map((tl:any) => <option key={tl.empId} value={tl.empId}>{tl.name}</option>)}
             </select>
           )}
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
-            <button onClick={()=>setPeriod('mtd')} className={`px-3 py-1.5 font-medium transition ${period==='mtd'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>Month to Date</button>
-            <button onClick={()=>setPeriod('weekly')} className={`px-3 py-1.5 font-medium transition ${period==='weekly'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>This Week</button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+              <button onClick={()=>setPeriod('mtd')} className={`px-3 py-1.5 font-medium transition ${period==='mtd'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>Monthly</button>
+              <button onClick={()=>setPeriod('weekly')} className={`px-3 py-1.5 font-medium transition ${period==='weekly'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>Weekly</button>
+            </div>
+            {period === 'mtd' && (
+              <div className="flex items-center gap-1">
+                <select value={selectedMonth} onChange={e=>setSelectedMonth(Number(e.target.value))} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-900">
+                  {MONTHS.map((m,i) => <option key={m} value={i}>{m}</option>)}
+                </select>
+                <select value={selectedYear} onChange={e=>setSelectedYear(Number(e.target.value))} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-900">
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            )}
           </div>
         </div>
       </div>
