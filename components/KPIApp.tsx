@@ -5688,21 +5688,26 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   }, [selectedTL, period])
 
   async function loadTLList() {
-    // Step 1: get unique team_lead_ids from active teams
-    const { data: teamsData } = await supabase
-      .from('teams').select('team_lead_id').eq('active', true).not('team_lead_id', 'is', null)
-    const uniqueIds = [...new Set((teamsData||[]).map((t:any) => t.team_lead_id).filter(Boolean))]
-    if (uniqueIds.length === 0) return
-    // Step 2: get employee details for those IDs
-    const { data: emps } = await supabase
-      .from('employees').select('id, name, email, avatar_url').in('id', uniqueIds)
-    const list = (emps||[]).map((e:any) => ({
-      empId: e.id, name: e.name,
-      email: e.email?.toLowerCase() || '',
-      photo: e.avatar_url || null
-    })).sort((a:any,b:any) => a.name.localeCompare(b.name))
-    setTlList(list as any)
-    if (list.length > 0) setSelectedTL(list[0].empId)
+    try {
+      // Step 1: get unique team_lead_ids from active teams
+      const { data: teamsData, error: teamsErr } = await supabase
+        .from('teams').select('team_lead_id').eq('active', true).not('team_lead_id', 'is', null)
+      if (teamsErr) { console.error('teams error:', teamsErr); setLoading(false); return }
+      const uniqueIds = [...new Set((teamsData||[]).map((t:any) => t.team_lead_id).filter(Boolean))]
+      if (uniqueIds.length === 0) { setLoading(false); return }
+      // Step 2: get employee details for those IDs
+      const { data: emps, error: empsErr } = await supabase
+        .from('employees').select('id, name, email, avatar_url').in('id', uniqueIds)
+      if (empsErr) { console.error('emps error:', empsErr); setLoading(false); return }
+      const list = (emps||[]).map((e:any) => ({
+        empId: e.id, name: e.name,
+        email: e.email?.toLowerCase() || '',
+        photo: e.avatar_url || null
+      })).sort((a:any,b:any) => a.name.localeCompare(b.name))
+      setTlList(list as any)
+      if (list.length > 0) setSelectedTL(list[0].empId)
+      else setLoading(false)
+    } catch(e) { console.error('loadTLList failed:', e); setLoading(false) }
   }
 
   async function loadScorecard() {
