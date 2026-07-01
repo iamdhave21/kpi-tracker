@@ -2086,13 +2086,9 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
           {label:'Perfect (100%)',value:teamRecords.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
           {label:'At Risk (<97%)',value:teamRecords.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50'},
         ].map(c => (
-          <div key={c.label} onClick={(c as any).clickable ? () => setShowAtRisk(v=>!v) : undefined}
-            className={`bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${(c as any).clickable ? 'cursor-pointer hover:border-red-300' : ''}`}>
+          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
-            <div>
-              <p className="text-xs text-gray-500">{c.label}{(c as any).clickable && <span className="ml-1 text-blue-500 text-xs">{showAtRisk ? '▲' : '▼'}</span>}</p>
-              <p className="text-lg font-bold text-gray-900">{c.value}</p>
-            </div>
+            <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
           </div>
         ))}
       </div>
