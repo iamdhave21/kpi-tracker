@@ -2993,6 +2993,293 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
 
 // -- Directory Links ---------------------------------------------------------
 
+// -- Huddle Notes ------------------------------------------------------------
+function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const canCreate = ['super_admin','admin','team_lead'].includes(userRole)
+  const [huddles, setHuddles] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [allUsers, setAllUsers] = useState<{username: string, display_name: string | null}[]>([])
+  const [viewHuddle, setViewHuddle] = useState<any | null>(null)
+  const [filterFrom, setFilterFrom] = useState('')
+  const [filterTo, setFilterTo] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const [form, setForm] = useState({
+    title: '',
+    huddle_date: new Date().toISOString().slice(0,16),
+    agenda: '',
+    participants: [] as string[],
+    attachments: [] as {name:string,url:string,type:string}[],
+  })
+
+  useEffect(() => { loadHuddles(); loadUsers() }, [])
+
+  async function loadHuddles() {
+    setLoading(true)
+    let q = supabase.from('huddle_notes').select('*').order('huddle_date', { ascending: false })
+    const { data } = await q
+    setHuddles(data || [])
+    setLoading(false)
+  }
+
+  async function loadUsers() {
+    const { data } = await supabase.from('app_users').select('username, display_name').eq('active', true).order('display_name')
+    setAllUsers(data || [])
+  }
+
+  function toggleParticipant(email: string) {
+    setForm(p => ({
+      ...p,
+      participants: p.participants.includes(email)
+        ? p.participants.filter(e => e !== email)
+        : [...p.participants, email]
+    }))
+  }
+
+  async function uploadFile(file: File) {
+    setUploading(true)
+    const path = `huddles/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const type = file.type.startsWith('image/') ? 'image' : ext === 'pdf' ? 'pdf' : 'doc'
+    setForm(p => ({ ...p, attachments: [...p.attachments, { name: file.name, url: urlData.publicUrl, type }] }))
+    setUploading(false)
+  }
+
+  async function saveHuddle() {
+    if (!form.title.trim() || !form.huddle_date || !currentUser) return
+    setSaving(true)
+    const { data, error } = await supabase.from('huddle_notes').insert({
+      title: form.title.trim(),
+      huddle_date: form.huddle_date,
+      agenda: form.agenda.trim(),
+      participants: form.participants,
+      attachments: form.attachments,
+      created_by: currentUser,
+    }).select().single()
+
+    if (error) { showToast(error.message, 'error'); setSaving(false); return }
+
+    // In-portal notifications
+    if (form.participants.length > 0) {
+      await supabase.from('notifications').insert(
+        form.participants
+          .filter(e => e !== currentUser)
+          .map(email => ({
+            recipient_email: email,
+            type: 'huddle',
+            title: `Huddle Notes: ${form.title.trim()}`,
+            body: `You were listed as a participant in a huddle on ${new Date(form.huddle_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}.`,
+            reference_id: data.id,
+          }))
+      )
+
+      // Email notifications
+      fetch('/api/notify/huddle-created', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          participants: form.participants,
+          title: form.title.trim(),
+          huddleDate: form.huddle_date,
+          agenda: form.agenda.trim(),
+          createdBy: currentUser,
+        })
+      }).catch(() => {})
+    }
+
+    showToast('Huddle saved & participants notified!', 'success')
+    setForm({ title: '', huddle_date: new Date().toISOString().slice(0,16), agenda: '', participants: [], attachments: [] })
+    setShowForm(false)
+    loadHuddles()
+    setSaving(false)
+  }
+
+  // Export helpers
+  function exportCSV() {
+    const filtered = filteredHuddles()
+    const rows = [
+      ['Date','Title','Participants','Agenda','Created By'],
+      ...filtered.map(h => [
+        new Date(h.huddle_date).toLocaleDateString(),
+        h.title,
+        (h.participants||[]).join('; '),
+        (h.agenda||'').replace(/\n/g,' '),
+        h.created_by,
+      ])
+    ]
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'huddle-notes.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportPrint() {
+    const filtered = filteredHuddles()
+    const html = `<html><head><title>Huddle Notes</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#111}h1{font-size:20px;margin-bottom:24px}.huddle{border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:16px}.huddle h2{font-size:15px;margin:0 0 8px}.meta{color:#6b7280;font-size:13px;margin-bottom:8px}.agenda{background:#f9fafb;padding:12px;border-radius:6px;font-size:13px;white-space:pre-wrap}</style></head><body><h1>Huddle Notes Export</h1>${filtered.map(h=>`<div class="huddle"><h2>${h.title}</h2><div class="meta">📅 ${new Date(h.huddle_date).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})} &nbsp;|&nbsp; 👤 ${h.created_by.split('@')[0]} &nbsp;|&nbsp; 👥 ${(h.participants||[]).map((e:string)=>e.split('@')[0]).join(', ')}</div>${h.agenda?`<div class="agenda">${h.agenda}</div>`:''}</div>`).join('')}</body></html>`
+    const w = window.open('','_blank'); w?.document.write(html); w?.document.close(); w?.print()
+  }
+
+  function filteredHuddles() {
+    return huddles.filter(h => {
+      const d = new Date(h.huddle_date)
+      if (filterFrom && d < new Date(filterFrom)) return false
+      if (filterTo && d > new Date(filterTo + 'T23:59:59')) return false
+      return true
+    })
+  }
+
+  const filtered = filteredHuddles()
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h3 className="font-semibold text-gray-900">Team Huddle Notes</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Record meeting notes and notify participants automatically</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {filtered.length > 0 && (
+            <div className="flex gap-1">
+              <button onClick={exportCSV} className="text-xs px-3 py-1.5 rounded-lg bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 transition">⬇ CSV</button>
+              <button onClick={exportPrint} className="text-xs px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 transition">🖨 Print</button>
+            </div>
+          )}
+          {canCreate && <button onClick={() => setShowForm(v=>!v)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ New Huddle'}</button>}
+        </div>
+      </div>
+
+      {/* Create form */}
+      {showForm && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+          <h4 className="font-semibold text-gray-900 text-sm">New Huddle Note</h4>
+          <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Huddle title (e.g. Weekly Team Huddle)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Date & Time</label>
+            <input type="datetime-local" value={form.huddle_date} onChange={e => setForm(p=>({...p,huddle_date:e.target.value}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Agenda / Notes</label>
+            <textarea value={form.agenda} onChange={e => setForm(p=>({...p,agenda:e.target.value}))} placeholder="What was discussed, decisions made, key points..." rows={5} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium mb-2 block">Participants <span className="text-gray-400">({form.participants.length} selected)</span></label>
+            <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
+              {allUsers.map(u => (
+                <button key={u.username} onClick={() => toggleParticipant(u.username)}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-left transition ${form.participants.includes(u.username) ? 'bg-blue-900 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-700'}`}>
+                  <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${form.participants.includes(u.username) ? 'bg-white border-white' : 'border-gray-400'}`} />
+                  {u.display_name || u.username.split('@')[0]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium">Attachments</label>
+            <div className="mt-1 flex items-center gap-2">
+              <button onClick={() => fileRef.current?.click()} disabled={uploading} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">{uploading ? '⏳ Uploading...' : '📎 Attach File'}</button>
+              <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xlsx" onChange={async e => { for (const f of Array.from(e.target.files||[])) await uploadFile(f) }} className="hidden" />
+            </div>
+            {form.attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {form.attachments.map((a,i) => (
+                  <div key={i} className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs">
+                    <span>{a.type==='image'?'🖼':a.type==='pdf'?'📄':'📎'}</span>
+                    <span className="text-gray-700 max-w-xs truncate">{a.name}</span>
+                    <button onClick={() => setForm(p=>({...p,attachments:p.attachments.filter((_,j)=>j!==i)}))} className="text-gray-400 hover:text-red-500 ml-1">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <button onClick={saveHuddle} disabled={saving||uploading||!form.title.trim()} className="bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{saving ? 'Saving...' : 'Save & Notify Participants'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Filter bar */}
+      {huddles.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+          <span className="text-xs text-gray-500 font-medium">Filter by date:</span>
+          <input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+          <span className="text-xs text-gray-400">to</span>
+          <input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+          {(filterFrom||filterTo) && <button onClick={()=>{setFilterFrom('');setFilterTo('')}} className="text-xs text-blue-600 hover:underline">Clear</button>}
+          <span className="text-xs text-gray-400 ml-auto">{filtered.length} of {huddles.length} huddles</span>
+        </div>
+      )}
+
+      {/* Huddle list */}
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 text-sm">{huddles.length === 0 ? 'No huddle notes yet. Create your first one!' : 'No huddles in this date range.'}</div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(h => (
+            <div key={h.id} className="bg-white border border-gray-200 rounded-xl p-4 hover:border-blue-300 transition cursor-pointer" onClick={() => setViewHuddle(viewHuddle?.id===h.id ? null : h)}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm">{h.title}</p>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <span className="text-xs text-gray-500">📅 {new Date(h.huddle_date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})} · {new Date(h.huddle_date).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</span>
+                    <span className="text-xs text-gray-500">👤 {h.created_by.split('@')[0]}</span>
+                    <span className="text-xs text-gray-500">👥 {(h.participants||[]).length} participants</span>
+                  </div>
+                </div>
+                <span className="text-gray-400 text-xs flex-shrink-0">{viewHuddle?.id===h.id ? '▲' : '▼'}</span>
+              </div>
+              {viewHuddle?.id===h.id && (
+                <div className="mt-4 space-y-3 border-t border-gray-100 pt-4" onClick={e=>e.stopPropagation()}>
+                  {h.agenda && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Agenda / Notes</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{h.agenda}</p>
+                    </div>
+                  )}
+                  {(h.participants||[]).length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Participants</p>
+                      <div className="flex flex-wrap gap-1">
+                        {(h.participants as string[]).map(e => (
+                          <span key={e} className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full">{e.split('@')[0]}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(h.attachments||[]).length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Attachments</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(h.attachments as any[]).map((a,i) => (
+                          <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 bg-gray-50 border border-gray-200 hover:border-blue-300 rounded-lg px-3 py-1.5 text-xs text-blue-700 transition">
+                            <span>{a.type==='image'?'🖼':a.type==='pdf'?'📄':'📎'}</span><span className="truncate max-w-xs">{a.name}</span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Detail modal */}
+      {viewHuddle && false && null}
+    </div>
+  )
+}
+
 // -- Operating Cadence ----------------------------------------------
 // -- Operating Cadence: checklist items with stable IDs per frequency.
 // Used by both the tracker UI and the compliance calculation, so this
@@ -3065,7 +3352,7 @@ function historicalPeriodKeys(frequency: 'daily' | 'weekly' | 'monthly', count: 
 }
 
 function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'>('daily')
+  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle'>('daily')
   const [completions, setCompletions] = useState<Record<string, { done: boolean, note: string }>>({})
   const [cadenceItems, setCadenceItems] = useState<CadenceItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -3213,6 +3500,7 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
   const tabs: [string,string][] = [
     ['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['deliverables','Deliverables'],
     ...(canViewCompliance ? [['compliance','Compliance']] as [string,string][] : []),
+    ['huddle','📋 Team Huddle'],
     ...(canManageItems ? [['manage','⚙ Manage Tasks']] as [string,string][] : []),
   ]
 
@@ -3283,6 +3571,10 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
 
       {tab === 'compliance' && canViewCompliance && (
         <CadenceCompliance currentUser={currentUser} userRole={userRole} cadenceItems={cadenceItems} showToast={showToast} />
+      )}
+
+      {tab === 'huddle' && (
+        <HuddleNotes currentUser={currentUser} userRole={userRole} showToast={showToast} />
       )}
 
       {tab === 'manage' && canManageItems && (
