@@ -1800,6 +1800,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
   const [selTeam, setSelTeam] = useState<string>('all')
   const [selClient, setSelClient] = useState<string>('All')
   const [showAtRisk, setShowAtRisk] = useState(false)
+  const [showPerfect, setShowPerfect] = useState(false)
   const CLIENTS_FILTER = ['All', 'EMMA', 'AB BSS', 'Harlan + Holden']
   const CLIENT_COLORS: Record<string,string> = { 'EMMA': '#3b82f6', 'AB BSS': '#10b981', 'Harlan + Holden': '#f59e0b' }
 
@@ -1906,11 +1907,15 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
         {[
           {label:'Employees',value:ranked.length,icon:<Users className="w-5 h-5 text-blue-500"/>,bg:'bg-blue-50'},
           {label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A',icon:<BarChart2 className="w-5 h-5 text-purple-500"/>,bg:'bg-purple-50'},
-          {label:'Perfect (100%)',value:ranked.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
+          {label:'Perfect (100%)',value:ranked.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50',perfectCard:true},
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
+          <div key={c.label} onClick={(c as any).perfectCard ? () => setShowPerfect(v=>!v) : undefined}
+            className={`bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${ (c as any).perfectCard ? 'cursor-pointer hover:border-emerald-300' : ''}`}>
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
-            <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
+            <div>
+              <p className="text-xs text-gray-500">{c.label}{(c as any).perfectCard && <span className="ml-1 text-blue-500 text-xs">{showPerfect ? '▲' : '▼'}</span>}</p>
+              <p className="text-lg font-bold text-gray-900">{c.value}</p>
+            </div>
           </div>
         ))}
         {/* At Risk - clickable */}
@@ -1950,6 +1955,33 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
       )}
       {showAtRisk && ranked.filter(r=>(r.overall_score||0)<0.97).length === 0 && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center text-sm text-emerald-700">✅ No at-risk employees for this period!</div>
+      )}
+
+      {/* Perfect employees panel */}
+      {showPerfect && ranked.filter(r=>(r.overall_score||0)>=0.9999).length > 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-emerald-800">🏆 Perfect Score Employees ({ranked.filter(r=>(r.overall_score||0)>=0.9999).length})</p>
+            <button onClick={() => setShowPerfect(false)} className="text-emerald-400 hover:text-emerald-600 text-sm">✕</button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {ranked.filter(r=>(r.overall_score||0)>=0.9999).map(r => {
+              const emp = employees.find(e => e.id === r.employee_id)
+              return (
+                <div key={r.id} className="bg-white border border-emerald-100 rounded-lg px-3 py-2 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{r.employee_name}</p>
+                    <p className="text-xs text-gray-400">{emp?.client || ''} · {r.designation}</p>
+                  </div>
+                  <span className="text-xs font-bold px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700">100% 🏆</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {showPerfect && ranked.filter(r=>(r.overall_score||0)>=0.9999).length === 0 && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center text-sm text-gray-500">No perfect scores this period yet.</div>
       )}
 
       {ranked.length > 0 && (
@@ -2086,9 +2118,13 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
           {label:'Perfect (100%)',value:teamRecords.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
           {label:'At Risk (<97%)',value:teamRecords.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50'},
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
+          <div key={c.label} onClick={(c as any).perfectCard ? () => setShowPerfect(v=>!v) : undefined}
+            className={`bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${ (c as any).perfectCard ? 'cursor-pointer hover:border-emerald-300' : ''}`}>
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
-            <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
+            <div>
+              <p className="text-xs text-gray-500">{c.label}{(c as any).perfectCard && <span className="ml-1 text-blue-500 text-xs">{showPerfect ? '▲' : '▼'}</span>}</p>
+              <p className="text-lg font-bold text-gray-900">{c.value}</p>
+            </div>
           </div>
         ))}
       </div>
