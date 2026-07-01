@@ -1731,23 +1731,24 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
     if (fbN !== record.feedback) changes.push({ field: 'Feedback', old: pct(record.feedback), nw: pct(fbN) })
     if (notes !== record.notes) changes.push({ field: 'Notes', old: record.notes || '', nw: notes })
 
-    // Calculate compliance: coaching ack + announcement acks
+    // Calculate compliance: (acknowledged coaching + acknowledged announcements) / (total requiring ack)
     let complianceScore = 0
     if (selEmp?.email) {
       const empEmail = selEmp.email.toLowerCase()
-      // Coaching acknowledgement (50% of compliance)
+      // Coaching sessions requiring acknowledgement
       const { count: coachTotal } = await supabase.from('coaching_logs')
         .select('id', {count:'exact',head:true}).eq('employee_email', empEmail).eq('requires_acknowledgment', true)
       const { count: coachAcked } = await supabase.from('coaching_logs')
         .select('id', {count:'exact',head:true}).eq('employee_email', empEmail).eq('requires_acknowledgment', true).eq('agent_acknowledged', true)
-      const coachRate = (coachTotal||0) > 0 ? (coachAcked||0) / (coachTotal||1) : 1
-      // Announcement acknowledgement (50% of compliance)
+      // Announcements requiring acknowledgement
       const { count: annTotal } = await supabase.from('announcements')
         .select('id', {count:'exact',head:true}).eq('active', true)
       const { count: annAcked } = await supabase.from('announcement_acknowledgements')
         .select('id', {count:'exact',head:true}).eq('user_email', empEmail)
-      const annRate = (annTotal||0) > 0 ? Math.min((annAcked||0) / (annTotal||1), 1) : 1
-      complianceScore = (coachRate * 0.5) + (annRate * 0.5)
+      // Combined: total acknowledged ÷ total requiring acknowledgement
+      const totalRequired = (coachTotal||0) + (annTotal||0)
+      const totalAcked = (coachAcked||0) + Math.min((annAcked||0), (annTotal||0))
+      complianceScore = totalRequired > 0 ? totalAcked / totalRequired : 1
     }
     const finalOverall = attN*0.2 + accN*0.3 + effN*0.3 + fbN*0.15 + (complianceScore*0.05)
     const { error } = await supabase.from('kpi_records').update({ attendance: attN, accuracy: accN, efficiency: effN, feedback: fbN, compliance_score: complianceScore, overall_score: finalOverall, notes, updated_at: new Date().toISOString() }).eq('id', record.id)
