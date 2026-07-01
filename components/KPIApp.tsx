@@ -654,6 +654,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
   const [pending, setPending] = useState<any[]>([])
   const [approving, setApproving] = useState<string|null>(null)
   const isAdmin = ['super_admin','admin'].includes(userRole)
+  const lbYears = Array.from({length:3}, (_,i) => now.getFullYear()-i)
 
   useEffect(() => { loadScores(); if (isAdmin) loadPending() }, [refreshKey, lbMonth, lbYear])
 
@@ -2195,7 +2196,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
   }, [empId, monthLabel])
 
   function calcOverall(compliancePct=0) { const a=parseFloat(attendance)/100,b=parseFloat(accuracy)/100,c=parseFloat(efficiency)/100,d=parseFloat(feedback)/100; if([a,b,c,d].some(isNaN))return null; return a*0.2+b*0.3+c*0.3+d*0.15+(compliancePct*0.05) }
-  const overall = calcOverall()
+  const overall = calcOverall(0)
   const allMonths = ['2024','2025','2026','2027','2028','2029','2030'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
 
   async function handleSave(e: React.FormEvent) {
