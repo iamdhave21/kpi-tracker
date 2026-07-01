@@ -3160,21 +3160,32 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
       {showForm && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
           <h4 className="font-semibold text-gray-900 text-sm">New Huddle Note</h4>
-          <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Huddle title (e.g. Weekly Team Huddle)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Huddle title (e.g. Weekly Team Huddle)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
           <div>
             <label className="text-xs text-gray-500 font-medium">Date & Time</label>
             <input type="datetime-local" value={form.huddle_date} onChange={e => setForm(p=>({...p,huddle_date:e.target.value}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" />
           </div>
           <div>
             <label className="text-xs text-gray-500 font-medium">Agenda / Notes</label>
-            <textarea value={form.agenda} onChange={e => setForm(p=>({...p,agenda:e.target.value}))} placeholder="What was discussed, decisions made, key points..." rows={5} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+            <textarea value={form.agenda} onChange={e => setForm(p=>({...p,agenda:e.target.value}))} placeholder="What was discussed, decisions made, key points..." rows={5} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
           </div>
           <div>
-            <label className="text-xs text-gray-500 font-medium mb-2 block">Participants <span className="text-gray-400">({form.participants.length} selected)</span></label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-gray-500 font-medium">Participants <span className="text-gray-400">({form.participants.length} selected)</span></label>
+              <button
+                onClick={() => {
+                  const allEmails = allUsers.map(u => u.username)
+                  const allSelected = allEmails.every(e => form.participants.includes(e))
+                  setForm(p => ({ ...p, participants: allSelected ? [] : allEmails }))
+                }}
+                className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-2 py-1 rounded-lg transition">
+                {allUsers.every(u => form.participants.includes(u.username)) ? '✕ Deselect All' : '✓ Select All'}
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
               {allUsers.map(u => (
                 <button key={u.username} onClick={() => toggleParticipant(u.username)}
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-left transition ${form.participants.includes(u.username) ? 'bg-blue-900 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-700'}`}>
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-left transition ${form.participants.includes(u.username) ? 'bg-blue-900 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-900'}`}>
                   <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${form.participants.includes(u.username) ? 'bg-white border-white' : 'border-gray-400'}`} />
                   {u.display_name || u.username.split('@')[0]}
                 </button>
