@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import bcrypt from 'bcryptjs'
 
 const ALLOWED_DOMAIN = '@ab-businesssupport.com'
 
@@ -20,11 +21,9 @@ export async function POST(req: NextRequest) {
     let user = null
 
     if (input.includes('@')) {
-      // Email login - validate domain
       if (!input.endsWith(ALLOWED_DOMAIN)) {
         return NextResponse.json({ error: `Only ${ALLOWED_DOMAIN} emails are allowed` }, { status: 401 })
       }
-      // Try by email column first
       const { data: byEmail } = await supabase
         .from('app_users')
         .select('*')
@@ -34,7 +33,6 @@ export async function POST(req: NextRequest) {
       if (byEmail) {
         user = byEmail
       } else {
-        // Fallback: try username = part before @
         const usernamePrefix = input.split('@')[0]
         const { data: byPrefix } = await supabase
           .from('app_users')
@@ -45,7 +43,6 @@ export async function POST(req: NextRequest) {
         if (byPrefix) user = byPrefix
       }
     } else {
-      // Plain username login (legacy)
       const { data: byUsername } = await supabase
         .from('app_users')
         .select('*')
@@ -56,7 +53,24 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
-    if (user.password_hash !== password) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
+
+    // Support both bcrypt hashes and plain-text (legacy) during migration window
+    const stored = user.password_hash as string
+    let passwordValid = false
+    if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
+      // bcrypt hash — use proper comparison
+      passwordValid = await bcrypt.compare(password, stored)
+    } else {
+      // plain-text legacy — compare directly, then upgrade to bcrypt
+      passwordValid = stored === password
+      if (passwordValid) {
+        // Auto-upgrade to bcrypt on successful login
+        const hash = await bcrypt.hash(password, 12)
+        await supabase.from('app_users').update({ password_hash: hash }).eq('id', user.id)
+      }
+    }
+
+    if (!passwordValid) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
 
     return NextResponse.json({ user: { username: user.email || user.username, role: user.role, display_name: user.display_name || user.username, mustChangePassword: !!user.must_change_password } })
   } catch {
