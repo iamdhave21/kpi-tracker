@@ -1904,25 +1904,22 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          {label:'Employees',value:ranked.length,icon:<Users className="w-5 h-5 text-blue-500"/>,bg:'bg-blue-50'},
-          {label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A',icon:<BarChart2 className="w-5 h-5 text-purple-500"/>,bg:'bg-purple-50'},
-          {label:'Perfect (100%)',value:ranked.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
-        ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
-            <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
-            <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
-          </div>
-        ))}
-        {/* At Risk - clickable */}
-        <div onClick={() => setShowAtRisk(v=>!v)} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer hover:border-red-300">
-          <div className="bg-red-50 p-2 rounded-lg"><AlertCircle className="w-5 h-5 text-red-500"/></div>
-          <div>
-            <p className="text-xs text-gray-500">At Risk (&lt;97%) <span className="text-blue-500">{showAtRisk ? '▲' : '▼'}</span></p>
-            <p className="text-lg font-bold text-gray-900">{ranked.filter(r=>(r.overall_score||0)<0.97).length}</p>
-          </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm">
+          <div className="bg-blue-50 p-2 rounded-lg"><Users className="w-5 h-5 text-blue-500"/></div>
+          <div><p className="text-xs text-gray-500">Employees</p><p className="text-lg font-bold text-gray-900">{ranked.length}</p></div>
         </div>
-        {/* Perfect - clickable - overrides the map version */}
+        <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm">
+          <div className="bg-purple-50 p-2 rounded-lg"><BarChart2 className="w-5 h-5 text-purple-500"/></div>
+          <div><p className="text-xs text-gray-500">Avg Score</p><p className="text-lg font-bold text-gray-900">{avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A'}</p></div>
+        </div>
+        <div onClick={() => setShowPerfect(v=>!v)} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm cursor-pointer hover:border-emerald-300 hover:shadow-md transition-all">
+          <div className="bg-emerald-50 p-2 rounded-lg"><Award className="w-5 h-5 text-emerald-500"/></div>
+          <div><p className="text-xs text-gray-500">Perfect (100%) <span className="text-blue-500">{showPerfect?'▲':'▼'}</span></p><p className="text-lg font-bold text-gray-900">{ranked.filter(r=>(r.overall_score||0)>=0.9999).length}</p></div>
+        </div>
+        <div onClick={() => setShowAtRisk(v=>!v)} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm cursor-pointer hover:border-red-300 hover:shadow-md transition-all">
+          <div className="bg-red-50 p-2 rounded-lg"><AlertCircle className="w-5 h-5 text-red-500"/></div>
+          <div><p className="text-xs text-gray-500">At Risk (&lt;97%) <span className="text-blue-500">{showAtRisk?'▲':'▼'}</span></p><p className="text-lg font-bold text-gray-900">{ranked.filter(r=>(r.overall_score||0)<0.97).length}</p></div>
+        </div>
       </div>
 
       {/* At Risk panel */}
