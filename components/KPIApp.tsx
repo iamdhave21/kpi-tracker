@@ -5688,22 +5688,19 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   }, [selectedTL, period])
 
   async function loadTLList() {
-    const { data } = await supabase
-      .from('teams')
-      .select('team_lead_id, name, employees!teams_team_lead_id_fkey(id, name, email, avatar_url)')
-      .eq('active', true)
-      .not('team_lead_id', 'is', null)
-    // Deduplicate by employee id — one TL can lead multiple teams
-    const seen = new Set<string>()
-    const list: {empId:string, email:string, name:string, photo:string|null}[] = []
-    ;(data||[]).forEach((t:any) => {
-      const emp = t.employees
-      if (emp?.id && !seen.has(emp.id)) {
-        seen.add(emp.id)
-        list.push({ empId: emp.id, email: emp.email?.toLowerCase() || '', name: emp.name, photo: emp.avatar_url || null })
-      }
-    })
-    list.sort((a,b) => a.name.localeCompare(b.name))
+    // Step 1: get unique team_lead_ids from active teams
+    const { data: teamsData } = await supabase
+      .from('teams').select('team_lead_id').eq('active', true).not('team_lead_id', 'is', null)
+    const uniqueIds = [...new Set((teamsData||[]).map((t:any) => t.team_lead_id).filter(Boolean))]
+    if (uniqueIds.length === 0) return
+    // Step 2: get employee details for those IDs
+    const { data: emps } = await supabase
+      .from('employees').select('id, name, email, avatar_url').in('id', uniqueIds)
+    const list = (emps||[]).map((e:any) => ({
+      empId: e.id, name: e.name,
+      email: e.email?.toLowerCase() || '',
+      photo: e.avatar_url || null
+    })).sort((a:any,b:any) => a.name.localeCompare(b.name))
     setTlList(list as any)
     if (list.length > 0) setSelectedTL(list[0].empId)
   }
