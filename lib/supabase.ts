@@ -29,6 +29,7 @@ export type KpiRecord = {
   efficiency: number | null
   feedback: number | null
   overall_score: number | null
+  compliance_score: number | null
   ranking: number | null
   notes: string | null
   coached: boolean
