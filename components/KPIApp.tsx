@@ -4207,15 +4207,14 @@ type Ticket = {
   updated_at: string
 }
 
-const TICKET_CATEGORIES = ['General']
+const TICKET_CATEGORIES = ['IT', 'HR', 'Admin', 'Management', 'Logistics', 'Operations']
 const TICKET_TYPES: Record<string, string[]> = {
-  'General': [
-    'ICA / COE Request',
-    'Portal Request / Development / Issue',
-    'Equipment Request / Report',
-    'Open Door Policy',
-    'Process Improvement',
-  ],
+  'IT': ['ICA / COE Request', 'Portal Request / Development / Issue', 'Equipment Request / Report', 'Open Door Policy', 'Process Improvement'],
+  'HR': ['ICA / COE Request', 'Portal Request / Development / Issue', 'Equipment Request / Report', 'Open Door Policy', 'Process Improvement'],
+  'Admin': ['ICA / COE Request', 'Portal Request / Development / Issue', 'Equipment Request / Report', 'Open Door Policy', 'Process Improvement'],
+  'Management': ['ICA / COE Request', 'Portal Request / Development / Issue', 'Equipment Request / Report', 'Open Door Policy', 'Process Improvement'],
+  'Logistics': ['ICA / COE Request', 'Portal Request / Development / Issue', 'Equipment Request / Report', 'Open Door Policy', 'Process Improvement'],
+  'Operations': ['ICA / COE Request', 'Portal Request / Development / Issue', 'Equipment Request / Report', 'Open Door Policy', 'Process Improvement'],
 }
 const TICKET_TYPE_DEFINITIONS: Record<string, string> = {
   'ICA / COE Request': 'Independent Contractor Agreement or Certificate of Employment request. Use this for any employment verification, contract renewals, or official documentation needs.',
@@ -4604,6 +4603,10 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const canEdit = (t: Ticket) => canManage || t.created_by === currentUser
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [allEmployees, setAllEmployees] = useState<{name:string,email:string}[]>([])
+  const [categoryOwners, setCategoryOwners] = useState<Record<string,string[]>>({})
+  const [pocTab, setPocTab] = useState(false)
+  const [pocSaving, setPocSaving] = useState<string|null>(null)
+  const [pocSearch, setPocSearch] = useState<Record<string,string>>({})
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [posting, setPosting] = useState(false)
@@ -4616,8 +4619,8 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const [editingId, setEditingId] = useState<string|null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
-    title: '', description: '', category: 'General',
-    ticket_type: TICKET_TYPES['General'][0],
+    title: '', description: '', category: 'IT',
+    ticket_type: TICKET_TYPES['IT'][0],
     priority: 'Medium' as Ticket['priority'],
     owner: '', sla_hours: 24
   })
@@ -4631,7 +4634,25 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   useEffect(() => {
     loadTickets()
     loadEmployees()
+    loadCategoryOwners()
   }, [scope])
+
+  async function loadCategoryOwners() {
+    const { data } = await supabase.from('ticket_category_owners').select('*')
+    const map: Record<string,string[]> = {}
+    ;(data||[]).forEach((r:any) => { map[r.category] = r.owner_emails || [] })
+    setCategoryOwners(map)
+  }
+
+  async function saveCategoryOwners(category: string, emails: string[]) {
+    setPocSaving(category)
+    await supabase.from('ticket_category_owners').upsert({
+      category, owner_emails: emails, updated_by: currentUser, updated_at: new Date().toISOString()
+    }, { onConflict: 'category' })
+    setCategoryOwners(prev => ({ ...prev, [category]: emails }))
+    setPocSaving(null)
+    showToast(`${category} POCs updated!`, 'success')
+  }
 
   async function loadEmployees() {
     const { data } = await supabase.from('employees').select('name, email').eq('active', true).order('name')
@@ -4641,7 +4662,16 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   async function loadTickets() {
     setLoading(true)
     let query = supabase.from('tickets').select('*').order('created_at', { ascending: false })
-    if (scope === 'mine') query = query.eq('created_by', currentUser)
+    if (userRole === 'agent') {
+      // Agents see only their own tickets
+      query = query.eq('created_by', currentUser)
+    } else if (userRole === 'Team Lead') {
+      // Team Leads see their own + tickets where they are owner
+      query = query.or(`created_by.eq.${currentUser},owner.eq.${currentUser}`)
+    } else if (scope === 'mine') {
+      query = query.eq('created_by', currentUser)
+    }
+    // admin and super_admin with scope='all' see everything
     const { data, error } = await query
     if (!error) setTickets((data || []) as Ticket[])
     setLoading(false)
@@ -4685,25 +4715,32 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     if (!form.title.trim() || !form.description.trim()) { showToast('Please fill in title and description.', 'error'); return }
     setPosting(true)
     const slaDeadline = new Date(Date.now() + form.sla_hours * 60 * 60 * 1000).toISOString()
+    // Auto-assign POCs for this category
+    const pocs = categoryOwners[form.category] || []
+    const primaryOwner = pocs.length > 0 ? pocs[0] : (form.owner || null)
     const { data, error } = await supabase.from('tickets').insert({
       title: form.title.trim(), description: form.description.trim(),
       category: form.category, ticket_type: form.ticket_type,
       priority: form.priority, status: 'Open',
       created_by: currentUser, requested_by: currentUser,
-      owner: form.owner || null,
+      owner: primaryOwner,
       sla_hours: form.sla_hours, sla_deadline: slaDeadline,
       attachments,
     }).select().single()
     setPosting(false)
     if (error) { showToast(error.message, 'error'); return }
-    setForm({ title: '', description: '', category: 'General', ticket_type: TICKET_TYPES['General'][0], priority: 'Medium', owner: '', sla_hours: 24 })
+    setForm({ title: '', description: '', category: 'IT', ticket_type: TICKET_TYPES['IT'][0], priority: 'Medium', owner: '', sla_hours: 24 })
     setAttachments([]); setShowForm(false)
     showToast('Ticket submitted!', 'success')
     loadTickets()
-    fetch('/api/notify/ticket-created', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticketId: data?.id, title: form.title.trim(), category: form.category, priority: form.priority, createdBy: currentUser, owner: form.owner })
-    }).catch(() => {})
+    // Notify all POCs
+    const notifyEmails = pocs.length > 0 ? pocs : (form.owner ? [form.owner] : [])
+    if (notifyEmails.length > 0) {
+      fetch('/api/notify/ticket-created', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId: data?.id, title: form.title.trim(), category: form.category, priority: form.priority, createdBy: currentUser, ownerEmails: notifyEmails })
+      }).catch(() => {})
+    }
   }
 
   async function saveEdit(id: string) {
@@ -4773,9 +4810,66 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
               <button onClick={() => setScope('all')} className={`px-3 py-1.5 font-medium transition ${scope==='all'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>All Tickets</button>
             </div>
           )}
+          {userRole === 'super_admin' && (
+            <button onClick={() => setPocTab(v=>!v)} className={`text-xs px-3 py-1.5 rounded-lg border transition ${pocTab ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>⚙ POC Settings</button>
+          )}
           <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ New Ticket'}</button>
         </div>
       </div>
+
+      {/* POC Settings Panel — Super Admin only */}
+      {pocTab && userRole === 'super_admin' && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+          <div>
+            <h4 className="font-semibold text-gray-900 text-sm">Ticket POC Settings</h4>
+            <p className="text-xs text-gray-500 mt-0.5">Assign points of contact per category. All POCs get notified when a ticket is created under their category.</p>
+          </div>
+          {TICKET_CATEGORIES.map(cat => {
+            const owners = categoryOwners[cat] || []
+            const search = pocSearch[cat] || ''
+            return (
+              <div key={cat} className="border border-gray-100 rounded-xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-900 text-sm">{cat}</span>
+                  <span className="text-xs text-gray-400">{owners.length} POC{owners.length !== 1 ? 's' : ''}</span>
+                </div>
+                {owners.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {owners.map(email => {
+                      const emp = allEmployees.find(e => e.email === email)
+                      return (
+                        <span key={email} className="flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                          {emp?.name || email.split('@')[0]}
+                          <button onClick={() => saveCategoryOwners(cat, owners.filter(e => e !== email))} className="hover:text-red-500 ml-0.5">×</button>
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+                <div className="relative">
+                  <input value={search} onChange={e => setPocSearch(p=>({...p,[cat]:e.target.value}))}
+                    placeholder="Search and add POC..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+                  {search && (
+                    <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-36 overflow-y-auto mt-1">
+                      {allEmployees
+                        .filter(e => !owners.includes(e.email) && (e.name.toLowerCase().includes(search.toLowerCase()) || e.email.toLowerCase().includes(search.toLowerCase())))
+                        .map(e => (
+                          <button key={e.email} onClick={() => { saveCategoryOwners(cat, [...owners, e.email]); setPocSearch(p=>({...p,[cat]:''})) }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-gray-900 flex items-center justify-between">
+                            <span className="font-medium">{e.name}</span>
+                            <span className="text-gray-400 text-xs">{e.email}</span>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                {pocSaving === cat && <p className="text-xs text-blue-500">Saving...</p>}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Create form */}
       {showForm && (
@@ -4812,12 +4906,20 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
               <input type="number" min={1} value={form.sla_hours} onChange={e => setForm(p=>({...p,sla_hours:parseInt(e.target.value)||24}))} className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
             </div>
           </div>
+          {/* Show auto-assign info for all, owner picker only for admin+ */}
+          <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
+            {(categoryOwners[form.category]||[]).length > 0
+              ? `🎯 This ticket will be auto-assigned to: ${(categoryOwners[form.category]||[]).map(e => allEmployees.find(emp=>emp.email===e)?.name || e.split('@')[0]).join(', ')}`
+              : '⚠️ No POC assigned for this category yet. Ticket will be unassigned.'}
+          </div>
+          {canManage && (
           <div>
-            <label className="text-xs text-gray-500 font-medium">Assign Owner</label>
+            <label className="text-xs text-gray-500 font-medium">Override Owner (optional)</label>
             <div className="mt-1">
               <OwnerPicker value={form.owner} onChange={v => setForm(p=>({...p,owner:v}))} />
             </div>
           </div>
+          )}
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">{uploading ? 'Uploading...' : '📎 Attach'}</button>
             <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={e => { Array.from(e.target.files||[]).forEach(uploadFile) }} className="hidden" />
