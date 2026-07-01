@@ -3000,8 +3000,9 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [allUsers, setAllUsers] = useState<{username: string, display_name: string | null}[]>([])
+  const [allUsers, setAllUsers] = useState<{username: string, display_name: string | null, client: string | null}[]>([])
   const [participantSearch, setParticipantSearch] = useState('')
+  const [participantClient, setParticipantClient] = useState<string>('All')
   const [viewHuddle, setViewHuddle] = useState<any | null>(null)
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
@@ -3027,8 +3028,8 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
   }
 
   async function loadUsers() {
-    const { data } = await supabase.from('employees').select('name, email').eq('active', true).order('name')
-    setAllUsers((data || []).map((e: any) => ({ username: e.email || e.name, display_name: e.name })))
+    const { data } = await supabase.from('employees').select('name, email, client').eq('active', true).order('name')
+    setAllUsers((data || []).map((e: any) => ({ username: e.email || e.name, display_name: e.name, client: e.client || null })))
   }
 
   function toggleParticipant(email: string) {
@@ -3183,6 +3184,15 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
                 {allUsers.every(u => form.participants.includes(u.username)) ? '✕ Deselect All' : '✓ Select All'}
               </button>
             </div>
+            {/* Client filter */}
+            <div className="flex gap-1 flex-wrap mb-2">
+              {(['All', 'EMMA', 'AB BSS', 'Harlan + Holden'] as string[]).map(c => (
+                <button key={c} onClick={() => setParticipantClient(c)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition ${participantClient === c ? 'bg-blue-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
             {/* Search box */}
             <input
               value={participantSearch}
@@ -3209,7 +3219,9 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
               {allUsers
                 .filter(u => {
                   const search = participantSearch.toLowerCase()
-                  return !search || (u.display_name || '').toLowerCase().includes(search) || u.username.toLowerCase().includes(search)
+                  const matchSearch = !search || (u.display_name || '').toLowerCase().includes(search) || u.username.toLowerCase().includes(search)
+                  const matchClient = participantClient === 'All' || u.client === participantClient
+                  return matchSearch && matchClient
                 })
                 .map(u => (
                   <button key={u.username} onClick={() => toggleParticipant(u.username)}
@@ -3224,7 +3236,9 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
               }
               {allUsers.filter(u => {
                 const s = participantSearch.toLowerCase()
-                return !s || (u.display_name||'').toLowerCase().includes(s) || u.username.toLowerCase().includes(s)
+                const matchSearch = !s || (u.display_name||'').toLowerCase().includes(s) || u.username.toLowerCase().includes(s)
+                const matchClient = participantClient === 'All' || u.client === participantClient
+                return matchSearch && matchClient
               }).length === 0 && (
                 <p className="text-center text-sm text-gray-400 py-4">No employees found</p>
               )}
