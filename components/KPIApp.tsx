@@ -655,7 +655,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
   const [approving, setApproving] = useState<string|null>(null)
   const isAdmin = ['super_admin','admin'].includes(userRole)
 
-  useEffect(() => { loadScores(); if (isAdmin) loadPending() }, [refreshKey])
+  useEffect(() => { loadScores(); if (isAdmin) loadPending() }, [refreshKey, lbMonth, lbYear])
 
   async function loadScores() {
     const now = new Date()
