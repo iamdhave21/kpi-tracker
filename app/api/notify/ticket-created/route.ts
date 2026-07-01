@@ -1,92 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
 
 export async function POST(req: NextRequest) {
   try {
-    const { ticketId, title, category, department, priority, createdBy } = await req.json()
+    const { ticketId, title, category, priority, createdBy, ownerEmails } = await req.json()
 
     if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
       return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
     }
 
-    const supabase = getSupabase()
-
-    // 1. Find employees tagged with this department (the new department-mapping feature)
-    const { data: deptEmployees } = await supabase
-      .from('employees')
-      .select('email, name')
-      .contains('departments', [department])
-      .eq('active', true)
-      .not('email', 'is', null)
-
-    const deptEmails = (deptEmployees || []).map(e => e.email).filter(Boolean) as string[]
-
-    // 2. Always include managers/admins/team leads as a safety net so nothing is missed
-    const { data: recipients } = await supabase
-      .from('app_users')
-      .select('email, username, role')
-      .in('role', ['super_admin', 'admin', 'team_lead'])
-      .eq('active', true)
-
-    const managerEmails = (recipients || [])
-      .map(r => r.email || `${r.username}@ab-businesssupport.com`)
-      .filter(Boolean)
-
-    // Merge and dedupe — department contacts first, managers as fallback/cc
-    const toEmails = Array.from(new Set([...deptEmails, ...managerEmails]))
-
+    // Only send to explicitly assigned POCs — no fallback blast
+    const toEmails: string[] = (ownerEmails || []).filter(Boolean)
     if (toEmails.length === 0) {
-      return NextResponse.json({ success: true, message: 'No recipients' })
+      return NextResponse.json({ success: true, message: 'No POCs assigned for this category' })
     }
 
     const transporter = nodemailer.createTransport({
       service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_PASS,
-      },
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS },
     })
 
     const priorityColors: Record<string, string> = {
-      Low: '#10b981',
-      Medium: '#f59e0b',
-      High: '#ef4444',
-      Urgent: '#dc2626',
+      Low: '#10b981', Medium: '#f59e0b', High: '#ef4444', Urgent: '#dc2626',
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://abbss-ops-portal.vercel.app'
-    const hasDeptContact = deptEmails.length > 0
-    const routingNote = hasDeptContact
-      ? `Routed to ${deptEmails.length} ${department} contact${deptEmails.length > 1 ? 's' : ''} + managers`
-      : `No one tagged for ${department} yet — sent to all managers/admins`
 
     await transporter.sendMail({
       from: `"AB BSS Operations Portal" <${process.env.GMAIL_USER}>`,
       to: toEmails.join(','),
-      subject: `🎫 [${department}] New Ticket: ${title}`,
+      subject: `🎫 [${category}] New Ticket: ${title}`,
       html: `
         <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
           <div style="background: #1e3a8a; padding: 24px; border-radius: 12px 12px 0 0;">
-            <h2 style="color: white; margin: 0; font-size: 18px;">🎫 New Ticket Submitted</h2>
-            <p style="color: #93c5fd; margin: 4px 0 0; font-size: 13px;">${routingNote}</p>
+            <h2 style="color: white; margin: 0; font-size: 18px;">🎫 New Ticket Assigned to You</h2>
+            <p style="color: #93c5fd; margin: 4px 0 0; font-size: 13px;">You are a Point of Contact for ${category} tickets</p>
           </div>
           <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 12px 12px;">
             <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px;">${title}</p>
             <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
               <tr style="border-bottom: 1px solid #f3f4f6;">
-                <td style="padding: 10px; color: #6b7280; font-size: 13px; width: 120px;">Department</td>
-                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${department}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #f3f4f6;">
-                <td style="padding: 10px; color: #6b7280; font-size: 13px;">Category</td>
+                <td style="padding: 10px; color: #6b7280; font-size: 13px; width: 120px;">Category</td>
                 <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${category}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f3f4f6;">
@@ -95,19 +49,18 @@ export async function POST(req: NextRequest) {
               </tr>
               <tr>
                 <td style="padding: 10px; color: #6b7280; font-size: 13px;">Submitted by</td>
-                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${createdBy}</td>
+                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${createdBy.split('@')[0]}</td>
               </tr>
             </table>
-            <a href="${appUrl}" style="display: inline-block; background: #1e3a8a; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 600;">View Ticket</a>
+            <a href="${appUrl}" style="display: inline-block; background: #1e3a8a; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 600;">View Ticket →</a>
             <p style="color: #6b7280; font-size: 12px; margin-top: 20px;">This is an automated notification from the AB BSS Operations Portal.</p>
           </div>
         </div>
       `
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, sent: toEmails.length })
   } catch (err: unknown) {
-    console.error('Email error:', err)
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed' }, { status: 500 })
   }
 }
