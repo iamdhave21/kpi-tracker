@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'tl-scorecard'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1321,13 +1321,14 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* TEAM LEAD TOOLS */}
-      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence'].includes(view as string)} />
+      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard'].includes(view as string)} />
       {!collapsed.tltools && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
           <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
           <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} dotColor="bg-indigo-400"/>
           <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+          <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
         </div>
       )}
 
@@ -1631,6 +1632,7 @@ export default function KPIApp() {
             {view === 'tasks' && <TasksPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='agent'?'employee_email':'agent_acknowledged', userRole==='agent'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
+            {view === 'tl-scorecard' && <TLScorecard currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
@@ -5643,6 +5645,285 @@ function ViewerCoachingBanner({ currentUser }: { currentUser: string | null }) {
         ))}
       </div>
       <p className="text-xs text-amber-600">👇 Scroll to the Coaching Log table below to sign & acknowledge each session.</p>
+    </div>
+  )
+}
+
+// -- TL Scorecard -------------------------------------------------------------
+function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m:string,t?:'success'|'error')=>void }) {
+  const isManager = userRole === 'super_admin' || userRole === 'admin'
+  const [period, setPeriod] = useState<'mtd'|'weekly'>('mtd')
+  const [selectedTL, setSelectedTL] = useState<string>(currentUser?.toLowerCase() || '')
+  const [tlList, setTlList] = useState<{email:string,name:string}[]>([])
+  const [score, setScore] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  // Period helpers
+  function getPeriodBounds() {
+    const now = new Date()
+    if (period === 'mtd') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1)
+      return { start: start.toISOString(), end: now.toISOString(), label: now.toLocaleDateString('en-US',{month:'long',year:'numeric'}) }
+    } else {
+      const day = now.getDay()
+      const monday = new Date(now); monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1)); monday.setHours(0,0,0,0)
+      return { start: monday.toISOString(), end: now.toISOString(), label: `Week of ${monday.toLocaleDateString('en-US',{month:'short',day:'numeric'})}` }
+    }
+  }
+
+  const monthLabel = new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'})
+
+  useEffect(() => {
+    if (isManager) loadTLList()
+    else { setSelectedTL(currentUser?.toLowerCase() || ''); }
+  }, [])
+
+  useEffect(() => {
+    if (selectedTL) loadScorecard()
+  }, [selectedTL, period])
+
+  async function loadTLList() {
+    const { data } = await supabase.from('app_users').select('username,display_name').eq('role','Team Lead').eq('active',true)
+    setTlList((data||[]).map((u:any) => ({ email: u.username, name: u.display_name || u.username.split('@')[0] })))
+    if (data && data.length > 0 && !selectedTL) setSelectedTL(data[0].username)
+  }
+
+  async function loadScorecard() {
+    if (!selectedTL) return
+    setLoading(true)
+    const { start, end } = getPeriodBounds()
+
+    // --- COMPLIANCE (30%) ---
+    // 1. Cadence compliance (avg daily/weekly/monthly for period)
+    const periods = ['daily','weekly','monthly']
+    let cadenceTotal = 0
+    for (const freq of periods) {
+      const { data: items } = await supabase.from('cadence_items').select('id').is('retired_at',null).eq('frequency',freq)
+      const totalItems = (items||[]).length
+      if (totalItems === 0) { cadenceTotal += 100; continue }
+      const { data: completions } = await supabase.from('cadence_completions')
+        .select('period_key,done').eq('team_lead_email',selectedTL).eq('frequency',freq).eq('done',true)
+        .gte('period_key', start.slice(0,10)).lte('period_key', end.slice(0,10))
+      const uniquePeriods = new Set((completions||[]).map((c:any)=>c.period_key))
+      const avgRate = uniquePeriods.size > 0
+        ? Array.from(uniquePeriods).reduce((sum,pk) => {
+            const count = (completions||[]).filter((c:any)=>c.period_key===pk).length
+            return sum + Math.min(count/totalItems,1)*100
+          }, 0) / uniquePeriods.size
+        : 0
+      cadenceTotal += avgRate
+    }
+    const cadenceScore = cadenceTotal / 3
+
+    // 2. Coaching sessions (target: 2/month or 0.5/week)
+    const coachTarget = period === 'mtd' ? 2 : 1
+    const { count: coachCount } = await supabase.from('coaching_logs').select('id',{count:'exact',head:true})
+      .eq('coached_by',selectedTL).gte('date',start.slice(0,10)).lte('date',end.slice(0,10))
+    const coachScore = Math.min((coachCount||0)/coachTarget,1)*100
+
+    // 3. Observations (target: 4/month or 1/week)
+    const obsTarget = period === 'mtd' ? 4 : 1
+    const { count: obsCount } = await supabase.from('observations').select('id',{count:'exact',head:true})
+      .eq('observed_by',selectedTL).gte('created_at',start).lte('created_at',end)
+    const obsScore = Math.min((obsCount||0)/obsTarget,1)*100
+
+    // 4. Tickets resolved
+    const { count: ticketsOwned } = await supabase.from('tickets').select('id',{count:'exact',head:true})
+      .eq('owner',selectedTL).gte('created_at',start).lte('created_at',end)
+    const { count: ticketsResolved } = await supabase.from('tickets').select('id',{count:'exact',head:true})
+      .eq('owner',selectedTL).in('status',['Resolved','Closed']).gte('created_at',start).lte('created_at',end)
+    const ticketScore = (ticketsOwned||0) > 0 ? Math.min((ticketsResolved||0)/(ticketsOwned||1),1)*100 : 100
+
+    // 5. Huddle notes (target: 4/month or 1/week)
+    const huddleTarget = period === 'mtd' ? 4 : 1
+    const { count: huddleCount } = await supabase.from('huddle_notes').select('id',{count:'exact',head:true})
+      .eq('created_by',selectedTL).gte('created_at',start).lte('created_at',end)
+    const huddleScore = Math.min((huddleCount||0)/huddleTarget,1)*100
+
+    // 6. KPI entry compliance (target: 1 entry per month)
+    const { count: kpiCount } = await supabase.from('kpi_records').select('id',{count:'exact',head:true})
+      .eq('month_label',monthLabel)
+    const kpiScore = (kpiCount||0) > 0 ? 100 : 0
+
+    const complianceSubScores = { cadenceScore, coachScore, obsScore, ticketScore, huddleScore, kpiScore }
+    const complianceScore = (cadenceScore + coachScore + obsScore + ticketScore + huddleScore + kpiScore) / 6
+
+    // --- TEAM PERFORMANCE (50%) ---
+    // Get employees in teams led by this TL
+    const { data: tlTeams } = await supabase.from('teams').select('id').eq('active',true)
+    const teamIds = (tlTeams||[]).map((t:any)=>t.id)
+    let teamPerfScore = 0
+    if (teamIds.length > 0) {
+      const { data: memberIds } = await supabase.from('team_members').select('employee_id').in('team_id',teamIds)
+      const empIds = (memberIds||[]).map((m:any)=>m.employee_id)
+      if (empIds.length > 0) {
+        const { data: kpiData } = await supabase.from('kpi_records').select('productivity,quality,attendance')
+          .in('employee_id',empIds).eq('month_label',monthLabel)
+        if ((kpiData||[]).length > 0) {
+          const avg = (kpiData||[]).reduce((sum:number,r:any) => sum + ((r.productivity||0)+(r.quality||0)+(r.attendance||0))/3,0) / (kpiData||[]).length
+          teamPerfScore = Math.min(avg,100)
+        }
+      }
+    }
+
+    // --- INDIVIDUAL ATTENDANCE (20%) ---
+    // TL's own attendance KPI for the month
+    const { data: tlEmployee } = await supabase.from('employees').select('id').ilike('email',selectedTL).maybeSingle()
+    let attendanceScore = 0
+    if (tlEmployee) {
+      const { data: tlKPI } = await supabase.from('kpi_records').select('attendance')
+        .eq('employee_id',tlEmployee.id).eq('month_label',monthLabel).maybeSingle()
+      attendanceScore = tlKPI?.attendance || 0
+    }
+
+    // --- OVERALL ---
+    const overall = (complianceScore * 0.30) + (teamPerfScore * 0.50) + (attendanceScore * 0.20)
+
+    setScore({
+      overall, complianceScore, teamPerfScore, attendanceScore,
+      ...complianceSubScores,
+      coachCount: coachCount||0, coachTarget,
+      obsCount: obsCount||0, obsTarget,
+      ticketsOwned: ticketsOwned||0, ticketsResolved: ticketsResolved||0,
+      huddleCount: huddleCount||0, huddleTarget,
+      kpiCount: kpiCount||0,
+    })
+    setLoading(false)
+  }
+
+  function ScoreRing({ value, size=80, color }: { value:number, size?:number, color:string }) {
+    const r = (size-10)/2, circ = 2*Math.PI*r
+    const pct = Math.min(Math.max(value,0),100)
+    return (
+      <svg width={size} height={size} className="transform -rotate-90">
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f3f4f6" strokeWidth={8}/>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={8}
+          strokeDasharray={circ} strokeDashoffset={circ*(1-pct/100)} strokeLinecap="round"/>
+        <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="middle"
+          className="transform rotate-90" style={{transform:`rotate(90deg)`,transformOrigin:`${size/2}px ${size/2}px`}}
+          fontSize={size>70?18:13} fontWeight="700" fill={color}>{Math.round(pct)}%</text>
+      </svg>
+    )
+  }
+
+  function getColor(v:number) { return v>=80?'#10b981':v>=60?'#f59e0b':'#ef4444' }
+
+  const SubItem = ({ label, score, count, target, extra }: { label:string, score:number, count?:number, target?:number, extra?:string }) => (
+    <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-gray-700 font-medium">{label}</p>
+        {count !== undefined && target !== undefined && (
+          <p className="text-xs text-gray-400 mt-0.5">{count} of {target} {extra||''}</p>
+        )}
+        {extra && count === undefined && <p className="text-xs text-gray-400 mt-0.5">{extra}</p>}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="w-24 bg-gray-100 rounded-full h-2">
+          <div className="h-2 rounded-full transition-all" style={{width:`${Math.min(score,100)}%`,background:getColor(score)}}/>
+        </div>
+        <span className="text-sm font-semibold w-10 text-right" style={{color:getColor(score)}}>{Math.round(score)}%</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Team Lead Scorecard</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Performance overview across Compliance, Team, and Attendance</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {isManager && tlList.length > 0 && (
+            <select value={selectedTL} onChange={e=>setSelectedTL(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900">
+              {tlList.map(tl => <option key={tl.email} value={tl.email}>{tl.name}</option>)}
+            </select>
+          )}
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+            <button onClick={()=>setPeriod('mtd')} className={`px-3 py-1.5 font-medium transition ${period==='mtd'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>Month to Date</button>
+            <button onClick={()=>setPeriod('weekly')} className={`px-3 py-1.5 font-medium transition ${period==='weekly'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>This Week</button>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-16 text-gray-400 text-sm">Loading scorecard...</div>
+      ) : !score ? (
+        <div className="text-center py-16 text-gray-400 text-sm">No data available.</div>
+      ) : (
+        <>
+        {/* Overall score */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-6">
+          <div className="flex items-center gap-6">
+            <ScoreRing value={score.overall} size={96} color={getColor(score.overall)} />
+            <div>
+              <p className="text-2xl font-bold text-gray-900">{Math.round(score.overall)}%</p>
+              <p className="text-sm text-gray-500">Overall Score</p>
+              <p className="text-xs text-gray-400 mt-1">{getPeriodBounds().label}</p>
+            </div>
+            <div className="ml-auto flex items-center gap-6 flex-wrap">
+              {[
+                {label:'Compliance',val:score.complianceScore,weight:'30%'},
+                {label:'Team Perf.',val:score.teamPerfScore,weight:'50%'},
+                {label:'Attendance',val:score.attendanceScore,weight:'20%'},
+              ].map(c => (
+                <div key={c.label} className="text-center">
+                  <ScoreRing value={c.val} size={60} color={getColor(c.val)} />
+                  <p className="text-xs text-gray-500 mt-1">{c.label}</p>
+                  <p className="text-xs text-gray-400">{c.weight}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Compliance breakdown */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900">Compliance Breakdown</h3>
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">30% weight</span>
+          </div>
+          <SubItem label="Cadence Compliance" score={score.cadenceScore} extra="Avg across daily, weekly, monthly" />
+          <SubItem label="Coaching Sessions" score={score.coachScore} count={score.coachCount} target={score.coachTarget} extra="sessions" />
+          <SubItem label="Observations Logged" score={score.obsScore} count={score.obsCount} target={score.obsTarget} extra="observations" />
+          <SubItem label="Tickets Resolved" score={score.ticketScore} count={score.ticketsResolved} target={score.ticketsOwned} extra="tickets owned" />
+          <SubItem label="Huddle Notes Posted" score={score.huddleScore} count={score.huddleCount} target={score.huddleTarget} extra="huddles" />
+          <SubItem label="KPI Entry Compliance" score={score.kpiScore} extra={score.kpiCount > 0 ? 'Entry submitted this month' : 'No entry submitted yet'} />
+        </div>
+
+        {/* Team Performance */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900">Team Performance</h3>
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">50% weight</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <ScoreRing value={score.teamPerfScore} size={70} color={getColor(score.teamPerfScore)} />
+            <div>
+              <p className="text-sm text-gray-700">Average KPI score of all team members</p>
+              <p className="text-xs text-gray-400 mt-0.5">Based on productivity, quality, and attendance from KPI Entry for {monthLabel}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Individual Attendance */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900">Individual Attendance</h3>
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">20% weight</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <ScoreRing value={score.attendanceScore} size={70} color={getColor(score.attendanceScore)} />
+            <div>
+              <p className="text-sm text-gray-700">Team Lead's personal attendance score</p>
+              <p className="text-xs text-gray-400 mt-0.5">From KPI Entry attendance field for {monthLabel}</p>
+              {score.attendanceScore === 0 && <p className="text-xs text-amber-500 mt-1">⚠️ No attendance record found for this month</p>}
+            </div>
+          </div>
+        </div>
+        </>
+      )}
     </div>
   )
 }
