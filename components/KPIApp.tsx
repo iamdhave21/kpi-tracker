@@ -28,7 +28,7 @@ const ROLE_LABELS: Record<string, string> = { super_admin: 'Super Admin', admin:
 const canEditEmployees = (role: string) => role === 'super_admin' || role === 'admin'
 const canManageTeams = (role: string) => role === 'super_admin' || role === 'admin'
 const canViewAllObservations = (role: string) => role === 'super_admin' || role === 'admin'
-const canViewTeamObservations = (role: string) => role === 'super_admin' || role === 'admin' || role === 'team_lead'
+const canViewTeamObservations = (role: string) => role === 'super_admin' || role === 'admin' || role === 'Team Lead'
 type PerfView = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 type Toast = { msg: string; type: 'success' | 'error' }
 
@@ -126,7 +126,7 @@ function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast:
   const [uploading, setUploading] = useState(false)
   const [currentBg, setCurrentBg] = useState<string|null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const canUpload = ['super_admin','admin','team_lead'].includes(userRole)
+  const canUpload = ['super_admin','admin','Team Lead'].includes(userRole)
 
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
@@ -189,7 +189,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const [uploading, setUploading] = useState(false)
   const [posting, setPosting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const canPost = ['super_admin','admin','team_lead'].includes(userRole)
+  const canPost = ['super_admin','admin','Team Lead'].includes(userRole)
   const canManage = ['super_admin','admin'].includes(userRole)
   const TAG_COLORS: Record<string,string> = {
     Urgent:'bg-red-100 text-red-700 border border-red-200',
@@ -261,7 +261,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   const unread = announcements.filter(a => !acks[a.id])
   const [bgUrl, setBgUrl] = useState<string|null|undefined>(undefined)
   const [editingBg, setEditingBg] = useState(false)
-  const canChangeBg = ['super_admin','admin','team_lead'].includes(userRole)
+  const canChangeBg = ['super_admin','admin','Team Lead'].includes(userRole)
 
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
@@ -904,6 +904,24 @@ function ForcedPasswordChange({ username, onDone }: { username: string, onDone: 
   )
 }
 
+// -- No Access Page ----------------------------------------------------------
+function NoAccessPage({ userRole, onBack }: { userRole: string, onBack: () => void }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center space-y-4">
+        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+          <span className="text-3xl">🔒</span>
+        </div>
+        <h1 className="text-xl font-bold text-gray-900">Access Restricted</h1>
+        <p className="text-sm text-gray-500">Your current role (<span className="font-medium text-gray-700">{userRole}</span>) does not have permission to view this page.</p>
+        <p className="text-xs text-gray-400">If you believe this is an error, please contact your Super Admin.</p>
+        <button onClick={onBack} className="mt-4 bg-blue-900 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-800 transition">← Go Back</button>
+      </div>
+    </div>
+  )
+}
+
+// -- Login Screen ------------------------------------------------------------
 function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePassword?: boolean) => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -1349,7 +1367,7 @@ export default function KPIApp() {
   const [user, setUser] = useState<string | null>(null)
   const [mustChangePassword, setMustChangePassword] = useState(false)
   const [displayName, setDisplayName] = useState<string>('')
-  const [userRole, setUserRole] = useState<string>('viewer')
+  const [userRole, setUserRole] = useState<string>('agent')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
   const [pendingTaskCount, setPendingTaskCount] = useState(0)
   const [favoriteViews, setFavoriteViews] = useState<string[]>([])
@@ -1359,8 +1377,8 @@ export default function KPIApp() {
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
       .then(({data}) => { if (data?.value) setBgUrl(data.value) })
   }, [])
-  const [previewAs, setPreviewAs] = useState<'self'|'viewer'>('self')
-  const effectiveRole = previewAs === 'viewer' ? 'viewer' : userRole
+  const [previewAs, setPreviewAs] = useState<'self'|'agent'>('self')
+  const effectiveRole = previewAs === 'agent' ? 'agent' : userRole
   const [view, setView] = useState<View>('announcements')
   const [perfView, setPerfView] = useState<PerfView>('monthly')
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -1393,7 +1411,7 @@ export default function KPIApp() {
 
       // First check for an existing local session
       const stored = localStorage.getItem('kpi_user')
-      if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'viewer'); setDisplayName(u.display_name || u.username?.split('@')[0] || u.username); setMustChangePassword(!!u.mustChangePassword); return }
+      if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'agent'); setDisplayName(u.display_name || u.username?.split('@')[0] || u.username); setMustChangePassword(!!u.mustChangePassword); return }
 
       // Check for Google OAuth session (set by callback route via cookie or Supabase session)
       // Also try to restore session from cookie tokens set by callback
@@ -1413,7 +1431,7 @@ export default function KPIApp() {
         const email = session.user.email.toLowerCase()
         // Look up their role in app_users
         const { data: appUser } = await supabase.from('app_users').select('*').eq('email', email).single()
-        let role = 'viewer'
+        let role = 'agent'
         let displayName = email.split('@')[0]
         let mustChange = false
         if (appUser) {
@@ -1435,9 +1453,9 @@ export default function KPIApp() {
 
   // Load pending coaching acknowledgments count for viewers
   useEffect(() => {
-    if (!user || (userRole !== 'viewer' && userRole !== 'team_lead' && userRole !== 'admin' && userRole !== 'super_admin')) return
+    if (!user || (userRole !== 'agent' && userRole !== 'Team Lead' && userRole !== 'admin' && userRole !== 'super_admin')) return
     async function loadPending() {
-      if (userRole === 'viewer') {
+      if (userRole === 'agent') {
         // Agents: count sessions assigned to them requiring acknowledgment
         const { data } = await supabase.from('coaching_logs')
           .select('id')
@@ -1463,7 +1481,7 @@ export default function KPIApp() {
     if (!user) return
     async function loadPendingTasks() {
       let q = supabase.from('tasks').select('id').eq('is_done', false)
-      if (userRole === 'viewer') q = q.eq('assigned_to', user!.toLowerCase())
+      if (userRole === 'agent') q = q.eq('assigned_to', user!.toLowerCase())
       const { data } = await q
       setPendingTaskCount((data || []).length)
     }
@@ -1507,7 +1525,7 @@ export default function KPIApp() {
     setLoading(false)
   }
 
-  if (!user) return <LoginScreen onLogin={(u, r, mcp) => { setUser(u); setUserRole(r || 'viewer'); setMustChangePassword(!!mcp); setLoading(true) }} />
+  if (!user) return <LoginScreen onLogin={(u, r, mcp) => { setUser(u); setUserRole(r || 'agent'); setMustChangePassword(!!mcp); setLoading(true) }} />
 
   if (mustChangePassword) return <ForcedPasswordChange username={user} onDone={() => setMustChangePassword(false)} />
 
@@ -1575,14 +1593,14 @@ export default function KPIApp() {
           <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'dashboard-team' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
           {/* Preview mode banner */}
           {(userRole === 'super_admin' || userRole === 'admin') && (
-            <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'viewer' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
+            <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'agent' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
               <div className="flex items-center gap-2">
-                {previewAs === 'viewer' ? <AlertCircle className="w-4 h-4 text-amber-500"/> : <Shield className="w-4 h-4 text-blue-500"/>}
-                {previewAs === 'viewer' ? 'Previewing as Agent — notes and edits are hidden' : `Viewing as ${ROLE_LABELS[userRole] || 'Admin'} — full access`}
+                {previewAs === 'agent' ? <AlertCircle className="w-4 h-4 text-amber-500"/> : <Shield className="w-4 h-4 text-blue-500"/>}
+                {previewAs === 'agent' ? 'Previewing as Agent — notes and edits are hidden' : `Viewing as ${ROLE_LABELS[userRole] || 'Admin'} — full access`}
               </div>
-              <button onClick={() => setPreviewAs(previewAs === 'viewer' ? 'self' : 'viewer')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${previewAs === 'viewer' ? 'bg-amber-200 hover:bg-amber-300 text-amber-900' : 'bg-blue-200 hover:bg-blue-300 text-blue-900'}`}>
-                {previewAs === 'viewer' ? `← Back to ${ROLE_LABELS[userRole] || 'Admin'} View` : '👁 Preview as Agent'}
+              <button onClick={() => setPreviewAs(previewAs === 'agent' ? 'self' : 'agent')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${previewAs === 'agent' ? 'bg-amber-200 hover:bg-amber-300 text-amber-900' : 'bg-blue-200 hover:bg-blue-300 text-blue-900'}`}>
+                {previewAs === 'agent' ? `← Back to ${ROLE_LABELS[userRole] || 'Admin'} View` : '👁 Preview as Agent'}
               </button>
             </div>
           )}
@@ -1593,27 +1611,28 @@ export default function KPIApp() {
             {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} userRole={effectiveRole} />}
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} />}
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
-            {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
-            {view === 'entry' && userRole === 'viewer' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
+            {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
+            {view === 'entry' && userRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} userRole={userRole} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} userRole={userRole} />}
-            {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead') && <ObservationsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} />}
-            {view === 'observations' && userRole === 'viewer' && <MyObservations employees={employees} currentUser={user} />}
+            {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <ObservationsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} />}
+            {view === 'observations' && userRole === 'agent' && <MyObservations employees={employees} currentUser={user} />}
             {view === 'matrix' && (userRole === 'super_admin' || userRole === 'admin') && (
               <div className="max-w-4xl mx-auto space-y-6">
                 <div><h2 className="text-xl font-bold text-blue-900">Matrix</h2><p className="text-sm text-gray-500">Track features shipped, issues to fix, and SQL still pending in Supabase</p></div>
                 <MatrixPanel currentUser={user} showToast={showToast} />
               </div>
             )}
-            {view === 'settings' && <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} />}
+            {view === 'matrix' && userRole !== 'super_admin' && userRole !== 'admin' && <NoAccessPage userRole={userRole} onBack={() => setView('announcements')} />}
+            {view === 'settings' && (userRole === 'super_admin' ? <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} /> : <NoAccessPage userRole={userRole} onBack={() => setView('announcements')} />)}
             {view === 'org-chart' && <OrgChart employees={employees} showToast={showToast} />}
             {view === 'tickets' && <TicketsPanel currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tasks' && <TasksPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
-            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='viewer'?'employee_email':'agent_acknowledged', userRole==='viewer'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
+            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='agent'?'employee_email':'agent_acknowledged', userRole==='agent'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
             {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
-            {view === 'hris-records' && (userRole === 'viewer' || userRole === 'team_lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
+            {view === 'hris-records' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
             {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
             {view === 'cadence' && <OperatingCadence currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
@@ -1755,7 +1774,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
     supabase.from('teams').select('id, name').order('name').then(({data}) => setTeams(data||[]))
     supabase.from('team_members').select('team_id, employee_id').then(({data: memberData}) => {
       setMembers(memberData||[])
-      if (userRole === 'viewer' && currentUser) {
+      if (userRole === 'agent' && currentUser) {
         // Get linked employee_id from app_users
         // Find employee by email match
         supabase.from('employees').select('id').eq('email', currentUser).then(({data: empData}) => {
@@ -1776,7 +1795,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
     const q = searchQ.toLowerCase()
     const teamEmpIds = selTeam === 'all' ? null : new Set(members.filter(m => m.team_id === selTeam).map(m => m.employee_id))
     // Viewers only see their own team members
-    const viewerFilter = userRole === 'viewer' && myTeamEmpIds ? myTeamEmpIds : null
+    const viewerFilter = userRole === 'agent' && myTeamEmpIds ? myTeamEmpIds : null
     let base = records.filter(r => activeEmpIds.has(r.employee_id) && (teamEmpIds === null || teamEmpIds.has(r.employee_id)) && (viewerFilter === null || viewerFilter.has(r.employee_id)))
     if (perfView === 'monthly' || perfView === 'weekly') {
       base = base.filter(r => (r.month_label||'').toLowerCase().includes(selMonth.toLowerCase()) && (r.month_label||'').includes(selYear))
@@ -1815,7 +1834,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
 
   return (
     <div className="space-y-6">
-      {editRecord && userRole !== 'viewer' && <EditScoreModal record={editRecord} currentUser={currentUser} onSaved={onEditRecord} onClose={() => setEditRecord(null)} showToast={showToast} />}
+      {editRecord && userRole !== 'agent' && <EditScoreModal record={editRecord} currentUser={currentUser} onSaved={onEditRecord} onClose={() => setEditRecord(null)} showToast={showToast} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -1883,7 +1902,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
-              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall',...(userRole !== 'viewer' ? ['Notes',''] : [])].map(h => (
+              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall',...(userRole !== 'agent' ? ['Notes',''] : [])].map(h => (
                 <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 20%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
               ))}
             </tr></thead>
@@ -1899,8 +1918,8 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.efficiency)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.feedback)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                  {userRole !== 'viewer' && <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>}
-                  {userRole !== 'viewer' && <td className="px-4 py-3">
+                  {userRole !== 'agent' && <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>}
+                  {userRole !== 'agent' && <td className="px-4 py-3">
                     {(perfView==='monthly'||perfView==='weekly') && <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>}
                   </td>}
                 </tr>
@@ -2185,12 +2204,13 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [editDepartments, setEditDepartments] = useState<string[]>([])
   const [editEmpType, setEditEmpType] = useState('Agent')
   const [editClient, setEditClient] = useState(CLIENTS[0])
+  const [editPortalRole, setEditPortalRole] = useState<string>('agent')
   const [searchQ, setSearchQ] = useState('')
   const [filterClient, setFilterClient] = useState('All')
   const [showInactive, setShowInactive] = useState(false)
   const [expandedNames, setExpandedNames] = useState<Set<string>>(new Set())
-  const canExport = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
-  const canManagePhotos = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const canExport = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
+  const canManagePhotos = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
   const canEdit = canEditEmployees(userRole)
   const [avatarMap, setAvatarMap] = useState<Record<string, string>>({})
   const [uploadingFor, setUploadingFor] = useState<string|null>(null)
@@ -2315,12 +2335,16 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         await supabase.from('app_users').insert({
           email: emailLower,
           name: editName,
-          role: 'viewer',
+          role: editPortalRole || 'agent',
           password_hash: tempPassword,
           must_change_password: true,
         })
         showToast(`Login created for ${emailLower} — temporary password: ${tempPassword} (they'll be required to set their own on first login)`, 'success')
       } else {
+        // Update role if super_admin is editing
+        if (userRole === 'super_admin') {
+          await supabase.from('app_users').update({ role: editPortalRole }).eq('email', emailLower)
+        }
         showToast(`Email updated — login already exists for ${emailLower}`, 'success')
       }
     }
@@ -2504,7 +2528,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                        <button onClick={()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0])}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0]);if(emps[0].email){const{data}=await supabase.from('app_users').select('role').eq('email',emps[0].email.toLowerCase()).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -2545,6 +2569,17 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                       <label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
                       <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/>
                     </div>
+                    {userRole === 'super_admin' && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Portal Role</label>
+                      <select value={editPortalRole} onChange={e=>setEditPortalRole(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                        <option value="agent">Agent</option>
+                        <option value="Team Lead">Team Lead</option>
+                        <option value="admin">Admin</option>
+                        <option value="super_admin">Super Admin</option>
+                      </select>
+                    </div>
+                    )}
 
                   </div>
                   <div className="mb-3">
@@ -2583,7 +2618,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                        <button onClick={()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0])}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0]);if(emp.email){const{data}=await supabase.from('app_users').select('role').eq('email',emp.email.toLowerCase()).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -2607,6 +2642,15 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                           </select></div>
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
                           <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/></div>
+                        {userRole === 'super_admin' && (
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Portal Role</label>
+                          <select value={editPortalRole} onChange={e=>setEditPortalRole(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                            <option value="agent">Agent</option>
+                            <option value="Team Lead">Team Lead</option>
+                            <option value="admin">Admin</option>
+                            <option value="super_admin">Super Admin</option>
+                          </select></div>
+                        )}
 
                       </div>
                       <div className="mb-3">
@@ -2799,7 +2843,7 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
   const [loading, setLoading] = useState(true)
   const [selectedEmpId, setSelectedEmpId] = useState('')
   const [newPass, setNewPass] = useState('')
-  const [newRole, setNewRole] = useState('viewer')
+  const [newRole, setNewRole] = useState('agent')
 
   const [saving, setSaving] = useState(false)
   const [resetUserId, setResetUserId] = useState<string|null>(null)
@@ -2844,7 +2888,7 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
 
       showToast(`Login created for ${selectedEmp.name} (${email})!`)
       fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: email, newRole, addedBy: currentUser || 'admin' }) }).catch(() => {})
-      setSelectedEmpId(''); setNewPass(''); setNewRole('viewer')
+      setSelectedEmpId(''); setNewPass(''); setNewRole('agent')
       loadUsers()
     } catch(err:unknown) { showToast(err instanceof Error ? err.message : 'Failed', 'error') }
     setSaving(false)
@@ -2997,7 +3041,7 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
 
 // -- Huddle Notes ------------------------------------------------------------
 function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const canCreate = ['super_admin','admin','team_lead'].includes(userRole)
+  const canCreate = ['super_admin','admin','Team Lead'].includes(userRole)
   const [huddles, setHuddles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -3422,7 +3466,7 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
   const [cadenceItems, setCadenceItems] = useState<CadenceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
-  const canViewCompliance = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const canViewCompliance = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
   const canManageItems = userRole === 'super_admin' || userRole === 'admin'
 
   // Add task form state
@@ -4185,7 +4229,7 @@ const BCP_CATEGORY_COLORS: Record<string, string> = {
 }
 
 function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
   const [tasks, setTasks] = useState<BCPTask[]>([])
   const [coverage, setCoverage] = useState<Record<string, string[]>>({}) // task_id -> employee_ids[]
   const [loading, setLoading] = useState(true)
@@ -4388,7 +4432,7 @@ type AppTask = {
 }
 
 function TasksPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const canAssign = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const canAssign = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
   const [tasks, setTasks] = useState<AppTask[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -4521,7 +4565,7 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
 }
 
 function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
+  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -4857,7 +4901,7 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
   // Manager/Super Admin see everyone (no scoping applied).
   useEffect(() => {
     async function loadMyTeamScope() {
-      if (userRole !== 'team_lead' || !currentUser) { setMyTeamEmployeeIds(null); return }
+      if (userRole !== 'Team Lead' || !currentUser) { setMyTeamEmployeeIds(null); return }
       const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
       if (!myEmp) { setMyTeamEmployeeIds([]); return }
       const { data: myTeams } = await supabase.from('teams').select('id').eq('team_lead_id', myEmp.id)
@@ -5208,7 +5252,7 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
 }
 
 function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>(userRole === 'viewer' ? 'password' : 'users')
+  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>(userRole === 'agent' ? 'password' : 'users')
   const [oldPassword, setOldPassword] = useState('')
   const [newPass, setNewPass] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
@@ -5378,8 +5422,8 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange
   { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, onAckChange?: () => void }) {
 
   const [activeTab, setActiveTab] = useState<'coaching'|'compliance'>('coaching')
-  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'team_lead'
-  const isViewer = userRole === 'viewer'
+  const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
+  const isViewer = userRole === 'agent'
 
   return (
     <div className="space-y-6">
@@ -5439,7 +5483,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   async function loadLogs() {
     setLoading(true)
     let query = supabase.from('coaching_logs').select('*').order('date', { ascending: false })
-    if (userRole === 'viewer' && currentUser) {
+    if (userRole === 'agent' && currentUser) {
       query = query.eq('employee_email', currentUser.toLowerCase())
     }
     const { data } = await query
@@ -5551,7 +5595,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
       </div>
 
       {/* Pending acknowledgment banner for agents */}
-      {userRole === 'viewer' && (() => {
+      {userRole === 'agent' && (() => {
         const pending = logs.filter(l => l.requires_acknowledgment && !l.agent_acknowledged)
         return pending.length > 0 ? (
           <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-center gap-3">
@@ -5744,7 +5788,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Acknowledged</span>
                             {log.agent_acknowledged_at && <p className="text-xs text-gray-400 mt-0.5">{new Date(log.agent_acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</p>}
                           </div>
-                        ) : userRole === 'viewer' ? (
+                        ) : userRole === 'agent' ? (
                           <button onClick={() => acknowledgeCoaching(log.id)} disabled={ackLoading === log.id}
                             className="flex items-center gap-1 bg-blue-700 hover:bg-blue-800 text-white px-3 py-1 rounded-lg text-xs font-medium transition disabled:opacity-50">
                             {ackLoading === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"/> : '✍️'} Sign & Acknowledge
@@ -6166,7 +6210,7 @@ const DOC_ICON: Record<string, string> = { 'Resume': '📄', 'CV': '📋', 'Cont
 
 function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
-  const isViewer = userRole === 'viewer' || userRole === 'team_lead'
+  const isViewer = userRole === 'agent' || userRole === 'Team Lead'
   const [tab, setTab] = useState<'compliance'|'upload'|'my-docs'>('compliance')
   const [allDocs, setAllDocs] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
