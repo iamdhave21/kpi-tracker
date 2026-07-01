@@ -5653,7 +5653,7 @@ function ViewerCoachingBanner({ currentUser }: { currentUser: string | null }) {
 function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m:string,t?:'success'|'error')=>void }) {
   const isManager = userRole === 'super_admin' || userRole === 'admin'
   const [period, setPeriod] = useState<'mtd'|'weekly'>('mtd')
-  const [selectedTL, setSelectedTL] = useState<string>(currentUser?.toLowerCase() || '')
+  const [selectedTL, setSelectedTL] = useState<string>('')
   const [tlList, setTlList] = useState<{email:string,name:string}[]>([])
   const [score, setScore] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -5676,7 +5676,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   useEffect(() => {
     if (isManager) loadTLList()
     else {
-      // Look up employee ID by email for the current TL
+      // For Team Lead — look up their employee ID by email
       supabase.from('employees').select('id').ilike('email', currentUser?.toLowerCase() || '').maybeSingle()
         .then(({ data }) => { if (data?.id) setSelectedTL(data.id) })
     }
@@ -5704,7 +5704,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
     })
     list.sort((a,b) => a.name.localeCompare(b.name))
     setTlList(list as any)
-    if (list.length > 0 && !selectedTL) setSelectedTL(list[0].empId)
+    if (list.length > 0) setSelectedTL(list[0].empId)
   }
 
   async function loadScorecard() {
