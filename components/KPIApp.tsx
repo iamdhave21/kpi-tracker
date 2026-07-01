@@ -1907,17 +1907,20 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
           {label:'Employees',value:ranked.length,icon:<Users className="w-5 h-5 text-blue-500"/>,bg:'bg-blue-50'},
           {label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A',icon:<BarChart2 className="w-5 h-5 text-purple-500"/>,bg:'bg-purple-50'},
           {label:'Perfect (100%)',value:ranked.filter(r=>(r.overall_score||0)>=0.9999).length,icon:<Award className="w-5 h-5 text-emerald-500"/>,bg:'bg-emerald-50'},
-          {label:'At Risk (<97%)',value:ranked.filter(r=>(r.overall_score||0)<0.97).length,icon:<AlertCircle className="w-5 h-5 text-red-500"/>,bg:'bg-red-50',clickable:true},
         ].map(c => (
-          <div key={c.label} onClick={(c as any).clickable ? () => setShowAtRisk(v=>!v) : undefined}
-            className={`bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${(c as any).clickable ? 'cursor-pointer hover:border-red-300' : ''}`}>
+          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
             <div className={`${c.bg} p-2 rounded-lg`}>{c.icon}</div>
-            <div>
-              <p className="text-xs text-gray-500">{c.label}{(c as any).clickable && <span className="ml-1 text-blue-500 text-xs">{showAtRisk ? '▲' : '▼'}</span>}</p>
-              <p className="text-lg font-bold text-gray-900">{c.value}</p>
-            </div>
+            <div><p className="text-xs text-gray-500">{c.label}</p><p className="text-lg font-bold text-gray-900">{c.value}</p></div>
           </div>
         ))}
+        {/* At Risk - clickable */}
+        <div onClick={() => setShowAtRisk(v=>!v)} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer hover:border-red-300">
+          <div className="bg-red-50 p-2 rounded-lg"><AlertCircle className="w-5 h-5 text-red-500"/></div>
+          <div>
+            <p className="text-xs text-gray-500">At Risk (&lt;97%) <span className="text-blue-500">{showAtRisk ? '▲' : '▼'}</span></p>
+            <p className="text-lg font-bold text-gray-900">{ranked.filter(r=>(r.overall_score||0)<0.97).length}</p>
+          </div>
+        </div>
       </div>
 
       {/* At Risk panel */}
