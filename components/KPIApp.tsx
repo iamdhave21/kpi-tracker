@@ -2341,11 +2341,16 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         })
         showToast(`Login created for ${emailLower} — temporary password: ${tempPassword} (they'll be required to set their own on first login)`, 'success')
       } else {
-        // Update role if super_admin is editing
+        // Update role if super_admin is editing — try both email and username columns
         if (userRole === 'super_admin') {
-          await supabase.from('app_users').update({ role: editPortalRole }).eq('email', emailLower)
+          const { error: roleErr } = await supabase.from('app_users')
+            .update({ role: editPortalRole })
+            .or(`email.eq.${emailLower},username.eq.${emailLower}`)
+          if (roleErr) showToast('Portal role update failed: ' + roleErr.message, 'error')
+          else showToast(`Portal role updated to ${editPortalRole}`, 'success')
+        } else {
+          showToast(`Email updated — login already exists for ${emailLower}`, 'success')
         }
-        showToast(`Email updated — login already exists for ${emailLower}`, 'success')
       }
     }
     await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Role/Client',emp?.designation||'',generatedDesig)
@@ -2528,7 +2533,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0]);if(emps[0].email){const{data}=await supabase.from('app_users').select('role').eq('email',emps[0].email.toLowerCase()).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0]);if(emps[0].email){const el=emps[0].email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -2618,7 +2623,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0]);if(emp.email){const{data}=await supabase.from('app_users').select('role').eq('email',emp.email.toLowerCase()).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0]);if(emp.email){const el=emp.email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
