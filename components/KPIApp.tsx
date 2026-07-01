@@ -5656,6 +5656,8 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   const [period, setPeriod] = useState<'mtd'|'weekly'>('mtd')
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()) // 0-indexed
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('all')
+  const [tlTeams, setTlTeams] = useState<{id:string,name:string}[]>([])
   const [selectedTL, setSelectedTL] = useState<string>('')
   const [tlList, setTlList] = useState<{empId:string,email:string,name:string,photo:string|null}[]>([])
   const [score, setScore] = useState<any>(null)
@@ -5696,8 +5698,17 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   }, [])
 
   useEffect(() => {
-    if (selectedTL) loadScorecard()
-  }, [selectedTL, period, selectedMonth, selectedYear])
+    if (selectedTL) {
+      loadTLTeams()
+      loadScorecard()
+    }
+  }, [selectedTL, period, selectedMonth, selectedYear, selectedTeamId])
+
+  async function loadTLTeams() {
+    const { data } = await supabase.from('teams').select('id,name').eq('team_lead_id', selectedTL).eq('active', true)
+    setTlTeams(data || [])
+    setSelectedTeamId('all')
+  }
 
   async function loadTLList() {
     try {
@@ -5792,8 +5803,10 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
     const { data: tlTeamsData } = await supabase.from('teams').select('id,name,department').eq('team_lead_id', selectedTL).eq('active', true)
     let teamPerfScore = 0
     if (tlEmpInfo) {
-      const { data: tlTeams } = await supabase.from('teams').select('id').eq('team_lead_id', selectedTL).eq('active', true)
-      const teamIds = (tlTeams||[]).map((t:any) => t.id)
+      const { data: tlTeamsAll } = await supabase.from('teams').select('id').eq('team_lead_id', selectedTL).eq('active', true)
+      const teamIds = selectedTeamId === 'all'
+        ? (tlTeamsAll||[]).map((t:any) => t.id)
+        : [selectedTeamId]
       if (teamIds.length > 0) {
         const { data: memberIds } = await supabase.from('team_members').select('employee_id').in('team_id', teamIds)
         const empIds = (memberIds||[]).map((m:any) => m.employee_id)
@@ -5887,6 +5900,12 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
             </select>
           )}
           <div className="flex items-center gap-2 flex-wrap">
+            {tlTeams.length > 1 && (
+              <select value={selectedTeamId} onChange={e=>setSelectedTeamId(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-900">
+                <option value="all">All Teams</option>
+                {tlTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
             <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
               <button onClick={()=>setPeriod('mtd')} className={`px-3 py-1.5 font-medium transition ${period==='mtd'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>Monthly</button>
               <button onClick={()=>setPeriod('weekly')} className={`px-3 py-1.5 font-medium transition ${period==='weekly'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>Weekly</button>
