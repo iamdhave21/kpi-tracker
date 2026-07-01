@@ -5763,13 +5763,16 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
     const complianceSubScores = { cadenceScore, coachScore, obsScore, ticketScore, huddleScore, kpiScore }
     const complianceScore = (cadenceScore + coachScore + obsScore + ticketScore + huddleScore + kpiScore) / 6
 
-    // --- TEAM PERFORMANCE (50%) ---
-    // Get the TL's employee ID first
-    const { data: tlEmpData } = await supabase.from('employees').select('id').ilike('email', selectedTL).maybeSingle()
+    // Get TL photo
+    const { data: tlEmpInfo } = await supabase.from('employees').select('id,name,avatar_url').ilike('email', selectedTL).maybeSingle()
+    const tlPhoto = tlEmpInfo?.avatar_url || null
+    const tlName = tlEmpInfo?.name || selectedTL.split('@')[0]
+
+    // Get teams led by this TL for per-team breakdown
+    const { data: tlTeamsData } = await supabase.from('teams').select('id,name,department').eq('team_lead_id', tlEmpInfo?.id || '').eq('active', true)
     let teamPerfScore = 0
-    if (tlEmpData) {
-      // Get teams led by this TL
-      const { data: tlTeams } = await supabase.from('teams').select('id').eq('team_lead_id', tlEmpData.id).eq('active', true)
+    if (tlEmpInfo) {
+      const { data: tlTeams } = await supabase.from('teams').select('id').eq('team_lead_id', tlEmpInfo.id).eq('active', true)
       const teamIds = (tlTeams||[]).map((t:any) => t.id)
       if (teamIds.length > 0) {
         const { data: memberIds } = await supabase.from('team_members').select('employee_id').in('team_id', teamIds)
@@ -5787,9 +5790,9 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
 
     // --- INDIVIDUAL ATTENDANCE (20%) ---
     let attendanceScore = 0
-    if (tlEmpData) {
+    if (tlEmpInfo) {
       const { data: tlKPI } = await supabase.from('kpi_records').select('attendance')
-        .eq('employee_id', tlEmpData.id).eq('month_label', monthLabel).maybeSingle()
+        .eq('employee_id', tlEmpInfo.id).eq('month_label', monthLabel).maybeSingle()
       attendanceScore = tlKPI?.attendance || 0
     }
 
@@ -5798,6 +5801,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
 
     setScore({
       overall, complianceScore, teamPerfScore, attendanceScore,
+      tlPhoto, tlName, tlTeams: tlTeamsData || [],
       ...complianceSubScores,
       coachCount: coachCount||0, coachTarget,
       obsCount: obsCount||0, obsTarget,
@@ -5811,14 +5815,19 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
   function ScoreRing({ value, size=80, color }: { value:number, size?:number, color:string }) {
     const r = (size-10)/2, circ = 2*Math.PI*r
     const pct = Math.min(Math.max(value,0),100)
+    const fontSize = size > 70 ? 16 : 12
     return (
-      <svg width={size} height={size} className="transform -rotate-90">
+      <svg width={size} height={size}>
+        {/* Background circle */}
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f3f4f6" strokeWidth={8}/>
+        {/* Progress arc — starts at top (−π/2) */}
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={8}
-          strokeDasharray={circ} strokeDashoffset={circ*(1-pct/100)} strokeLinecap="round"/>
-        <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="middle"
-          className="transform rotate-90" style={{transform:`rotate(90deg)`,transformOrigin:`${size/2}px ${size/2}px`}}
-          fontSize={size>70?18:13} fontWeight="700" fill={color}>{Math.round(pct)}%</text>
+          strokeDasharray={circ} strokeDashoffset={circ*(1-pct/100)}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size/2} ${size/2})`}/>
+        {/* Text stays upright — no rotation needed */}
+        <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
+          fontSize={fontSize} fontWeight="700" fill={color}>{Math.round(pct)}%</text>
       </svg>
     )
   }
@@ -5872,12 +5881,31 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
         <>
         {/* Overall score */}
         <div className="bg-white border border-gray-200 rounded-2xl p-6">
+          <div className="flex items-center gap-4 mb-4">
+            {/* TL Photo */}
+            <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
+              {score.tlPhoto
+                ? <img src={score.tlPhoto} alt={score.tlName} className="w-full h-full object-cover"/>
+                : <div className="w-full h-full flex items-center justify-center text-xl font-bold text-gray-400">{(score.tlName||'?').charAt(0).toUpperCase()}</div>
+              }
+            </div>
+            <div>
+              <p className="font-bold text-gray-900 text-base">{score.tlName}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{getPeriodBounds().label}</p>
+              {score.tlTeams.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {score.tlTeams.map((t:any) => (
+                    <span key={t.id} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{t.name}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="flex items-center gap-6">
             <ScoreRing value={score.overall} size={96} color={getColor(score.overall)} />
             <div>
               <p className="text-2xl font-bold text-gray-900">{Math.round(score.overall)}%</p>
               <p className="text-sm text-gray-500">Overall Score</p>
-              <p className="text-xs text-gray-400 mt-1">{getPeriodBounds().label}</p>
             </div>
             <div className="ml-auto flex items-center gap-6 flex-wrap">
               {[
