@@ -694,6 +694,16 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
 
   return (
     <div className="space-y-4">
+      {/* Month/Year selector */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-500 font-medium">Leaderboard for:</span>
+        <select value={lbMonth} onChange={e=>setLbMonth(Number(e.target.value))} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-900">
+          {MONTHS.map((m,i) => <option key={m} value={i+1}>{m}</option>)}
+        </select>
+        <select value={lbYear} onChange={e=>setLbYear(Number(e.target.value))} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-900">
+          {lbYears.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
       {/* Pending approvals - admin only */}
       {isAdmin && pending.length > 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-3">
