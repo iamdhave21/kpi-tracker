@@ -6723,8 +6723,10 @@ function TLComplianceReport({ employees, currentUser, userRole }:
     load()
   }, [])
 
-  // Group by coached_by for selected month
-  const monthLogs = logs.filter(l => l.date.startsWith(selMonth))
+  // Group by coached_by for selected month. Team Leads only see their own
+  // compliance data here; Admin/Super Admin see everyone (cross-team view).
+  const isTL = userRole === 'Team Lead'
+  const monthLogs = logs.filter(l => l.date.startsWith(selMonth) && (!isTL || l.coached_by === currentUser))
 
   // Get unique TLs (coached_by values)
   const tlMap: Record<string, { name: string, sessions: any[] }> = {}
@@ -6777,6 +6779,7 @@ function TLComplianceReport({ employees, currentUser, userRole }:
         <div className="text-sm text-gray-500">
           Target: <span className="font-semibold text-blue-900">2 sessions/employee/month</span>
           {activeCount > 0 && <span className="ml-2 text-gray-400">({TARGET_MONTHLY} total for {activeCount} active employees)</span>}
+          {isTL && <span className="ml-2 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">Showing your data only</span>}
         </div>
       </div>
 
