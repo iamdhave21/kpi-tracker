@@ -4871,6 +4871,8 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const [comments, setComments] = useState<Record<string,any[]>>({})
   const [commentDraft, setCommentDraft] = useState('')
   const [postingComment, setPostingComment] = useState(false)
+  const [commentAttachments, setCommentAttachments] = useState<TicketAttachment[]>([])
+  const [uploadingComment, setUploadingComment] = useState(false)
   const [ownerSearch, setOwnerSearch] = useState('')
   const [showOwnerDropdown, setShowOwnerDropdown] = useState(false)
 
@@ -4926,15 +4928,40 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   }
 
   async function postComment(ticket: Ticket) {
-    if (!commentDraft.trim()) return
+    if (!commentDraft.trim() && commentAttachments.length === 0) return
     setPostingComment(true)
+    const newDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
     await supabase.from('ticket_comments').insert({
-      ticket_id: ticket.id, comment: commentDraft.trim(),
+      ticket_id: ticket.id, comment: commentDraft.trim() || '(attachment only)',
       commented_by: currentUser, is_resolution: canManage,
+      attachments: commentAttachments,
     })
+    // Any update resets the SLA clock 24hrs from now
+    await supabase.from('tickets').update({ sla_deadline: newDeadline, updated_at: new Date().toISOString() }).eq('id', ticket.id)
     setPostingComment(false)
-    setCommentDraft('')
-    loadComments(ticket.id)
+    setCommentDraft(''); setCommentAttachments([])
+    loadComments(ticket.id); loadTickets()
+    notifySubmitter(ticket, 'comment', commentDraft.trim() || 'Added an attachment')
+  }
+
+  async function uploadCommentFile(file: File) {
+    setUploadingComment(true)
+    const path = `tickets/comments/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploadingComment(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const fileType = file.type.startsWith('image/') ? 'image' : file.type.includes('pdf') ? 'pdf' : 'doc'
+    setCommentAttachments(prev => [...prev, { name: file.name, url: urlData.publicUrl, type: fileType }])
+    setUploadingComment(false)
+  }
+
+  function notifySubmitter(ticket: Ticket, updateType: 'comment'|'status'|'edit', detail?: string) {
+    const submitterEmail = ticket.requested_by || ticket.created_by
+    if (!submitterEmail) return
+    fetch('/api/notify/ticket-updated', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketId: ticket.id, title: ticket.title, submitterEmail, updateType, updatedBy: currentUser, detail })
+    }).catch(() => {})
   }
 
   function toggleExpand(ticket: Ticket) {
@@ -4987,17 +5014,23 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   }
 
   async function saveEdit(id: string) {
+    const ticket = tickets.find(t => t.id === id)
+    const newDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
     const { error } = await supabase.from('tickets').update({
-      ...editForm, updated_at: new Date().toISOString()
+      ...editForm, sla_deadline: newDeadline, updated_at: new Date().toISOString()
     }).eq('id', id)
     if (error) { showToast(error.message, 'error'); return }
     showToast('Ticket updated!', 'success')
     setEditingId(null); loadTickets()
+    if (ticket) notifySubmitter(ticket, 'edit', 'Ticket details were updated')
   }
 
   async function updateStatus(id: string, status: Ticket['status']) {
-    await supabase.from('tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+    const ticket = tickets.find(t => t.id === id)
+    const newDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    await supabase.from('tickets').update({ status, sla_deadline: newDeadline, updated_at: new Date().toISOString() }).eq('id', id)
     showToast('Status updated', 'success'); loadTickets()
+    if (ticket) notifySubmitter(ticket, 'status', `Status changed to ${status}`)
   }
 
   async function deleteTicket(id: string) {
@@ -5317,14 +5350,43 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
                                 <span className="text-xs text-gray-400 ml-auto">{new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span>
                               </div>
                               <p className="text-gray-700 whitespace-pre-wrap">{c.comment}</p>
+                              {c.attachments && c.attachments.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  {c.attachments.map((att:any,i:number) => att.type === 'image' ? (
+                                    <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
+                                      <img src={att.url} alt={att.name} className="w-16 h-16 object-cover rounded-lg border border-gray-200 hover:opacity-80 transition" />
+                                    </a>
+                                  ) : (
+                                    <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 bg-white border border-gray-200 hover:border-blue-300 rounded-lg px-2 py-1 text-xs text-blue-700 transition">
+                                      <span>{att.type==='pdf'?'📄':'📝'}</span><span>{att.name}</span>
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
                       )}
                       {(canManage || t.created_by === currentUser) && (
-                        <div className="flex gap-2 pt-1">
-                          <input value={commentDraft} onChange={e=>setCommentDraft(e.target.value)} placeholder={canManage?'Add a status update or resolution note...':'Add additional details...'} className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" onKeyDown={e=>{if(e.key==='Enter')postComment(t)}} />
-                          <button onClick={() => postComment(t)} disabled={postingComment||!commentDraft.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50">{postingComment?'...':'Add'}</button>
+                        <div className="space-y-2 pt-1">
+                          {commentAttachments.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {commentAttachments.map((att,i) => (
+                                <div key={i} className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-600">
+                                  <span>{att.type==='image'?'🖼':att.type==='pdf'?'📄':'📝'}</span><span>{att.name}</span>
+                                  <button onClick={() => setCommentAttachments(prev => prev.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 ml-1">×</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <input value={commentDraft} onChange={e=>setCommentDraft(e.target.value)} placeholder={canManage?'Add a status update or resolution note...':'Add additional details...'} className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" onKeyDown={e=>{if(e.key==='Enter')postComment(t)}} />
+                            <label className="flex items-center justify-center px-2.5 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 cursor-pointer transition text-sm">
+                              📎
+                              <input type="file" className="hidden" disabled={uploadingComment} onChange={e => { const f = e.target.files?.[0]; if (f) uploadCommentFile(f); e.target.value = '' }} />
+                            </label>
+                            <button onClick={() => postComment(t)} disabled={postingComment||uploadingComment||(!commentDraft.trim() && commentAttachments.length===0)} className="bg-blue-900 hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50">{postingComment?'...':uploadingComment?'Uploading...':'Add'}</button>
+                          </div>
                         </div>
                       )}
                     </div>
