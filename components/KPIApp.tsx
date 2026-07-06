@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
-import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star } from 'lucide-react'
 
 type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'tl-scorecard'
@@ -1686,8 +1686,8 @@ export default function KPIApp() {
         ) : (
           <>
             {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} userRole={effectiveRole} />}
-            {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} />}
-            {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} />}
+            {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={user} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
+            {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={user} userRole={effectiveRole} onEditRecord={() => loadData()} />}
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
             {view === 'entry' && userRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
             {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} userRole={userRole} />}
@@ -1896,7 +1896,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
   const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
 
   useEffect(() => {
-    supabase.from('teams').select('id, name').order('name').then(({data}) => setTeams(data||[]))
+    supabase.from('teams').select('id, name, team_lead:employees(client)').order('name').then(({data}) => setTeams(data||[]))
     supabase.from('team_members').select('team_id, employee_id').then(({data: memberData}) => {
       setMembers(memberData||[])
       if (userRole === 'agent' && currentUser) {
@@ -1982,14 +1982,24 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
       </div>
 
       {/* Client filter tabs */}
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         {CLIENTS_FILTER.map(c => (
-          <button key={c} onClick={() => setSelClient(c)}
+          <button key={c} onClick={() => { setSelClient(c); setSelTeam('all') }}
             className={`px-4 py-1.5 rounded-full text-xs font-semibold border transition ${selClient===c ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
             style={selClient===c ? {background: c==='All' ? '#1e3a8a' : CLIENT_COLORS[c]||'#1e3a8a'} : {}}>
             {c}
           </button>
         ))}
+        {(() => {
+          const clientTeams = teams.filter((t:any) => selClient === 'All' || t.team_lead?.client === selClient)
+          if (clientTeams.length === 0) return null
+          return (
+            <select value={selTeam} onChange={e => setSelTeam(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 ml-1">
+              <option value="all">All Teams{selClient !== 'All' ? ` (${selClient})` : ''}</option>
+              {clientTeams.map((t:any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          )
+        })()}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -2136,14 +2146,16 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
 }
 
 // -- Team Dashboard ----------------------------------------------------------
-function TeamDashboard({ records, employees, activeEmpIds, showToast }:
-  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, showToast: (m: string, t?: 'success'|'error') => void }) {
+function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUser, userRole, onEditRecord }:
+  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string, onEditRecord: () => void }) {
   const [teams, setTeams] = useState<any[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [selTeam, setSelTeam] = useState<string>('')
   const [selMonth, setSelMonth] = useState(MONTHS[new Date().getMonth()])
   const [selYear, setSelYear] = useState(String(new Date().getFullYear()))
   const [loading, setLoading] = useState(true)
+  const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
+  const canEditScores = ['super_admin','admin','Team Lead'].includes(userRole)
 
   async function loadTeams() {
     setLoading(true)
@@ -2180,6 +2192,7 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
 
   return (
     <div className="space-y-6">
+      {editRecord && <EditScoreModal record={editRecord} currentUser={currentUser} onSaved={onEditRecord} onClose={() => setEditRecord(null)} showToast={showToast} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div><h2 className="text-xl font-bold text-blue-900">Team View</h2><p className="text-sm text-gray-500">{teamRecords.length} active members with records</p></div>
         <div className="flex flex-wrap gap-2">
@@ -2211,12 +2224,12 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
-              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 15%','Compliance 5%','Overall','Notes'].map(h => (
+              {['#','Employee','Designation','Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 15%','Compliance 5%','Overall','Notes',...(canEditScores ? [''] : [])].map(h => (
                 <th key={h} className={`px-4 py-3 font-medium text-gray-600 ${['Attend. 20%','Accuracy 30%','Effic. 30%','Feedback 15%','Compliance 5%','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
-              {teamRecords.length===0 && <tr><td colSpan={9} className="text-center py-12 text-gray-400">No records for active members in this period.</td></tr>}
+              {teamRecords.length===0 && <tr><td colSpan={canEditScores ? 10 : 9} className="text-center py-12 text-gray-400">No records for active members in this period.</td></tr>}
               {teamRecords.map((r,i) => (
                 <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400 font-medium">{i+1}</td>
@@ -2227,7 +2240,8 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.efficiency)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.feedback)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{r.notes?r.notes.substring(0,50)+'...':'N/A'}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
+                  {canEditScores && <td className="px-4 py-3"><button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button></td>}
                 </tr>
               ))}
             </tbody>
@@ -2239,59 +2253,118 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast }:
 }
 
 // -- Employee Dashboard ------------------------------------------------------
-function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setSelEmployee }:
-  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, selEmployee: string, setSelEmployee: (v: string) => void }) {
+function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setSelEmployee, currentUser, userRole, onEditRecord, showToast }:
+  { records: KpiRecord[], employees: Employee[], activeEmpIds: Set<string>, selEmployee: string, setSelEmployee: (v: string) => void, currentUser: string, userRole: string, onEditRecord: () => void, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [statusFilter, setStatusFilter] = useState<'active'|'inactive'>('active')
+  const [focusMonth, setFocusMonth] = useState<string>('')
+  const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
+  const canEditScores = ['super_admin','admin','Team Lead'].includes(userRole)
+
   const emp = employees.find(e => e.id === selEmployee)
   const empRecords = records.filter(r => r.employee_id === selEmployee && r.overall_score !== null && (r.overall_score||0) > 0).sort((a,b) => a.month_label.localeCompare(b.month_label))
-  const chartData = empRecords.map(r => ({
+  const monthKeyOf = (r: KpiRecord) => `${yearOf(r.month_label)}-${String(monthIndex(r.month_label)+1).padStart(2,'0')}`
+
+  // Focus-month selector: pick any tracked month and the chart/table scope
+  // to a trailing 6-month window ending at that month, so a TL can jump to
+  // whatever month they're coaching on and see the lead-up trend.
+  useEffect(() => {
+    if (empRecords.length > 0 && !empRecords.some(r => monthKeyOf(r) === focusMonth)) {
+      setFocusMonth(monthKeyOf(empRecords[empRecords.length - 1]))
+    }
+  }, [selEmployee, empRecords.length])
+
+  const focusIdx = empRecords.findIndex(r => monthKeyOf(r) === focusMonth)
+  const windowedRecords = focusIdx === -1 ? empRecords : empRecords.slice(Math.max(0, focusIdx - 5), focusIdx + 1)
+  const focusRecord = focusIdx === -1 ? empRecords[empRecords.length-1] : empRecords[focusIdx]
+
+  const chartData = windowedRecords.map(r => ({
     month: r.month_label.substring(0,10),
     score: r.overall_score ? parseFloat((r.overall_score*100).toFixed(2)) : 0,
     attendance: r.attendance ? parseFloat((r.attendance*100).toFixed(2)) : 0,
     accuracy: r.accuracy ? parseFloat((r.accuracy*100).toFixed(2)) : 0,
     efficiency: r.efficiency ? parseFloat((r.efficiency*100).toFixed(2)) : 0,
+    feedback: r.feedback ? parseFloat((r.feedback*100).toFixed(2)) : 0,
+    compliance: r.compliance_score ? parseFloat((r.compliance_score*100).toFixed(2)) : 0,
   }))
+  const radarData = focusRecord ? [
+    { metric: 'Attendance', value: focusRecord.attendance ? parseFloat((focusRecord.attendance*100).toFixed(2)) : 0 },
+    { metric: 'Accuracy', value: focusRecord.accuracy ? parseFloat((focusRecord.accuracy*100).toFixed(2)) : 0 },
+    { metric: 'Efficiency', value: focusRecord.efficiency ? parseFloat((focusRecord.efficiency*100).toFixed(2)) : 0 },
+    { metric: 'Feedback', value: focusRecord.feedback ? parseFloat((focusRecord.feedback*100).toFixed(2)) : 0 },
+    { metric: 'Compliance', value: focusRecord.compliance_score ? parseFloat((focusRecord.compliance_score*100).toFixed(2)) : 0 },
+  ] : []
   const avgScore = empRecords.length ? empRecords.reduce((s,r) => s+(r.overall_score||0),0)/empRecords.length : 0
   const latest = empRecords[empRecords.length-1]
   const best = empRecords.reduce((b,r) => ((r.overall_score||0)>(b?.overall_score||0)?r:b), empRecords[0])
+  const eligibleEmployees = employees.filter(e => statusFilter === 'active' ? e.active : !e.active)
 
   return (
     <div className="space-y-6">
+      {editRecord && <EditScoreModal record={editRecord} currentUser={currentUser} onSaved={onEditRecord} onClose={() => setEditRecord(null)} showToast={showToast} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div><h2 className="text-xl font-bold text-blue-900">Employee Performance</h2><p className="text-sm text-gray-500">{empRecords.length} months tracked</p></div>
-        <select value={selEmployee} onChange={e => setSelEmployee(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 max-w-xs">
-          {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-        </select>
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs">
+            {(['active','inactive'] as const).map(s => (
+              <button key={s} onClick={() => { setStatusFilter(s); setSelEmployee('') }} className={`px-3 py-2 font-medium transition capitalize ${statusFilter === s ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{s}</button>
+            ))}
+          </div>
+          <select value={selEmployee} onChange={e => setSelEmployee(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 max-w-xs">
+            <option value="">Select employee...</option>
+            {eligibleEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        </div>
       </div>
       {emp && <>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4 flex-wrap">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">{emp.name.split(',')[0]?.charAt(0)||'?'}</div>
-          <div><h3 className="font-bold text-gray-900">{emp.name}</h3><p className="text-sm text-gray-500">{emp.designation}</p></div>
-          {latest && <div className="ml-auto text-right"><p className="text-xs text-gray-400">Latest</p><span className={`text-xl font-bold ${scoreColor(latest.overall_score)}`}>{pct(latest.overall_score)}</span><p className="text-xs text-gray-400">{latest.month_label}</p></div>}
+          <div><h3 className="font-bold text-gray-900">{emp.name}</h3><p className="text-sm text-gray-500">{emp.designation}{!emp.active && <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactive</span>}</p></div>
+          {empRecords.length > 0 && (
+            <div className="ml-auto flex items-center gap-2">
+              <label className="text-xs text-gray-500 font-medium">Focus month:</label>
+              <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                {empRecords.map(r => <option key={r.id} value={monthKeyOf(r)}>{r.month_label}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[{label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A'},{label:'Months Tracked',value:empRecords.length},{label:'Best Score',value:best?pct(best.overall_score):'N/A'},{label:'Perfect Months',value:empRecords.filter(r=>(r.overall_score||0)>=0.9999).length}].map(c => <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-500">{c.label}</p><p className="text-xl font-bold text-gray-900 mt-1">{c.value}</p></div>)}
         </div>
         {chartData.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h4 className="font-semibold text-gray-700 mb-1 text-sm">Performance Trend</h4>
-            <p className="text-xs text-gray-400 mb-4">Attendance - Accuracy - Efficiency - Overall Score</p>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={chartData} margin={{top:5,right:10,left:-20,bottom:5}}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
-                <XAxis dataKey="month" tick={{fontSize:10}}/>
-                <YAxis domain={[0,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
-                <Tooltip formatter={(v:unknown) => typeof v === 'number' ? v.toFixed(2) + '%' : String(v)} />
-                <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="attendance" stroke="#10b981" strokeWidth={2} dot={{r:3,fill:'#10b981'}} name="Attendance"/>
-                <Line type="monotone" dataKey="accuracy" stroke="#3b82f6" strokeWidth={2} dot={{r:3,fill:'#3b82f6'}} name="Accuracy"/>
-                <Line type="monotone" dataKey="efficiency" stroke="#8b5cf6" strokeWidth={2} dot={{r:3,fill:'#8b5cf6'}} name="Efficiency"/>
-                <Line type="monotone" dataKey="score" stroke="#f59e0b" strokeWidth={2.5} dot={{r:4,fill:'#f59e0b'}} name="Overall" strokeDasharray="5 2"/>
-              </LineChart>
-            </ResponsiveContainer>
-            <div className="flex gap-5 mt-3 text-xs text-gray-500 flex-wrap">
-              {[['#10b981','Attendance'],['#3b82f6','Accuracy'],['#8b5cf6','Efficiency'],['#f59e0b','Overall (dashed)']].map(([c,l])=>(
-                <span key={l} className="flex items-center gap-1.5"><span className="w-4 h-0.5 inline-block rounded" style={{background:c}}/>{l}</span>
-              ))}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+              <h4 className="font-semibold text-gray-700 mb-1 text-sm">Performance Trend</h4>
+              <p className="text-xs text-gray-400 mb-4">Trailing 6 months ending {focusRecord?.month_label} — all 5 KPI components + Overall</p>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={chartData} margin={{top:5,right:10,left:-20,bottom:5}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
+                  <XAxis dataKey="month" tick={{fontSize:10}}/>
+                  <YAxis domain={[0,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
+                  <Tooltip formatter={(v:unknown) => typeof v === 'number' ? v.toFixed(2) + '%' : String(v)} />
+                  <Legend wrapperStyle={{fontSize:11}} />
+                  <ReferenceLine y={97} stroke="#fbbf24" strokeDasharray="4 4" />
+                  <Line type="monotone" dataKey="attendance" stroke="#10b981" strokeWidth={2} dot={{r:3,fill:'#10b981'}} name="Attendance"/>
+                  <Line type="monotone" dataKey="accuracy" stroke="#3b82f6" strokeWidth={2} dot={{r:3,fill:'#3b82f6'}} name="Accuracy"/>
+                  <Line type="monotone" dataKey="efficiency" stroke="#8b5cf6" strokeWidth={2} dot={{r:3,fill:'#8b5cf6'}} name="Efficiency"/>
+                  <Line type="monotone" dataKey="feedback" stroke="#ec4899" strokeWidth={2} dot={{r:3,fill:'#ec4899'}} name="Feedback"/>
+                  <Line type="monotone" dataKey="compliance" stroke="#06b6d4" strokeWidth={2} dot={{r:3,fill:'#06b6d4'}} name="Compliance"/>
+                  <Line type="monotone" dataKey="score" stroke="#f59e0b" strokeWidth={2.5} dot={{r:4,fill:'#f59e0b'}} name="Overall" strokeDasharray="5 2"/>
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h4 className="font-semibold text-gray-700 mb-1 text-sm">Score Shape — {focusRecord?.month_label}</h4>
+              <p className="text-xs text-gray-400 mb-2">All 5 components at a glance, great for coaching</p>
+              <ResponsiveContainer width="100%" height={240}>
+                <RadarChart data={radarData} outerRadius="75%">
+                  <PolarGrid stroke="#e5e7eb" />
+                  <PolarAngleAxis dataKey="metric" tick={{fontSize:10}} />
+                  <PolarRadiusAxis domain={[0,100]} tick={{fontSize:8}} tickCount={5} />
+                  <Radar dataKey="value" stroke="#1e3a8a" fill="#1e3a8a" fillOpacity={0.35} />
+                  <Tooltip formatter={(v:unknown) => typeof v === 'number' ? v.toFixed(2) + '%' : String(v)} />
+                </RadarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         )}
@@ -2300,21 +2373,23 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="bg-gray-50 border-b border-gray-100">
-                {['Month','Designation','Attendance','Accuracy','Efficiency','Feedback','Overall','Notes'].map(h => (
-                  <th key={h} className={`px-4 py-2.5 font-medium text-gray-500 ${['Attendance','Accuracy','Efficiency','Feedback','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
+                {['Month','Designation','Attendance','Accuracy','Efficiency','Feedback','Compliance','Overall','Notes',...(canEditScores ? [''] : [])].map(h => (
+                  <th key={h} className={`px-4 py-2.5 font-medium text-gray-500 ${['Attendance','Accuracy','Efficiency','Feedback','Compliance','Overall'].includes(h)?'text-right':'text-left'}`}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
                 {[...empRecords].reverse().map(r => (
-                  <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50">
+                  <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50 ${monthKeyOf(r) === focusMonth ? 'bg-blue-50/50' : ''}`}>
                     <td className="px-4 py-2.5 text-gray-700 font-medium whitespace-nowrap">{r.month_label}</td>
                     <td className="px-4 py-2.5 text-gray-500">{r.designation}</td>
                     <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.attendance)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.accuracy)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.efficiency)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.feedback)}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.compliance_score)}</td>
                     <td className="px-4 py-2.5 text-right"><span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs truncate">{r.notes?r.notes.substring(0,60)+'...':'N/A'}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
+                    {canEditScores && <td className="px-4 py-2.5"><button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button></td>}
                   </tr>
                 ))}
               </tbody>
