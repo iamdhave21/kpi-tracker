@@ -91,6 +91,57 @@ function pct(v: number | null) {
 function monthIndex(label: string) { return MONTHS.indexOf(label.split(' ')[0]) }
 function yearOf(label: string) { const p = label.split(' '); return parseInt(p[p.length-1]) || 0 }
 
+type ComplianceBreakdown = {
+  rate: number | null // null = no items required ack yet this month (no data)
+  coachTotal: number
+  coachAcked: number
+  annTotal: number
+  annAcked: number
+  totalRequired: number
+  totalAcked: number
+}
+
+// Auto-calculates compliance = (coaching acks + announcement acks) / (total requiring ack)
+// for a given employee + month. Returns rate: null when there's simply nothing to
+// acknowledge yet that month (e.g. rollout hasn't started) so callers can fall back
+// to a manual value instead of showing a misleading 0%.
+async function getComplianceBreakdown(employeeEmail: string | null | undefined, monthLabel: string): Promise<ComplianceBreakdown> {
+  const empty: ComplianceBreakdown = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, totalRequired: 0, totalAcked: 0 }
+  if (!employeeEmail) return empty
+  const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
+  if (mIdx < 0 || !yr) return empty
+  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
+  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+
+  const { data: coaching } = await supabase.from('coaching_logs')
+    .select('agent_acknowledged')
+    .eq('employee_email', employeeEmail)
+    .eq('requires_acknowledgment', true)
+    .eq('status', 'Final')
+    .gte('date', start).lt('date', end)
+
+  const { data: anns } = await supabase.from('announcements')
+    .select('id')
+    .gte('created_at', start).lt('created_at', end)
+
+  const annIds = (anns || []).map(a => a.id)
+  let annAcked = 0
+  if (annIds.length) {
+    const { data: acks } = await supabase.from('announcement_acknowledgements')
+      .select('announcement_id').eq('user_email', employeeEmail).in('announcement_id', annIds)
+    annAcked = (acks || []).length
+  }
+
+  const coachTotal = (coaching || []).length
+  const coachAcked = (coaching || []).filter(c => c.agent_acknowledged).length
+  const totalRequired = coachTotal + annIds.length
+  const totalAcked = coachAcked + annAcked
+  return {
+    rate: totalRequired > 0 ? totalAcked / totalRequired : null,
+    coachTotal, coachAcked, annTotal: annIds.length, annAcked, totalRequired, totalAcked
+  }
+}
+
 async function writeAuditLog(action: string, performedBy: string, employeeName: string, monthLabel: string, fieldChanged: string, oldValue: string, newValue: string) {
   await supabase.from('audit_log').insert({ action, performed_by: performedBy, employee_name: employeeName, month_label: monthLabel, field_changed: fieldChanged, old_value: oldValue, new_value: newValue })
 }
@@ -1712,8 +1763,27 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
   const [acc, setAcc] = useState(record.accuracy !== null ? (record.accuracy * 100).toFixed(2) : '')
   const [eff, setEff] = useState(record.efficiency !== null ? (record.efficiency * 100).toFixed(2) : '')
   const [fb, setFb] = useState(record.feedback !== null ? (record.feedback * 100).toFixed(2) : '')
+  const [comp, setComp] = useState(record.compliance_score !== null ? (record.compliance_score * 100).toFixed(2) : '')
+  const [compAuto, setCompAuto] = useState<ComplianceBreakdown | null>(null)
+  const [compLoading, setCompLoading] = useState(true)
   const [notes, setNotes] = useState(record.notes || '')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setCompLoading(true)
+    supabase.from('employees').select('email').eq('id', record.employee_id).single()
+      .then(({ data }) => getComplianceBreakdown(data?.email, record.month_label))
+      .then(b => {
+        if (cancelled) return
+        setCompAuto(b)
+        // Only pre-fill from auto-calc if the record doesn't already have a saved value —
+        // once someone has saved a score for this month, we respect what's on record.
+        if (record.compliance_score === null && b.rate !== null) setComp((b.rate * 100).toFixed(2))
+        setCompLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [record.employee_id, record.month_label])
 
   async function save() {
     setSaving(true)
@@ -1721,8 +1791,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
     const accN = acc !== '' ? parseFloat(acc)/100 : null
     const effN = eff !== '' ? parseFloat(eff)/100 : null
     const fbN = fb !== '' ? parseFloat(fb)/100 : null
-    const overall = (attN !== null && accN !== null && effN !== null && fbN !== null)
-      ? attN*0.2 + accN*0.3 + effN*0.3 + fbN*0.15 + ((record.compliance_score||0)*0.05) : record.overall_score
+    const compN = comp !== '' ? parseFloat(comp)/100 : 0
 
     // Build audit entries for changed fields
     const changes: {field: string, old: string, nw: string}[] = []
@@ -1730,12 +1799,11 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
     if (accN !== record.accuracy) changes.push({ field: 'Accuracy', old: pct(record.accuracy), nw: pct(accN) })
     if (effN !== record.efficiency) changes.push({ field: 'Efficiency', old: pct(record.efficiency), nw: pct(effN) })
     if (fbN !== record.feedback) changes.push({ field: 'Feedback', old: pct(record.feedback), nw: pct(fbN) })
+    if (compN !== record.compliance_score) changes.push({ field: 'Compliance', old: pct(record.compliance_score), nw: pct(compN) })
     if (notes !== record.notes) changes.push({ field: 'Notes', old: record.notes || '', nw: notes })
 
-    // Compliance score — keep existing value from record (calculated separately on KPI Entry save)
-    const complianceScore = record.compliance_score ?? 0
-    const finalOverall = (attN||0)*0.2 + (accN||0)*0.3 + (effN||0)*0.3 + (fbN||0)*0.15 + (complianceScore*0.05)
-    const { error } = await supabase.from('kpi_records').update({ attendance: attN, accuracy: accN, efficiency: effN, feedback: fbN, compliance_score: complianceScore, overall_score: finalOverall, notes, updated_at: new Date().toISOString() }).eq('id', record.id)
+    const finalOverall = (attN||0)*0.2 + (accN||0)*0.3 + (effN||0)*0.3 + (fbN||0)*0.15 + (compN*0.05)
+    const { error } = await supabase.from('kpi_records').update({ attendance: attN, accuracy: accN, efficiency: effN, feedback: fbN, compliance_score: compN, overall_score: finalOverall, notes, updated_at: new Date().toISOString() }).eq('id', record.id)
     if (error) { showToast(error.message, 'error'); setSaving(false); return }
 
     // Write audit log for each changed field
@@ -1776,6 +1844,18 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
               </div>
             </div>
           ))}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Compliance (5%)</label>
+          <div className="relative">
+            <input type="number" min="0" max="100" step="0.01" value={comp} onChange={e => setComp(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. 100" />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {compLoading ? 'Checking coaching + announcement acknowledgments...' :
+             compAuto && compAuto.totalRequired > 0 ? `Auto-calculated: ${(compAuto.rate!*100).toFixed(0)}% (${compAuto.totalAcked}/${compAuto.totalRequired} acknowledged — ${compAuto.coachAcked}/${compAuto.coachTotal} coaching, ${compAuto.annAcked}/${compAuto.annTotal} announcements). Edit above to override.` :
+             'No coaching or announcements requiring acknowledgment found this month — set manually.'}
+          </p>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
@@ -2247,6 +2327,9 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
   const [accuracy, setAccuracy] = useState('')
   const [efficiency, setEfficiency] = useState('')
   const [feedback, setFeedback] = useState('')
+  const [compliance, setCompliance] = useState('')
+  const [complianceAuto, setComplianceAuto] = useState<ComplianceBreakdown | null>(null)
+  const [complianceLoading, setComplianceLoading] = useState(false)
   const [notes, setNotes] = useState('')
   const [coached, setCoached] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -2258,17 +2341,35 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
     const existing = records.find(r=>r.employee_id===empId&&r.month_label===monthLabel)
     if (existing) {
       setEditId(existing.id); setAttendance(existing.attendance!==null?(existing.attendance*100).toFixed(2):''); setAccuracy(existing.accuracy!==null?(existing.accuracy*100).toFixed(2):''); setEfficiency(existing.efficiency!==null?(existing.efficiency*100).toFixed(2):''); setFeedback(existing.feedback!==null?(existing.feedback*100).toFixed(2):''); setNotes(existing.notes||''); setCoached(existing.coached||false); setDesignation(existing.designation||selEmp?.designation||'')
-    } else { setEditId(null); setAttendance(''); setAccuracy(''); setEfficiency(''); setFeedback(''); setNotes(''); setCoached(false) }
+      setCompliance(existing.compliance_score!==null?(existing.compliance_score*100).toFixed(2):'')
+    } else { setEditId(null); setAttendance(''); setAccuracy(''); setEfficiency(''); setFeedback(''); setNotes(''); setCoached(false); setCompliance('') }
   }, [empId, monthLabel])
 
+  useEffect(() => {
+    if (!selEmp) return
+    let cancelled = false
+    setComplianceLoading(true)
+    const existing = records.find(r=>r.employee_id===empId&&r.month_label===monthLabel)
+    getComplianceBreakdown(selEmp.email, monthLabel).then(b => {
+      if (cancelled) return
+      setComplianceAuto(b)
+      // Only auto-fill if there's no existing saved record for this month, or the
+      // existing record never had a compliance value set yet.
+      if ((!existing || existing.compliance_score === null) && b.rate !== null) setCompliance((b.rate*100).toFixed(2))
+      setComplianceLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [empId, monthLabel, selEmp])
+
   function calcOverall(compliancePct=0) { const a=parseFloat(attendance)/100,b=parseFloat(accuracy)/100,c=parseFloat(efficiency)/100,d=parseFloat(feedback)/100; if([a,b,c,d].some(isNaN))return null; return a*0.2+b*0.3+c*0.3+d*0.15+(compliancePct*0.05) }
-  const overall = calcOverall(0)
+  const compN = compliance !== '' ? parseFloat(compliance)/100 : 0
+  const overall = calcOverall(compN)
   const allMonths = ['2024','2025','2026','2027','2028','2029','2030'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
-      const payload = { employee_id:empId, employee_name:selEmp?.name||'', designation:designation||selEmp?.designation||'', month_label:monthLabel, attendance:attendance!==''?parseFloat(attendance)/100:null, accuracy:accuracy!==''?parseFloat(accuracy)/100:null, efficiency:efficiency!==''?parseFloat(efficiency)/100:null, feedback:feedback!==''?parseFloat(feedback)/100:null, overall_score:overall, notes, coached, updated_at:new Date().toISOString() }
+      const payload = { employee_id:empId, employee_name:selEmp?.name||'', designation:designation||selEmp?.designation||'', month_label:monthLabel, attendance:attendance!==''?parseFloat(attendance)/100:null, accuracy:accuracy!==''?parseFloat(accuracy)/100:null, efficiency:efficiency!==''?parseFloat(efficiency)/100:null, feedback:feedback!==''?parseFloat(feedback)/100:null, compliance_score:compN, overall_score:overall, notes, coached, updated_at:new Date().toISOString() }
       const {error} = editId ? await supabase.from('kpi_records').update(payload).eq('id',editId) : await supabase.from('kpi_records').insert(payload)
       if (error) throw error
       await writeAuditLog(editId?'UPDATE_RECORD':'CREATE_RECORD', currentUser, selEmp?.name||'', monthLabel, 'All fields', '', `Overall: ${pct(overall)}`)
@@ -2291,6 +2392,15 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
           {[{label:'Attendance',weight:'20%',val:attendance,set:setAttendance},{label:'Accuracy',weight:'30%',val:accuracy,set:setAccuracy},{label:'Efficiency',weight:'30%',val:efficiency,set:setEfficiency},{label:'Ext/Int Feedback',weight:'20%',val:feedback,set:setFeedback}].map(f=>(
             <div key={f.label}><label className="block text-sm font-medium text-gray-700 mb-1">{f.label} <span className="text-gray-400 font-normal text-xs">({f.weight})</span></label><div className="relative"><input type="number" min="0" max="100" step="0.01" value={f.val} onChange={e=>f.set(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. 100"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span></div></div>
           ))}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Compliance <span className="text-gray-400 font-normal text-xs">(5%)</span></label>
+          <div className="relative"><input type="number" min="0" max="100" step="0.01" value={compliance} onChange={e=>setCompliance(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. 100"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span></div>
+          <p className="text-xs text-gray-400 mt-1">
+            {complianceLoading ? 'Checking coaching + announcement acknowledgments...' :
+             complianceAuto && complianceAuto.totalRequired > 0 ? `Auto-calculated: ${(complianceAuto.rate!*100).toFixed(0)}% (${complianceAuto.totalAcked}/${complianceAuto.totalRequired} acknowledged — ${complianceAuto.coachAcked}/${complianceAuto.coachTotal} coaching, ${complianceAuto.annAcked}/${complianceAuto.annTotal} announcements). Edit above to override.` :
+             'No coaching or announcements requiring acknowledgment found this month — set manually.'}
+          </p>
         </div>
         {overall!==null && <div className={`rounded-xl px-4 py-3 text-center ${scoreBg(overall)}`}><p className="text-xs font-medium opacity-70">Calculated Overall Score</p><p className="text-2xl font-bold">{pct(overall)}</p></div>}
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes / Client Feedback</label><textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Client feedback, coaching notes..."/></div>
