@@ -1191,7 +1191,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
   }
 
   const itemStyle = (id: string) =>
-    `w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-all rounded-lg ${
+    `w-full flex items-center gap-2 px-2.5 py-2.5 text-sm font-medium transition-all rounded-lg ${
       view === id
         ? 'bg-gradient-to-r from-blue-900 to-blue-700 text-white font-bold shadow-md'
         : 'text-gray-900 hover:bg-gray-100 hover:text-blue-900'
@@ -1648,7 +1648,7 @@ export default function KPIApp() {
 
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
-        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-60 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
+        <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-64 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
                     <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={userRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
 
         </aside>
@@ -2158,7 +2158,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.compliance_score)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
                   {userRole !== 'agent' && <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>}
-                  {userRole !== 'agent' && <td className="px-4 py-3">
+                  {userRole !== 'agent' && <td className="px-4 py-3 whitespace-nowrap">
                     {(perfView==='monthly'||perfView==='weekly') && <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>}
                   </td>}
                 </tr>
