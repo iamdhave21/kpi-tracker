@@ -2145,7 +2145,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
               ))}
             </tr></thead>
             <tbody>
-              {ranked.length===0 && <tr><td colSpan={10} className="text-center py-12 text-gray-400">No records for active employees in this period.</td></tr>}
+              {ranked.length===0 && <tr><td colSpan={userRole !== 'agent' ? 11 : 9} className="text-center py-12 text-gray-400">No records for active employees in this period.</td></tr>}
               {ranked.map((r,i) => (
                 <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400 font-medium">{i+1}</td>
@@ -2155,6 +2155,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.accuracy)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.efficiency)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.feedback)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{pct(r.compliance_score)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
                   {userRole !== 'agent' && <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>}
                   {userRole !== 'agent' && <td className="px-4 py-3">
@@ -2275,7 +2276,7 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUse
               ))}
             </tr></thead>
             <tbody>
-              {teamRecords.length===0 && <tr><td colSpan={canEditScores ? 10 : 9} className="text-center py-12 text-gray-400">No records for active members in this period.</td></tr>}
+              {teamRecords.length===0 && <tr><td colSpan={canEditScores ? 11 : 10} className="text-center py-12 text-gray-400">No records for active members in this period.</td></tr>}
               {teamRecords.map((r,i) => (
                 <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400 font-medium">{i+1}</td>
@@ -2285,6 +2286,7 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUse
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.accuracy)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.efficiency)}</td>
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.feedback)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{pct(r.compliance_score)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
                   <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
                   {canEditScores && <td className="px-4 py-3"><button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button></td>}
