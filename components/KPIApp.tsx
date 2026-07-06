@@ -4156,10 +4156,12 @@ function ResourcesPanel({ userRole, showToast }: { userRole: string, showToast: 
 function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
   const [links, setLinks] = useState<any[]>([])
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', url: '', description: '' })
+  const [form, setForm] = useState({ name: '', url: '', description: '', client: '' })
   const [saving, setSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>('All')
   const canManage = ['super_admin','admin'].includes(userRole)
   const colors = ['border-blue-400','border-green-400','border-purple-400','border-orange-400','border-pink-400','border-cyan-400']
+  const tabs = ['All', ...CLIENTS, 'General']
 
   useEffect(() => { loadLinks() }, [])
 
@@ -4173,9 +4175,9 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
     setSaving(true)
     let url = form.url.trim()
     if (!url.startsWith('http')) url = 'https://' + url
-    const { error } = await supabase.from('directory_links').insert({ name: form.name.trim(), url, description: form.description.trim() })
+    const { error } = await supabase.from('directory_links').insert({ name: form.name.trim(), url, description: form.description.trim(), client: form.client || null })
     if (error) showToast(error.message, 'error')
-    else { setForm({ name:'', url:'', description:'' }); setShowForm(false); showToast('Link added!', 'success'); loadLinks() }
+    else { setForm({ name:'', url:'', description:'', client:'' }); setShowForm(false); showToast('Link added!', 'success'); loadLinks() }
     setSaving(false)
   }
 
@@ -4184,6 +4186,10 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
     setLinks(prev => prev.filter(l => l.id !== id))
     showToast('Removed', 'success')
   }
+
+  const filteredLinks = activeTab === 'All' ? links
+    : activeTab === 'General' ? links.filter(l => !l.client)
+    : links.filter(l => l.client === activeTab)
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -4200,22 +4206,37 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
           <input value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="Link name (e.g. ClockSmart)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
           <input value={form.url} onChange={e => setForm(p=>({...p,url:e.target.value}))} placeholder="URL (e.g. https://...)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
           <input value={form.description} onChange={e => setForm(p=>({...p,description:e.target.value}))} placeholder="Short description (optional)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <select value={form.client} onChange={e => setForm(p=>({...p,client:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+            <option value="">General (not client-specific)</option>
+            {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
           <button onClick={addLink} disabled={saving} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{saving ? 'Saving...' : 'Add Link'}</button>
         </div>
       )}
 
-      {links.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 text-sm">No links yet.</div>
+      <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto">
+        {tabs.map(t => (
+          <button key={t} onClick={() => setActiveTab(t)} className={`px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition ${activeTab === t ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {t}{t !== 'All' && <span className="ml-1.5 text-xs text-gray-400">({t === 'General' ? links.filter(l=>!l.client).length : links.filter(l=>l.client===t).length})</span>}
+          </button>
+        ))}
+      </div>
+
+      {filteredLinks.length === 0 ? (
+        <div className="text-center py-12 text-gray-400 text-sm">No links {activeTab !== 'All' ? `for ${activeTab} ` : ''}yet.</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {links.map((link, i) => (
+          {filteredLinks.map((link, i) => (
             <div key={link.id} className={`relative bg-white rounded-xl border-l-4 ${colors[i % colors.length]} border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all group`}>
               {canManage && <button onClick={() => deleteLink(link.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 text-xs">x</button>}
               <a href={link.url} target="_blank" rel="noopener noreferrer" className="block">
                 <div className="flex items-start gap-4">
                   <span className="text-3xl">🔗</span>
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{link.name}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{link.name}</p>
+                      {link.client && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[link.client] || 'bg-gray-100 text-gray-600'}`}>{link.client}</span>}
+                    </div>
                     {link.description && <p className="text-xs text-gray-500 mt-1">{link.description}</p>}
                     <p className="text-xs text-blue-500 mt-2 truncate">{link.url}</p>
                   </div>
