@@ -2319,15 +2319,16 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
         <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4 flex-wrap">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">{emp.name.split(',')[0]?.charAt(0)||'?'}</div>
           <div><h3 className="font-bold text-gray-900">{emp.name}</h3><p className="text-sm text-gray-500">{emp.designation}{!emp.active && <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactive</span>}</p></div>
-          {empRecords.length > 0 && (
-            <div className="ml-auto flex items-center gap-2">
-              <label className="text-xs text-gray-500 font-medium">Focus month:</label>
-              <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                {empRecords.map(r => <option key={r.id} value={monthKeyOf(r)}>{r.month_label}</option>)}
-              </select>
-            </div>
-          )}
         </div>
+        {empRecords.length > 0 && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-medium text-blue-900">📅 Focus month for coaching:</span>
+            <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} className="border border-blue-300 bg-white rounded-lg px-3 py-1.5 text-sm text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-900">
+              {empRecords.map(r => <option key={r.id} value={monthKeyOf(r)}>{r.month_label}</option>)}
+            </select>
+            <span className="text-xs text-blue-600">Charts and history below scope to this month</span>
+          </div>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[{label:'Avg Score',value:avgScore>0?(avgScore*100).toFixed(2)+'%':'N/A'},{label:'Months Tracked',value:empRecords.length},{label:'Best Score',value:best?pct(best.overall_score):'N/A'},{label:'Perfect Months',value:empRecords.filter(r=>(r.overall_score||0)>=0.9999).length}].map(c => <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4"><p className="text-xs text-gray-500">{c.label}</p><p className="text-xl font-bold text-gray-900 mt-1">{c.value}</p></div>)}
         </div>
