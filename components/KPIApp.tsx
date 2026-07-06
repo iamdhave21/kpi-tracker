@@ -4159,6 +4159,7 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
   const [form, setForm] = useState({ name: '', url: '', description: '', client: '' })
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('All')
+  const [searchQ, setSearchQ] = useState('')
   const [editId, setEditId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ name: '', url: '', description: '', client: '' })
   const canManage = ['super_admin','admin'].includes(userRole)
@@ -4206,9 +4207,10 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
     showToast('Removed', 'success')
   }
 
-  const filteredLinks = activeTab === 'All' ? links
+  const filteredLinks = (activeTab === 'All' ? links
     : activeTab === 'General' ? links.filter(l => !l.client)
     : links.filter(l => l.client === activeTab)
+  ).filter(l => !searchQ.trim() || l.name.toLowerCase().includes(searchQ.toLowerCase()) || (l.description || '').toLowerCase().includes(searchQ.toLowerCase()))
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -4241,8 +4243,13 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
         ))}
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder={`Search ${activeTab === 'All' ? 'all links' : activeTab + ' links'}...`} className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+      </div>
+
       {filteredLinks.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 text-sm">No links {activeTab !== 'All' ? `for ${activeTab} ` : ''}yet.</div>
+        <div className="text-center py-12 text-gray-400 text-sm">No links found{activeTab !== 'All' ? ` for ${activeTab}` : ''}{searchQ.trim() ? ` matching "${searchQ}"` : ''}.</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredLinks.map((link, i) => (
