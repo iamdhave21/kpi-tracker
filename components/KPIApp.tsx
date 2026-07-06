@@ -90,6 +90,10 @@ function pct(v: number | null) {
 }
 function monthIndex(label: string) { return MONTHS.indexOf(label.split(' ')[0]) }
 function yearOf(label: string) { const p = label.split(' '); return parseInt(p[p.length-1]) || 0 }
+function avgOf(recs: KpiRecord[], field: 'attendance'|'accuracy'|'efficiency'|'feedback'|'compliance_score'): number {
+  const vals = recs.map(r => r[field]).filter((v): v is number => v !== null)
+  return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0
+}
 
 type ComplianceBreakdown = {
   rate: number | null // null = no items required ack yet this month (no data)
@@ -2078,35 +2082,56 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
       )}
 
       {ranked.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h4 className="font-semibold text-gray-700 text-sm mb-1">Overall Score — {viewLabel}</h4>
-          <p className="text-xs text-gray-400 mb-4">Sorted by overall score - 97% threshold line</p>
-          <ResponsiveContainer width="100%" height={Math.max(180, ranked.length * 28)}>
-            <BarChart data={ranked.map(r => ({ name: r.employee_name?.split(',')[0] || '', overall: r.overall_score ? parseFloat((r.overall_score*100).toFixed(2)) : 0, full: r.employee_name }))} layout="vertical" margin={{top:0,right:40,left:80,bottom:0}}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0"/>
-              <XAxis type="number" domain={[0,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
-              <YAxis type="category" dataKey="name" tick={{fontSize:10}} width={75}/>
-              <Tooltip formatter={(v:unknown) => typeof v==='number' ? v.toFixed(2)+'%' : String(v)} labelFormatter={(label:unknown) => String(label)}/>
-              <ReferenceLine x={97} stroke="#fbbf24" strokeDasharray="4 4"/>
-              <Bar dataKey="overall" radius={[0,4,4,0]}>
-                {ranked.map((r) => {
-                  const emp = employees.find(e => e.id === r.employee_id)
-                  const clientColor = emp?.client && selClient !== 'All' ? CLIENT_COLORS[emp.client] || '#6b7280' : null
-                  return (
-                  <Cell key={r.id} fill={clientColor || (
-                    (r.overall_score||0) >= 0.9999 ? '#10b981' :
-                    (r.overall_score||0) >= 0.97 ? '#3b82f6' :
-                    (r.overall_score||0) >= 0.94 ? '#f59e0b' : '#ef4444'
-                  )}/>
-                  )
-                })}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          <div className="flex gap-5 mt-3 text-xs text-gray-500 flex-wrap">
-            {[['#10b981','100%'],['#3b82f6','97-99%'],['#f59e0b','94-96%'],['#ef4444','<94%']].map(([c,l])=>(
-              <span key={l} className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm inline-block" style={{background:c}}/>{l}</span>
-            ))}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+            <h4 className="font-semibold text-gray-700 text-sm mb-1">Overall Score — {viewLabel}</h4>
+            <p className="text-xs text-gray-400 mb-4">Sorted by overall score - 97% threshold line</p>
+            <ResponsiveContainer width="100%" height={Math.max(180, ranked.length * 28)}>
+              <BarChart data={ranked.map(r => ({ name: r.employee_name?.split(',')[0] || '', overall: r.overall_score ? parseFloat((r.overall_score*100).toFixed(2)) : 0, full: r.employee_name }))} layout="vertical" margin={{top:0,right:40,left:80,bottom:0}}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0"/>
+                <XAxis type="number" domain={[0,101]} tick={{fontSize:10}} tickFormatter={v=>v+'%'}/>
+                <YAxis type="category" dataKey="name" tick={{fontSize:10}} width={75}/>
+                <Tooltip formatter={(v:unknown) => typeof v==='number' ? v.toFixed(2)+'%' : String(v)} labelFormatter={(label:unknown) => String(label)}/>
+                <ReferenceLine x={97} stroke="#fbbf24" strokeDasharray="4 4"/>
+                <Bar dataKey="overall" radius={[0,4,4,0]}>
+                  {ranked.map((r) => {
+                    const emp = employees.find(e => e.id === r.employee_id)
+                    const clientColor = emp?.client && selClient !== 'All' ? CLIENT_COLORS[emp.client] || '#6b7280' : null
+                    return (
+                    <Cell key={r.id} fill={clientColor || (
+                      (r.overall_score||0) >= 0.9999 ? '#10b981' :
+                      (r.overall_score||0) >= 0.97 ? '#3b82f6' :
+                      (r.overall_score||0) >= 0.94 ? '#f59e0b' : '#ef4444'
+                    )}/>
+                    )
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="flex gap-5 mt-3 text-xs text-gray-500 flex-wrap">
+              {[['#10b981','100%'],['#3b82f6','97-99%'],['#f59e0b','94-96%'],['#ef4444','<94%']].map(([c,l])=>(
+                <span key={l} className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm inline-block" style={{background:c}}/>{l}</span>
+              ))}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h4 className="font-semibold text-gray-700 text-sm mb-1">Avg Score Shape</h4>
+            <p className="text-xs text-gray-400 mb-2">{ranked.length} employee{ranked.length!==1?'s':''}{selClient!=='All'?` · ${selClient}`:''}{selTeam!=='all'?` · ${teams.find((t:any)=>t.id===selTeam)?.name||''}`:''} — {viewLabel}</p>
+            <ResponsiveContainer width="100%" height={240}>
+              <RadarChart data={[
+                { metric: 'Attendance', value: parseFloat((avgOf(ranked,'attendance')*100).toFixed(2)) },
+                { metric: 'Accuracy', value: parseFloat((avgOf(ranked,'accuracy')*100).toFixed(2)) },
+                { metric: 'Efficiency', value: parseFloat((avgOf(ranked,'efficiency')*100).toFixed(2)) },
+                { metric: 'Feedback', value: parseFloat((avgOf(ranked,'feedback')*100).toFixed(2)) },
+                { metric: 'Compliance', value: parseFloat((avgOf(ranked,'compliance_score')*100).toFixed(2)) },
+              ]} outerRadius="75%">
+                <PolarGrid stroke="#e5e7eb" />
+                <PolarAngleAxis dataKey="metric" tick={{fontSize:10}} />
+                <PolarRadiusAxis domain={[0,100]} tick={{fontSize:8}} tickCount={5} />
+                <Radar dataKey="value" stroke="#1e3a8a" fill="#1e3a8a" fillOpacity={0.35} />
+                <Tooltip formatter={(v:unknown) => typeof v === 'number' ? v.toFixed(2) + '%' : String(v)} />
+              </RadarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}
@@ -2220,6 +2245,27 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUse
           </div>
         ))}
       </div>
+      {teamRecords.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 max-w-md">
+          <h4 className="font-semibold text-gray-700 text-sm mb-1">Team Avg Score Shape</h4>
+          <p className="text-xs text-gray-400 mb-2">{selectedTeam?.name || ''} — {selMonth} {selYear}</p>
+          <ResponsiveContainer width="100%" height={240}>
+            <RadarChart data={[
+              { metric: 'Attendance', value: parseFloat((avgOf(teamRecords,'attendance')*100).toFixed(2)) },
+              { metric: 'Accuracy', value: parseFloat((avgOf(teamRecords,'accuracy')*100).toFixed(2)) },
+              { metric: 'Efficiency', value: parseFloat((avgOf(teamRecords,'efficiency')*100).toFixed(2)) },
+              { metric: 'Feedback', value: parseFloat((avgOf(teamRecords,'feedback')*100).toFixed(2)) },
+              { metric: 'Compliance', value: parseFloat((avgOf(teamRecords,'compliance_score')*100).toFixed(2)) },
+            ]} outerRadius="75%">
+              <PolarGrid stroke="#e5e7eb" />
+              <PolarAngleAxis dataKey="metric" tick={{fontSize:10}} />
+              <PolarRadiusAxis domain={[0,100]} tick={{fontSize:8}} tickCount={5} />
+              <Radar dataKey="value" stroke="#1e3a8a" fill="#1e3a8a" fillOpacity={0.35} />
+              <Tooltip formatter={(v:unknown) => typeof v === 'number' ? v.toFixed(2) + '%' : String(v)} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
