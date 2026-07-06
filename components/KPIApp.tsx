@@ -1670,7 +1670,7 @@ export default function KPIApp() {
           {(view === 'announcements' || view === 'gaming-hub') ? (
             <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} />
           ) : (
-          <div className={`px-4 pt-4 pb-6 relative z-10 ${view === 'org-chart' ? 'w-full' : 'max-w-6xl mx-auto'}`}>
+          <div className={`px-4 pt-4 pb-6 relative z-10 ${['org-chart','dashboard-month','dashboard-employee','dashboard-team'].includes(view) ? 'w-full max-w-[1600px] mx-auto' : 'max-w-6xl mx-auto'}`}>
           <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'dashboard-team' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
           {/* Preview mode banner */}
           {(userRole === 'super_admin' || userRole === 'admin') && (
