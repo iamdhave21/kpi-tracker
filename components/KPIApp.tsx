@@ -97,16 +97,18 @@ type ComplianceBreakdown = {
   coachAcked: number
   annTotal: number
   annAcked: number
+  taskTotal: number
+  taskDone: number
   totalRequired: number
   totalAcked: number
 }
 
-// Auto-calculates compliance = (coaching acks + announcement acks) / (total requiring ack)
+// Auto-calculates compliance = (coaching acks + announcement acks + tasks completed) / (total required)
 // for a given employee + month. Returns rate: null when there's simply nothing to
-// acknowledge yet that month (e.g. rollout hasn't started) so callers can fall back
+// acknowledge/complete yet that month (e.g. rollout hasn't started) so callers can fall back
 // to a manual value instead of showing a misleading 0%.
 async function getComplianceBreakdown(employeeEmail: string | null | undefined, monthLabel: string): Promise<ComplianceBreakdown> {
-  const empty: ComplianceBreakdown = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, totalRequired: 0, totalAcked: 0 }
+  const empty: ComplianceBreakdown = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, totalRequired: 0, totalAcked: 0 }
   if (!employeeEmail) return empty
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   if (mIdx < 0 || !yr) return empty
@@ -132,13 +134,20 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
     annAcked = (acks || []).length
   }
 
+  const { data: taskData } = await supabase.from('tasks')
+    .select('is_done')
+    .eq('assigned_to', employeeEmail.toLowerCase())
+    .gte('created_at', start).lt('created_at', end)
+
   const coachTotal = (coaching || []).length
   const coachAcked = (coaching || []).filter(c => c.agent_acknowledged).length
-  const totalRequired = coachTotal + annIds.length
-  const totalAcked = coachAcked + annAcked
+  const taskTotal = (taskData || []).length
+  const taskDone = (taskData || []).filter(t => t.is_done).length
+  const totalRequired = coachTotal + annIds.length + taskTotal
+  const totalAcked = coachAcked + annAcked + taskDone
   return {
     rate: totalRequired > 0 ? totalAcked / totalRequired : null,
-    coachTotal, coachAcked, annTotal: annIds.length, annAcked, totalRequired, totalAcked
+    coachTotal, coachAcked, annTotal: annIds.length, annAcked, taskTotal, taskDone, totalRequired, totalAcked
   }
 }
 
@@ -1853,7 +1862,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
           </div>
           <p className="text-xs text-gray-400 mt-1">
             {compLoading ? 'Checking coaching + announcement acknowledgments...' :
-             compAuto && compAuto.totalRequired > 0 ? `Auto-calculated: ${(compAuto.rate!*100).toFixed(0)}% (${compAuto.totalAcked}/${compAuto.totalRequired} acknowledged — ${compAuto.coachAcked}/${compAuto.coachTotal} coaching, ${compAuto.annAcked}/${compAuto.annTotal} announcements). Edit above to override.` :
+             compAuto && compAuto.totalRequired > 0 ? `Auto-calculated: ${(compAuto.rate!*100).toFixed(0)}% (${compAuto.totalAcked}/${compAuto.totalRequired} acknowledged — ${compAuto.coachAcked}/${compAuto.coachTotal} coaching, ${compAuto.annAcked}/${compAuto.annTotal} announcements, ${compAuto.taskDone}/${compAuto.taskTotal} tasks). Edit above to override.` :
              'No coaching or announcements requiring acknowledgment found this month — set manually.'}
           </p>
         </div>
@@ -2398,7 +2407,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
           <div className="relative"><input type="number" min="0" max="100" step="0.01" value={compliance} onChange={e=>setCompliance(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. 100"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span></div>
           <p className="text-xs text-gray-400 mt-1">
             {complianceLoading ? 'Checking coaching + announcement acknowledgments...' :
-             complianceAuto && complianceAuto.totalRequired > 0 ? `Auto-calculated: ${(complianceAuto.rate!*100).toFixed(0)}% (${complianceAuto.totalAcked}/${complianceAuto.totalRequired} acknowledged — ${complianceAuto.coachAcked}/${complianceAuto.coachTotal} coaching, ${complianceAuto.annAcked}/${complianceAuto.annTotal} announcements). Edit above to override.` :
+             complianceAuto && complianceAuto.totalRequired > 0 ? `Auto-calculated: ${(complianceAuto.rate!*100).toFixed(0)}% (${complianceAuto.totalAcked}/${complianceAuto.totalRequired} acknowledged — ${complianceAuto.coachAcked}/${complianceAuto.coachTotal} coaching, ${complianceAuto.annAcked}/${complianceAuto.annTotal} announcements, ${complianceAuto.taskDone}/${complianceAuto.taskTotal} tasks). Edit above to override.` :
              'No coaching or announcements requiring acknowledgment found this month — set manually.'}
           </p>
         </div>
@@ -4710,23 +4719,36 @@ type AppTask = {
 
 function TasksPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canAssign = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
+  const canSeeAll = userRole === 'super_admin' || userRole === 'admin'
   const [tasks, setTasks] = useState<AppTask[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [posting, setPosting] = useState(false)
   const [filterStatus, setFilterStatus] = useState<'All' | 'To Do' | 'Done'>('All')
-  const [form, setForm] = useState({ title: '', description: '', assigned_to: '', due_date: '' })
+  const [form, setForm] = useState({ title: '', description: '', due_date: '' })
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
+  const [recipientSearch, setRecipientSearch] = useState('')
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
 
   // Build a lookup of email -> name for display, and the list of people
   // a Manager/Team Lead can actually assign to (anyone with a work email).
   const assignableEmployees = employees.filter(e => e.active && e.email)
   const nameByEmail = (email: string) => assignableEmployees.find(e => e.email?.toLowerCase() === email.toLowerCase())?.name || email.split('@')[0]
+  const visibleRecipients = assignableEmployees.filter(e => !recipientSearch.trim() || e.name.toLowerCase().includes(recipientSearch.toLowerCase()))
 
   async function loadTasks() {
     setLoading(true)
     let q = supabase.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false })
-    // Agents only see tasks assigned to them. Manager/Team Lead see everyone's.
-    if (!canAssign) q = q.eq('assigned_to', currentUser.toLowerCase())
+    // Agents and Team Leads only see tasks assigned to them (plus, for Team
+    // Leads, tasks they personally assigned to others so they can track
+    // completion). Only Admin/Super Admin see everyone's tasks/history.
+    if (!canSeeAll) {
+      if (userRole === 'Team Lead') {
+        q = q.or(`assigned_to.eq.${currentUser.toLowerCase()},assigned_by.eq.${currentUser}`)
+      } else {
+        q = q.eq('assigned_to', currentUser.toLowerCase())
+      }
+    }
     const { data, error } = await q
     if (!error) setTasks((data || []) as AppTask[])
     setLoading(false)
@@ -4734,25 +4756,40 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
 
   useEffect(() => { loadTasks() }, [])
 
+  function toggleRecipient(email: string) {
+    setSelectedEmails(prev => { const next = new Set(prev); next.has(email) ? next.delete(email) : next.add(email); return next })
+  }
+  function selectAllRecipients() {
+    setSelectedEmails(new Set(visibleRecipients.map(e => e.email!.toLowerCase())))
+  }
+  function clearAllRecipients() {
+    setSelectedEmails(new Set())
+  }
+
   async function createTask() {
-    if (!form.title.trim() || !form.assigned_to) { showToast('Please add a title and pick who this is assigned to.', 'error'); return }
+    if (!form.title.trim() || selectedEmails.size === 0) { showToast('Please add a title and select at least one recipient.', 'error'); return }
     setPosting(true)
-    const { error } = await supabase.from('tasks').insert({
+    const recipients = Array.from(selectedEmails)
+    const rows = recipients.map(email => ({
       title: form.title.trim(),
       description: form.description.trim() || null,
-      assigned_to: form.assigned_to.toLowerCase(),
+      assigned_to: email,
       assigned_by: currentUser,
       due_date: form.due_date || null,
       is_done: false,
-    })
+    }))
+    const { error } = await supabase.from('tasks').insert(rows)
     setPosting(false)
     if (error) { showToast(error.message, 'error'); return }
-    showToast('Task assigned!')
-    fetch('/api/notify/task-assigned', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignedTo: form.assigned_to, assignedBy: currentUser, title: form.title.trim(), description: form.description.trim(), dueDate: form.due_date || null })
-    }).catch(() => {})
-    setForm({ title: '', description: '', assigned_to: '', due_date: '' })
+    showToast(`Task assigned to ${recipients.length} ${recipients.length === 1 ? 'person' : 'people'}!`)
+    recipients.forEach(email => {
+      fetch('/api/notify/task-assigned', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignedTo: email, assignedBy: currentUser, title: form.title.trim(), description: form.description.trim(), dueDate: form.due_date || null })
+      }).catch(() => {})
+    })
+    setForm({ title: '', description: '', due_date: '' })
+    setSelectedEmails(new Set()); setRecipientSearch('')
     setShowForm(false)
     loadTasks()
   }
@@ -4777,12 +4814,46 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
 
   const isOverdue = (dueDate: string | null) => dueDate ? new Date(dueDate) < new Date(new Date().toDateString()) : false
 
+  // Group into month buckets (by created_at) so history can be collapsed
+  // month-over-month. Current month is expanded by default.
+  const currentMonthKey = new Date().toISOString().slice(0, 7)
+  const monthGroups = new Map<string, AppTask[]>()
+  filtered.forEach(t => {
+    const key = t.created_at.slice(0, 7)
+    if (!monthGroups.has(key)) monthGroups.set(key, [])
+    monthGroups.get(key)!.push(t)
+  })
+  const sortedMonthKeys = Array.from(monthGroups.keys()).sort((a, b) => b.localeCompare(a))
+  const monthLabel = (key: string) => new Date(key + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  function toggleMonth(key: string) {
+    setExpandedMonths(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next })
+  }
+  const isMonthExpanded = (key: string) => key === currentMonthKey || expandedMonths.has(key)
+
+  const TaskRow = ({ t }: { t: AppTask }) => (
+    <div className={`bg-white border rounded-xl p-4 flex items-start gap-3 ${t.is_done ? 'border-gray-200 opacity-60' : isOverdue(t.due_date) ? 'border-red-300' : 'border-gray-200'}`}>
+      <button onClick={() => toggleDone(t)} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${t.is_done ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-blue-400'}`}>
+        {t.is_done && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <p className={`font-semibold text-sm ${t.is_done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{t.title}</p>
+        {t.description && <p className="text-sm text-gray-500 mt-0.5">{t.description}</p>}
+        <p className="text-xs text-gray-400 mt-1.5">
+          {canSeeAll && <>Assigned to <span className="font-medium text-gray-600">{nameByEmail(t.assigned_to)}</span> · </>}
+          By {t.assigned_by.split('@')[0]}
+          {t.due_date && <> · <span className={isOverdue(t.due_date) && !t.is_done ? 'text-red-500 font-medium' : ''}>{isOverdue(t.due_date) && !t.is_done ? '⚠ Overdue: ' : 'Due '}{new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></>}
+        </p>
+      </div>
+      {(canAssign && (canSeeAll || t.assigned_by === currentUser)) && <button onClick={() => deleteTask(t.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">×</button>}
+    </div>
+  )
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Tasks</h2>
-          <p className="text-sm text-gray-500">{canAssign ? `${tasks.length} task${tasks.length !== 1 ? 's' : ''} across the team` : `${tasks.length} task${tasks.length !== 1 ? 's' : ''} assigned to you`}</p>
+          <p className="text-sm text-gray-500">{canSeeAll ? `${tasks.length} task${tasks.length !== 1 ? 's' : ''} across the team` : `${tasks.length} task${tasks.length !== 1 ? 's' : ''} involving you`}</p>
         </div>
         {canAssign && (
           <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Assign Task'}</button>
@@ -4793,15 +4864,46 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
           <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Task title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
           <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Details (optional)..." rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-gray-600">Recipients ({selectedEmails.size} selected)</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={selectAllRecipients} className="text-xs text-blue-700 hover:underline">Select All</button>
+                <button type="button" onClick={clearAllRecipients} className="text-xs text-gray-400 hover:underline">Clear</button>
+              </div>
+            </div>
+            <input value={recipientSearch} onChange={e => setRecipientSearch(e.target.value)} placeholder="Search people..." className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 mb-2 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white divide-y divide-gray-50">
+              {visibleRecipients.map(e => {
+                const email = e.email!.toLowerCase()
+                const checked = selectedEmails.has(email)
+                return (
+                  <label key={e.id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50">
+                    <input type="checkbox" checked={checked} onChange={() => toggleRecipient(email)} className="w-4 h-4 rounded border-gray-300 text-blue-600" />
+                    <span className="text-gray-800">{e.name}</span>
+                  </label>
+                )
+              })}
+              {visibleRecipients.length === 0 && <p className="text-xs text-gray-400 px-3 py-2">No matches.</p>}
+            </div>
+            {selectedEmails.size > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {Array.from(selectedEmails).map(email => (
+                  <span key={email} className="flex items-center gap-1 bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded-full">
+                    {nameByEmail(email)}
+                    <button onClick={() => toggleRecipient(email)} className="hover:text-blue-900">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-3 flex-wrap">
-            <select value={form.assigned_to} onChange={e => setForm(p => ({ ...p, assigned_to: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 flex-1 min-w-48">
-              <option value="">Assign to...</option>
-              {assignableEmployees.map(e => <option key={e.id} value={e.email || ''}>{e.name}</option>)}
-            </select>
             <input type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
           </div>
           <div className="flex justify-end">
-            <button onClick={createTask} disabled={posting} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Assigning...' : 'Assign Task'}</button>
+            <button onClick={createTask} disabled={posting} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Assigning...' : `Assign to ${selectedEmails.size || ''} ${selectedEmails.size === 1 ? 'Person' : 'People'}`}</button>
           </div>
         </div>
       )}
@@ -4817,24 +4919,27 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
       ) : filtered.length === 0 ? (
         <div className="text-center py-8 text-gray-500 text-sm">No tasks found.</div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map(t => (
-            <div key={t.id} className={`bg-white border rounded-xl p-4 flex items-start gap-3 ${t.is_done ? 'border-gray-200 opacity-60' : isOverdue(t.due_date) ? 'border-red-300' : 'border-gray-200'}`}>
-              <button onClick={() => toggleDone(t)} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${t.is_done ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-blue-400'}`}>
-                {t.is_done && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-              </button>
-              <div className="flex-1 min-w-0">
-                <p className={`font-semibold text-sm ${t.is_done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{t.title}</p>
-                {t.description && <p className="text-sm text-gray-500 mt-0.5">{t.description}</p>}
-                <p className="text-xs text-gray-400 mt-1.5">
-                  {canAssign && <>Assigned to <span className="font-medium text-gray-600">{nameByEmail(t.assigned_to)}</span> · </>}
-                  By {t.assigned_by.split('@')[0]}
-                  {t.due_date && <> · <span className={isOverdue(t.due_date) && !t.is_done ? 'text-red-500 font-medium' : ''}>{isOverdue(t.due_date) && !t.is_done ? '⚠ Overdue: ' : 'Due '}{new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></>}
-                </p>
+        <div className="space-y-3">
+          {sortedMonthKeys.map(key => {
+            const monthTasks = monthGroups.get(key)!
+            const expanded = isMonthExpanded(key)
+            return (
+              <div key={key} className="space-y-2">
+                <button onClick={() => toggleMonth(key)} className="w-full flex items-center justify-between px-1 py-1.5 text-left group">
+                  <span className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    {monthLabel(key)} {key === currentMonthKey && <span className="text-xs font-normal text-blue-600">(current)</span>}
+                  </span>
+                  <span className="text-xs text-gray-400">{monthTasks.length} task{monthTasks.length !== 1 ? 's' : ''}</span>
+                </button>
+                {expanded && (
+                  <div className="space-y-2">
+                    {monthTasks.map(t => <TaskRow key={t.id} t={t} />)}
+                  </div>
+                )}
               </div>
-              {canAssign && <button onClick={() => deleteTask(t.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">×</button>}
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
