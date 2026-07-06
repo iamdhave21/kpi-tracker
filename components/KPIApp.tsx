@@ -4159,6 +4159,8 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
   const [form, setForm] = useState({ name: '', url: '', description: '', client: '' })
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('All')
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ name: '', url: '', description: '', client: '' })
   const canManage = ['super_admin','admin'].includes(userRole)
   const colors = ['border-blue-400','border-green-400','border-purple-400','border-orange-400','border-pink-400','border-cyan-400']
   const tabs = ['All', ...CLIENTS, 'General']
@@ -4181,6 +4183,23 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
     setSaving(false)
   }
 
+  function startEdit(link: any) {
+    setEditId(link.id)
+    setEditForm({ name: link.name || '', url: link.url || '', description: link.description || '', client: link.client || '' })
+    setShowForm(false)
+  }
+
+  async function saveEdit() {
+    if (!editId || !editForm.name.trim() || !editForm.url.trim()) return
+    setSaving(true)
+    let url = editForm.url.trim()
+    if (!url.startsWith('http')) url = 'https://' + url
+    const { error } = await supabase.from('directory_links').update({ name: editForm.name.trim(), url, description: editForm.description.trim(), client: editForm.client || null }).eq('id', editId)
+    if (error) showToast(error.message, 'error')
+    else { setEditId(null); showToast('Link updated!', 'success'); loadLinks() }
+    setSaving(false)
+  }
+
   async function deleteLink(id: string) {
     await supabase.from('directory_links').delete().eq('id', id)
     setLinks(prev => prev.filter(l => l.id !== id))
@@ -4198,7 +4217,7 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
           <h2 className="text-xl font-bold text-blue-900">Links</h2>
           <p className="text-sm text-gray-500">Quick access to company tools and websites</p>
         </div>
-        {canManage && <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Add Link'}</button>}
+        {canManage && <button onClick={() => { setShowForm(!showForm); setEditId(null) }} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Add Link'}</button>}
       </div>
 
       {showForm && canManage && (
@@ -4227,22 +4246,43 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredLinks.map((link, i) => (
-            <div key={link.id} className={`relative bg-white rounded-xl border-l-4 ${colors[i % colors.length]} border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all group`}>
-              {canManage && <button onClick={() => deleteLink(link.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 text-xs">x</button>}
-              <a href={link.url} target="_blank" rel="noopener noreferrer" className="block">
-                <div className="flex items-start gap-4">
-                  <span className="text-3xl">🔗</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{link.name}</p>
-                      {link.client && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[link.client] || 'bg-gray-100 text-gray-600'}`}>{link.client}</span>}
-                    </div>
-                    {link.description && <p className="text-xs text-gray-500 mt-1">{link.description}</p>}
-                    <p className="text-xs text-blue-500 mt-2 truncate">{link.url}</p>
-                  </div>
+            editId === link.id ? (
+              <div key={link.id} className="relative bg-white rounded-xl border-l-4 border-blue-400 border border-gray-100 p-5 shadow-sm space-y-2">
+                <input value={editForm.name} onChange={e => setEditForm(p=>({...p,name:e.target.value}))} placeholder="Link name" className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+                <input value={editForm.url} onChange={e => setEditForm(p=>({...p,url:e.target.value}))} placeholder="URL" className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+                <input value={editForm.description} onChange={e => setEditForm(p=>({...p,description:e.target.value}))} placeholder="Description (optional)" className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+                <select value={editForm.client} onChange={e => setEditForm(p=>({...p,client:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                  <option value="">General (not client-specific)</option>
+                  {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setEditId(null)} className="flex-1 border border-gray-300 text-gray-700 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50">Cancel</button>
+                  <button onClick={saveEdit} disabled={saving} className="flex-1 bg-blue-900 text-white py-1.5 rounded-lg text-xs font-medium hover:bg-blue-800 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
                 </div>
-              </a>
-            </div>
+              </div>
+            ) : (
+              <div key={link.id} className={`relative bg-white rounded-xl border-l-4 ${colors[i % colors.length]} border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all group`}>
+                {canManage && (
+                  <div className="absolute top-2 right-2 flex gap-2">
+                    <button onClick={() => startEdit(link)} className="text-gray-300 hover:text-blue-600 text-xs">✎</button>
+                    <button onClick={() => deleteLink(link.id)} className="text-gray-300 hover:text-red-500 text-xs">x</button>
+                  </div>
+                )}
+                <a href={link.url} target="_blank" rel="noopener noreferrer" className="block">
+                  <div className="flex items-start gap-4">
+                    <span className="text-3xl">🔗</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{link.name}</p>
+                        {link.client && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[link.client] || 'bg-gray-100 text-gray-600'}`}>{link.client}</span>}
+                      </div>
+                      {link.description && <p className="text-xs text-gray-500 mt-1">{link.description}</p>}
+                      <p className="text-xs text-blue-500 mt-2 truncate">{link.url}</p>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            )
           ))}
         </div>
       )}
