@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star } from 'lucide-react'
@@ -2306,10 +2306,12 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
   const [statusFilter, setStatusFilter] = useState<'active'|'inactive'>('active')
   const [focusMonth, setFocusMonth] = useState<string>('')
   const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
+  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set())
   const canEditScores = ['super_admin','admin','Team Lead'].includes(userRole)
 
   const emp = employees.find(e => e.id === selEmployee)
-  const empRecords = records.filter(r => r.employee_id === selEmployee && r.overall_score !== null && (r.overall_score||0) > 0).sort((a,b) => a.month_label.localeCompare(b.month_label))
+  const empRecords = records.filter(r => r.employee_id === selEmployee && r.overall_score !== null && (r.overall_score||0) > 0)
+    .sort((a,b) => (yearOf(a.month_label)*12 + monthIndex(a.month_label)) - (yearOf(b.month_label)*12 + monthIndex(b.month_label)))
   const monthKeyOf = (r: KpiRecord) => `${yearOf(r.month_label)}-${String(monthIndex(r.month_label)+1).padStart(2,'0')}`
 
   // Focus-month selector: pick any tracked month and the chart/table scope
@@ -2427,20 +2429,48 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
                 ))}
               </tr></thead>
               <tbody>
-                {[...empRecords].reverse().map(r => (
-                  <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50 ${monthKeyOf(r) === focusMonth ? 'bg-blue-50/50' : ''}`}>
-                    <td className="px-4 py-2.5 text-gray-700 font-medium whitespace-nowrap">{r.month_label}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{r.designation}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.attendance)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.accuracy)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.efficiency)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.feedback)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.compliance_score)}</td>
-                    <td className="px-4 py-2.5 text-right"><span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
-                    {canEditScores && <td className="px-4 py-2.5"><button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button></td>}
-                  </tr>
-                ))}
+                {(() => {
+                  const currentYear = String(new Date().getFullYear())
+                  const yearGroups = new Map<string, KpiRecord[]>()
+                  ;[...empRecords].reverse().forEach(r => {
+                    const y = String(yearOf(r.month_label))
+                    if (!yearGroups.has(y)) yearGroups.set(y, [])
+                    yearGroups.get(y)!.push(r)
+                  })
+                  const sortedYears = Array.from(yearGroups.keys()).sort((a,b) => b.localeCompare(a))
+                  const colCount = canEditScores ? 10 : 9
+                  return sortedYears.map(year => {
+                    const yearRecords = yearGroups.get(year)!
+                    const expanded = year === currentYear || expandedYears.has(year)
+                    return (
+                      <Fragment key={year}>
+                        <tr className="bg-gray-50/80 border-b border-gray-100">
+                          <td colSpan={colCount} className="px-4 py-2">
+                            <button onClick={() => setExpandedYears(prev => { const next = new Set(prev); next.has(year) ? next.delete(year) : next.add(year); return next })} className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-blue-700 transition">
+                              {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                              {year} {year === currentYear && <span className="text-xs font-normal text-blue-600">(current)</span>}
+                              <span className="text-xs font-normal text-gray-400">— {yearRecords.length} month{yearRecords.length!==1?'s':''}</span>
+                            </button>
+                          </td>
+                        </tr>
+                        {expanded && yearRecords.map(r => (
+                          <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50 ${monthKeyOf(r) === focusMonth ? 'bg-blue-50/50' : ''}`}>
+                            <td className="px-4 py-2.5 text-gray-700 font-medium whitespace-nowrap">{r.month_label}</td>
+                            <td className="px-4 py-2.5 text-gray-500">{r.designation}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.attendance)}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.accuracy)}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.efficiency)}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.feedback)}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.compliance_score)}</td>
+                            <td className="px-4 py-2.5 text-right"><span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
+                            <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
+                            {canEditScores && <td className="px-4 py-2.5"><button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button></td>}
+                          </tr>
+                        ))}
+                      </Fragment>
+                    )
+                  })
+                })()}
               </tbody>
             </table>
           </div>
