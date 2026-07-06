@@ -7328,6 +7328,8 @@ function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplie
   const [bulkSaving, setBulkSaving] = useState(false)
   const [pastPeriods, setPastPeriods] = useState<any[]>([])
   const [loadingPast, setLoadingPast] = useState(true)
+  const [searchQ, setSearchQ] = useState('')
+  const [clientFilter, setClientFilter] = useState('All')
 
   useEffect(() => { loadPastPeriods() }, [])
 
@@ -7351,8 +7353,15 @@ function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplie
   }
 
   const monthLabel = periodToMonthLabel(periodLabel)
-  const withData = rows.filter(r => r.computed_attendance_pct !== null)
-  const noData = rows.filter(r => r.computed_attendance_pct === null)
+  const clientOf = (r: TTPeriodRow) => employees.find(e => e.id === r.employee_id)?.client || null
+  const filteredRows = rows.filter(r => {
+    const q = searchQ.trim().toLowerCase()
+    const matchesSearch = !q || r.employee_name.toLowerCase().includes(q) || r.employee_id_code.toLowerCase().includes(q)
+    const matchesClient = clientFilter === 'All' || clientOf(r) === clientFilter
+    return matchesSearch && matchesClient
+  })
+  const withData = filteredRows.filter(r => r.computed_attendance_pct !== null)
+  const noData = filteredRows.filter(r => r.computed_attendance_pct === null)
 
   async function applyOne(row: TTPeriodRow) {
     if (!row.employee_id) { showToast(`No employee found with ID ${row.employee_id_code} -- check Employees records.`, 'error'); return }
@@ -7457,6 +7466,16 @@ function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplie
       {rows.length > 0 && (
         <>
           <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search name or ID..." className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 w-56 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+              </div>
+              <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                <option value="All">All Clients</option>
+                {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
             <p className="text-sm text-gray-600">
               <span className="font-semibold text-gray-900">{withData.length}</span> with data ready to apply to <span className="font-semibold text-blue-700">{monthLabel}</span>
               {noData.length > 0 && <span className="text-gray-400"> · {noData.length} with no data yet (excluded)</span>}
@@ -7475,9 +7494,15 @@ function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplie
                   ))}
                 </tr></thead>
                 <tbody>
-                  {rows.map(r => (
+                  {filteredRows.length === 0 && (
+                    <tr><td colSpan={9} className="text-center py-10 text-gray-400">No rows match this filter.</td></tr>
+                  )}
+                  {filteredRows.map(r => (
                     <tr key={r.employee_id_code} className={`border-b border-gray-100 hover:bg-gray-50 ${r.computed_attendance_pct === null ? 'opacity-50' : ''}`}>
-                      <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{r.employee_name}</td>
+                      <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">
+                        {r.employee_name}
+                        {clientOf(r) && <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[clientOf(r)!] || 'bg-gray-100 text-gray-600'}`}>{clientOf(r)}</span>}
+                      </td>
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
                         {r.employee_id_code}
                         {!r.employee_id && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">no match</span>}
