@@ -6385,7 +6385,12 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
           const { data: kpiData } = await supabase.from('kpi_records').select('attendance,accuracy,efficiency,feedback,overall_score')
             .in('employee_id', empIds).eq('month_label', monthLabel)
           if ((kpiData||[]).length > 0) {
-            const avg = (kpiData||[]).reduce((sum:number, r:any) => sum + (r.overall_score||((r.attendance||0)+(r.accuracy||0)+(r.efficiency||0)+(r.feedback||0))/4), 0) / (kpiData||[]).length
+            const avg = (kpiData||[]).reduce((sum:number, r:any) => {
+              const scorePct = (r.overall_score !== null && r.overall_score !== undefined)
+                ? r.overall_score * 100
+                : ((r.attendance||0)+(r.accuracy||0)+(r.efficiency||0)+(r.feedback||0))/4*100
+              return sum + scorePct
+            }, 0) / (kpiData||[]).length
             teamPerfScore = Math.min(avg, 100)
           }
         }
