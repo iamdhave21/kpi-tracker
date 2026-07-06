@@ -7242,49 +7242,9 @@ function TLComplianceReport({ employees, currentUser, userRole }:
 }
 
 // -- HRIS: Employee Referral -------------------------------------------------
-// -- Time Tracker -------------------------------------------------------------
-type TTRow = {
-  employee_name: string
-  employee_id: string | null
-  work_date: string // yyyy-mm-dd
-  hours: number
-  raw_remark: string
-  status: 'Present'|'Late'|'Sick Leave'|'Emergency Leave'|'Slide Shift'|'Half Day'|'Absent'|'Day Off'
-  late_hours: number
-  non_billable_hours: number
-}
+// -- Time Tracker (v2 -- paste-based, matched by Employee ID) ---------------
 
-const TT_STATUSES: TTRow['status'][] = ['Present','Late','Sick Leave','Emergency Leave','Slide Shift','Half Day','Absent','Day Off']
-
-// Deduction weights -- late is proportional (mirrors the Hours/Late-Rendered/%/weight
-// formula shared: %late = lateHours/8*100, deduction = %late * 0.05). Sick/Emergency
-// Leave and Absent are flat per-instance deductions since they're whole-day events.
-function computeAttendancePct(rows: TTRow[]): number {
-  let deduction = 0
-  rows.forEach(r => {
-    if (r.status === 'Late') deduction += (r.late_hours / 8) * 100 * 0.05
-    else if (r.status === 'Sick Leave' || r.status === 'Emergency Leave') deduction += 5
-    else if (r.status === 'Absent') deduction += 10
-    else if (r.status === 'Half Day') deduction += 2.5
-    // Present, Slide Shift, Day Off -> no deduction
-  })
-  return Math.max(0, Math.min(100, 100 - deduction))
-}
-
-function classifyRow(hours: number, remark: unknown): { status: TTRow['status'], late_hours: number } {
-  if (typeof remark === 'number') return { status: 'Late', late_hours: remark }
-  const r = (remark || '').toString().trim()
-  if (r === 'Sick Leave') return { status: 'Sick Leave', late_hours: 0 }
-  if (r === 'Emergency Leave') return { status: 'Emergency Leave', late_hours: 0 }
-  if (r === 'Slide Shift') return { status: 'Slide Shift', late_hours: 0 }
-  if (r === 'Late') return { status: 'Late', late_hours: Math.max(0, 8 - hours) }
-  if (r === 'Half Day') return { status: 'Half Day', late_hours: 0 }
-  if (r === 'Absent') return { status: 'Absent', late_hours: 0 }
-  if (!hours || hours === 0) return { status: 'Day Off', late_hours: 0 }
-  return { status: 'Present', late_hours: 0 }
-}
-
-// Derives "June 2026" from a period label like "June 16-30, 2026" or "June 16-30.2026"
+// Derives "June 2026" from a period label like "June 16-30, 2026"
 function periodToMonthLabel(periodLabel: string): string {
   const yearMatch = periodLabel.match(/(20\d{2})/)
   const year = yearMatch ? yearMatch[1] : String(new Date().getFullYear())
@@ -7292,246 +7252,290 @@ function periodToMonthLabel(periodLabel: string): string {
   return monthMatch ? `${monthMatch} ${year}` : periodLabel
 }
 
+type TTPeriodRow = {
+  employee_id_code: string
+  employee_name: string
+  employee_id: string | null // resolved uuid
+  basic_hours_worked: number
+  days_worked: number
+  absent_days: number
+  late_hours: number
+  late_mins: number
+  undertime_hours: number
+  undertime_mins: number
+  total_sd_hours: number
+  holiday_days: number
+  restday_days: number
+  overtime_hours: number
+  night_diff_days: number
+  night_diff_ot_hours: number
+  billable_hours: number
+  non_billable_hours: number
+  computed_attendance_pct: number | null // null = no data this period, excluded
+}
+
+function computePeriodAttendance(r: Omit<TTPeriodRow,'employee_id'|'employee_id_code'|'employee_name'|'billable_hours'|'non_billable_hours'|'computed_attendance_pct'>): number | null {
+  // "No data yet" rows -- everything's zero, nothing to compute from.
+  if (r.days_worked === 0 && r.basic_hours_worked === 0 && r.absent_days === 0) return null
+  const scheduledDays = r.days_worked
+  if (scheduledDays <= 0) return null
+  const actualDays = Math.max(0, scheduledDays - r.absent_days)
+  const basePct = (actualDays / scheduledDays) * 100
+  const lateUndertimeHours = r.late_hours + r.late_mins/60 + r.undertime_hours + r.undertime_mins/60
+  const deduction = (lateUndertimeHours / 8) * 100 * 0.05
+  return Math.max(0, Math.min(100, basePct - deduction))
+}
+
+// Parses a pasted tab-separated block (header row + data rows) in the exact
+// column order from the time tracking system's export.
+function parsePastedTimeTracker(text: string, employees: Employee[]): TTPeriodRow[] {
+  const lines = text.trim().split('\n').filter(l => l.trim())
+  if (lines.length < 2) return []
+  const rows: TTPeriodRow[] = []
+  // Skip the header line (line 0) -- assume fixed column order matching the
+  // known export format rather than fuzzy-matching header text, since it's
+  // pasted directly from the same system every time.
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split('\t').map(c => c.trim())
+    if (cols.length < 16) continue
+    const [, name, empIdCode, basicHours, daysWorked, absent, lateHrs, lateMins, undertimeHrs, undertimeMins, totalSd, holiday, restday, overtime, nightDiff, nightDiffOt] = cols
+    const num = (v: string) => parseFloat(v) || 0
+    const cleanName = name.trim()
+    const match = employees.find(e => e.employee_id && e.employee_id.trim().toLowerCase() === empIdCode.trim().toLowerCase())
+    const base = {
+      basic_hours_worked: num(basicHours), days_worked: num(daysWorked), absent_days: num(absent),
+      late_hours: num(lateHrs), late_mins: num(lateMins), undertime_hours: num(undertimeHrs), undertime_mins: num(undertimeMins),
+      total_sd_hours: num(totalSd), holiday_days: num(holiday), restday_days: num(restday), overtime_hours: num(overtime),
+      night_diff_days: num(nightDiff), night_diff_ot_hours: num(nightDiffOt),
+    }
+    const attendancePct = computePeriodAttendance(base)
+    rows.push({
+      employee_id_code: empIdCode.trim(), employee_name: cleanName, employee_id: match?.id || null,
+      ...base,
+      billable_hours: base.basic_hours_worked, non_billable_hours: 0,
+      computed_attendance_pct: attendancePct,
+    })
+  }
+  return rows
+}
+
 function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplied }:
   { employees: Employee[], records: KpiRecord[], currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void, onApplied: () => void }) {
-  const [parsing, setParsing] = useState(false)
-  const [sheetNames, setSheetNames] = useState<string[]>([])
-  const [workbook, setWorkbook] = useState<any>(null)
-  const [selectedSheet, setSelectedSheet] = useState('')
+  const [pasteText, setPasteText] = useState('')
   const [periodLabel, setPeriodLabel] = useState('')
-  const [rows, setRows] = useState<TTRow[]>([])
-  const [saving, setSaving] = useState<string | null>(null) // employee name currently being saved
-  const [pastEntries, setPastEntries] = useState<any[]>([])
+  const [rows, setRows] = useState<TTPeriodRow[]>([])
+  const [saving, setSaving] = useState<string | null>(null)
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [pastPeriods, setPastPeriods] = useState<any[]>([])
   const [loadingPast, setLoadingPast] = useState(true)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { loadPastEntries() }, [])
+  useEffect(() => { loadPastPeriods() }, [])
 
-  async function loadPastEntries() {
+  async function loadPastPeriods() {
     setLoadingPast(true)
-    const { data } = await supabase.from('time_tracker_entries').select('*').order('uploaded_at', { ascending: false })
-    setPastEntries(data || [])
+    const { data } = await supabase.from('time_tracker_periods').select('*').order('uploaded_at', { ascending: false })
+    setPastPeriods(data || [])
     setLoadingPast(false)
   }
 
-  function nameByEmployee(name: string): string | null {
-    const clean = name.trim().toLowerCase()
-    const match = employees.find(e => e.name.trim().toLowerCase() === clean)
-    return match?.id || null
+  function handleParse() {
+    if (!pasteText.trim()) { showToast('Paste the time tracker table first.', 'error'); return }
+    if (!periodLabel.trim()) { showToast('Give this period a label, e.g. "June 16-30, 2026".', 'error'); return }
+    const parsed = parsePastedTimeTracker(pasteText, employees)
+    if (parsed.length === 0) { showToast('Could not parse any rows -- check the pasted format.', 'error'); return }
+    setRows(parsed)
   }
 
-  async function handleFile(file: File) {
-    setParsing(true)
-    try {
-      const XLSX = await import('xlsx')
-      const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf, { type: 'array', cellDates: true })
-      setWorkbook(wb)
-      setSheetNames(wb.SheetNames)
-      // Try to guess the most likely sheet -- prefer one with "16-3" or "1-15" in the name
-      const guess = wb.SheetNames.find((n: string) => /\d/.test(n)) || wb.SheetNames[0]
-      setSelectedSheet(guess)
-      loadSheet(wb, guess)
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to read file', 'error')
-    }
-    setParsing(false)
+  function updateRow(empCode: string, patch: Partial<TTPeriodRow>) {
+    setRows(prev => prev.map(r => r.employee_id_code === empCode ? { ...r, ...patch } : r))
   }
 
-  function loadSheet(wb: any, sheetName: string) {
-    setSelectedSheet(sheetName)
-    setPeriodLabel(sheetName)
-    const ws = wb.Sheets[sheetName]
-    if (!ws) return
-    import('xlsx').then(XLSX => {
-      const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
-      const parsed: TTRow[] = []
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i]
-        const [contractor, , , dateVal, hoursVal, remarkVal] = row || []
-        if (!contractor || !dateVal) continue
-        const hours = typeof hoursVal === 'number' ? hoursVal : parseFloat(hoursVal) || 0
-        const dateObj = dateVal instanceof Date ? dateVal : new Date(dateVal)
-        if (isNaN(dateObj.getTime())) continue
-        const { status, late_hours } = classifyRow(hours, remarkVal)
-        parsed.push({
-          employee_name: String(contractor).trim(),
-          employee_id: nameByEmployee(String(contractor)),
-          work_date: dateObj.toISOString().slice(0,10),
-          hours, raw_remark: remarkVal != null ? String(remarkVal) : '',
-          status, late_hours, non_billable_hours: 0,
-        })
-      }
-      setRows(parsed)
-    })
-  }
-
-  // Group parsed rows by employee for the review UI
-  const byEmployee = new Map<string, TTRow[]>()
-  rows.forEach(r => { if (!byEmployee.has(r.employee_name)) byEmployee.set(r.employee_name, []); byEmployee.get(r.employee_name)!.push(r) })
-  const employeeNames = Array.from(byEmployee.keys()).sort()
   const monthLabel = periodToMonthLabel(periodLabel)
+  const withData = rows.filter(r => r.computed_attendance_pct !== null)
+  const noData = rows.filter(r => r.computed_attendance_pct === null)
 
-  function updateRow(empName: string, idx: number, patch: Partial<TTRow>) {
-    setRows(prev => {
-      let count = -1
-      return prev.map(r => {
-        if (r.employee_name !== empName) return r
-        count++
-        return count === idx ? { ...r, ...patch } : r
-      })
-    })
-  }
-
-  async function saveAndApply(empName: string) {
-    const empRows = byEmployee.get(empName) || []
-    if (empRows.length === 0) return
-    const empId = empRows[0].employee_id
-    if (!empId) { showToast(`No matching employee found for "${empName}" -- check the name matches Employees exactly.`, 'error'); return }
-    setSaving(empName)
+  async function applyOne(row: TTPeriodRow) {
+    if (!row.employee_id) { showToast(`No employee found with ID ${row.employee_id_code} -- check Employees records.`, 'error'); return }
+    if (row.computed_attendance_pct === null) return
+    setSaving(row.employee_id_code)
     try {
-      // 1. Persist the raw entries
-      const insertRows = empRows.map(r => ({
-        employee_name: r.employee_name, employee_id: r.employee_id, work_date: r.work_date,
-        hours: r.hours, raw_remark: r.raw_remark, status: r.status, late_hours: r.late_hours,
-        non_billable_hours: r.non_billable_hours, period_label: periodLabel, month_label: monthLabel,
-        uploaded_by: currentUser, applied_to_attendance: true, applied_at: new Date().toISOString(),
-      }))
-      const { error: insErr } = await supabase.from('time_tracker_entries').insert(insertRows)
-      if (insErr) throw insErr
-
-      // 2. Compute attendance % and apply to the matching KPI record
-      const attendancePct = computeAttendancePct(empRows) / 100
-      const existing = records.find(r => r.employee_id === empId && r.month_label === monthLabel)
-      if (existing) {
-        const overall = attendancePct*0.2 + (existing.accuracy||0)*0.3 + (existing.efficiency||0)*0.3 + (existing.feedback||0)*0.15 + (existing.compliance_score||0)*0.05
-        const { error } = await supabase.from('kpi_records').update({ attendance: attendancePct, overall_score: overall, updated_at: new Date().toISOString() }).eq('id', existing.id)
-        if (error) throw error
-        await writeAuditLog('APPLY_TIME_TRACKER', currentUser || '', empName, monthLabel, 'Attendance', pct(existing.attendance), pct(attendancePct))
-      } else {
-        const { error } = await supabase.from('kpi_records').insert({
-          employee_id: empId, employee_name: empName, designation: employees.find(e=>e.id===empId)?.designation || '',
-          month_label: monthLabel, attendance: attendancePct, overall_score: null, updated_at: new Date().toISOString(),
-        })
-        if (error) throw error
-        await writeAuditLog('APPLY_TIME_TRACKER', currentUser || '', empName, monthLabel, 'Attendance', 'N/A', pct(attendancePct))
-      }
-      showToast(`${empName}: attendance set to ${(attendancePct*100).toFixed(2)}% for ${monthLabel}`)
+      await persistRow(row)
+      showToast(`${row.employee_name}: attendance set to ${row.computed_attendance_pct!.toFixed(2)}% for ${monthLabel}`)
       onApplied()
-      loadPastEntries()
+      loadPastPeriods()
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to apply', 'error')
     }
     setSaving(null)
   }
 
+  async function applyAll() {
+    const applicable = withData.filter(r => r.employee_id)
+    if (applicable.length === 0) { showToast('Nothing to apply -- no matched employees with data.', 'error'); return }
+    setBulkSaving(true)
+    let ok = 0
+    for (const row of applicable) {
+      try { await persistRow(row); ok++ } catch { /* continue with the rest */ }
+    }
+    setBulkSaving(false)
+    showToast(`Applied attendance for ${ok}/${applicable.length} employees for ${monthLabel}`)
+    onApplied()
+    loadPastPeriods()
+  }
+
+  async function persistRow(row: TTPeriodRow) {
+    const attendancePct = row.computed_attendance_pct! / 100
+    // 1. Persist the period summary row (upsert on employee_id_code + period_label)
+    const { error: upsertErr } = await supabase.from('time_tracker_periods').upsert({
+      employee_id: row.employee_id, employee_id_code: row.employee_id_code, employee_name: row.employee_name,
+      period_label: periodLabel, month_label: monthLabel,
+      basic_hours_worked: row.basic_hours_worked, days_worked: row.days_worked, absent_days: row.absent_days,
+      late_hours: row.late_hours, late_mins: row.late_mins, undertime_hours: row.undertime_hours, undertime_mins: row.undertime_mins,
+      total_sd_hours: row.total_sd_hours, holiday_days: row.holiday_days, restday_days: row.restday_days,
+      overtime_hours: row.overtime_hours, night_diff_days: row.night_diff_days, night_diff_ot_hours: row.night_diff_ot_hours,
+      billable_hours: row.billable_hours, non_billable_hours: row.non_billable_hours,
+      computed_attendance_pct: row.computed_attendance_pct,
+      uploaded_by: currentUser, applied_to_attendance: true, applied_at: new Date().toISOString(),
+    }, { onConflict: 'employee_id_code,period_label' })
+    if (upsertErr) throw upsertErr
+
+    // 2. Apply to the matching KPI record for that month
+    const existing = records.find(r => r.employee_id === row.employee_id && r.month_label === monthLabel)
+    if (existing) {
+      const overall = attendancePct*0.2 + (existing.accuracy||0)*0.3 + (existing.efficiency||0)*0.3 + (existing.feedback||0)*0.15 + (existing.compliance_score||0)*0.05
+      const { error } = await supabase.from('kpi_records').update({ attendance: attendancePct, overall_score: overall, updated_at: new Date().toISOString() }).eq('id', existing.id)
+      if (error) throw error
+      await writeAuditLog('APPLY_TIME_TRACKER', currentUser || '', row.employee_name, monthLabel, 'Attendance', pct(existing.attendance), pct(attendancePct))
+    } else {
+      const emp = employees.find(e => e.id === row.employee_id)
+      const { error } = await supabase.from('kpi_records').insert({
+        employee_id: row.employee_id, employee_name: row.employee_name, designation: emp?.designation || '',
+        month_label: monthLabel, attendance: attendancePct, overall_score: null, updated_at: new Date().toISOString(),
+      })
+      if (error) throw error
+      await writeAuditLog('APPLY_TIME_TRACKER', currentUser || '', row.employee_name, monthLabel, 'Attendance', 'N/A', pct(attendancePct))
+    }
+  }
+
+  async function generateTimeReport() {
+    if (rows.length === 0) { showToast('Parse a period first.', 'error'); return }
+    const XLSX = await import('xlsx')
+    const reportRows = rows.map(r => ({
+      'Employee ID': r.employee_id_code, 'Name': r.employee_name,
+      'Billable Hours': r.billable_hours, 'Non-Billable Hours': r.non_billable_hours,
+      'Total Hours': r.billable_hours + r.non_billable_hours,
+      'Absent Days': r.absent_days, 'Attendance %': r.computed_attendance_pct !== null ? r.computed_attendance_pct.toFixed(2) : 'No data',
+      'Period': periodLabel,
+    }))
+    const ws = XLSX.utils.json_to_sheet(reportRows)
+    ws['!cols'] = [{wch:14},{wch:28},{wch:14},{wch:16},{wch:12},{wch:12},{wch:12},{wch:20}]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Time Report')
+    XLSX.writeFile(wb, `Time_Report_${periodLabel.replace(/[^a-z0-9]/gi,'_')}.xlsx`)
+    showToast('Time report downloaded!')
+  }
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div>
         <h2 className="text-xl font-bold text-blue-900 flex items-center gap-2"><Clock className="w-5 h-5"/>Time Tracker</h2>
-        <p className="text-sm text-gray-500">Import fortnightly time logs and apply computed Attendance % to KPI records</p>
+        <p className="text-sm text-gray-500">Paste a period summary from the time tracking system, matched by Employee ID</p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
         <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={() => fileInputRef.current?.click()} disabled={parsing} className="flex items-center gap-2 bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">
-            <Upload className="w-4 h-4"/>{parsing ? 'Reading file...' : 'Upload Time Tracker (.xlsx)'}
-          </button>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-          {sheetNames.length > 0 && (
-            <>
-              <label className="text-xs text-gray-500 font-medium">Period sheet:</label>
-              <select value={selectedSheet} onChange={e => loadSheet(workbook, e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                {sheetNames.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </>
-          )}
+          <label className="text-sm font-medium text-gray-700">Period label:</label>
+          <input value={periodLabel} onChange={e => setPeriodLabel(e.target.value)} placeholder="e.g. June 16-30, 2026" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 flex-1 min-w-64 focus:outline-none focus:ring-2 focus:ring-blue-900" />
         </div>
-        {rows.length > 0 && (
-          <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
-            <span>Detected period: <span className="font-semibold text-gray-900">{periodLabel}</span></span>
-            <span>→ applies to KPI month: <span className="font-semibold text-blue-700">{monthLabel}</span></span>
-            <span className="text-gray-400">({rows.length} rows, {employeeNames.length} employees)</span>
-          </div>
-        )}
+        <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} rows={6} placeholder="Paste the full table here, including the header row (BRANCH, NAME, EMPLOYEE ID, BASIC HOURS WORKED, ...)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-900" />
+        <div className="flex gap-2">
+          <button onClick={handleParse} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition">Parse</button>
+          {rows.length > 0 && <button onClick={generateTimeReport} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition">Download Time Report (.xlsx)</button>}
+        </div>
       </div>
 
-      {employeeNames.length > 0 && (
-        <div className="space-y-4">
-          <p className="text-xs text-gray-400">Review and adjust classification/non-billable hours below, then apply per employee. Applying updates their Attendance % on the {monthLabel} KPI record and recalculates their Overall score.</p>
-          {employeeNames.map(empName => {
-            const empRows = byEmployee.get(empName)!
-            const attendancePct = computeAttendancePct(empRows)
-            const totalNonBillable = empRows.reduce((s,r) => s + (r.non_billable_hours||0), 0)
-            const hasMatch = !!empRows[0].employee_id
-            return (
-              <div key={empName} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-gray-900">{empName}</span>
-                    {!hasMatch && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">No employee match</span>}
-                    <span className="text-xs text-gray-400">{empRows.length} days logged</span>
-                    {totalNonBillable > 0 && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">{totalNonBillable}h non-billable</span>}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-sm font-bold px-2 py-1 rounded-lg ${attendancePct>=97?'bg-emerald-50 text-emerald-700':attendancePct>=94?'bg-amber-50 text-amber-700':'bg-red-50 text-red-700'}`}>{attendancePct.toFixed(2)}% attendance</span>
-                    <button onClick={() => saveAndApply(empName)} disabled={!hasMatch || saving === empName} className="bg-blue-900 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-800 disabled:opacity-50 transition">
-                      {saving === empName ? 'Applying...' : 'Save & Apply to Attendance'}
-                    </button>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead><tr className="bg-gray-50/60 border-b border-gray-100">
-                      {['Date','Hours','Status','Late Hrs','Non-Billable Hrs','Raw Remark'].map(h => <th key={h} className="px-3 py-2 font-medium text-gray-500 text-left">{h}</th>)}
-                    </tr></thead>
-                    <tbody>
-                      {empRows.map((r, idx) => (
-                        <tr key={idx} className="border-b border-gray-50">
-                          <td className="px-3 py-1.5 text-gray-700 whitespace-nowrap">{r.work_date}</td>
-                          <td className="px-3 py-1.5 text-gray-600">{r.hours}</td>
-                          <td className="px-3 py-1.5">
-                            <select value={r.status} onChange={e => updateRow(empName, idx, { status: e.target.value as TTRow['status'] })} className="border border-gray-200 rounded px-1.5 py-1 text-xs text-gray-800">
-                              {TT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </td>
-                          <td className="px-3 py-1.5 text-gray-600">{r.status === 'Late' ? r.late_hours.toFixed(2) : '-'}</td>
-                          <td className="px-3 py-1.5">
-                            <input type="number" min="0" step="0.5" value={r.non_billable_hours} onChange={e => updateRow(empName, idx, { non_billable_hours: parseFloat(e.target.value)||0 })} className="w-16 border border-gray-200 rounded px-1.5 py-1 text-xs text-gray-800" />
-                          </td>
-                          <td className="px-3 py-1.5 text-gray-400">{r.raw_remark || '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+      {rows.length > 0 && (
+        <>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <p className="text-sm text-gray-600">
+              <span className="font-semibold text-gray-900">{withData.length}</span> with data ready to apply to <span className="font-semibold text-blue-700">{monthLabel}</span>
+              {noData.length > 0 && <span className="text-gray-400"> · {noData.length} with no data yet (excluded)</span>}
+            </p>
+            <button onClick={applyAll} disabled={bulkSaving} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition">
+              {bulkSaving ? 'Applying all...' : `Apply All to Attendance (${withData.filter(r=>r.employee_id).length})`}
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-gray-50 border-b border-gray-200">
+                  {['Employee','ID','Absent','Late/Undertime','OT','Attendance %','Billable Hrs','Non-Billable Hrs',''].map(h => (
+                    <th key={h} className="px-3 py-2.5 font-medium text-gray-600 text-left whitespace-nowrap">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.employee_id_code} className={`border-b border-gray-100 hover:bg-gray-50 ${r.computed_attendance_pct === null ? 'opacity-50' : ''}`}>
+                      <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{r.employee_name}</td>
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                        {r.employee_id_code}
+                        {!r.employee_id && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">no match</span>}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">{r.absent_days > 0 ? `${r.absent_days}d` : '-'}</td>
+                      <td className="px-3 py-2 text-gray-600">{(r.late_hours||r.late_mins||r.undertime_hours||r.undertime_mins) ? `${r.late_hours}h${r.late_mins}m / ${r.undertime_hours}h${r.undertime_mins}m` : '-'}</td>
+                      <td className="px-3 py-2 text-gray-600">{r.overtime_hours > 0 ? `${r.overtime_hours}h` : '-'}</td>
+                      <td className="px-3 py-2">
+                        {r.computed_attendance_pct === null ? <span className="text-gray-400 text-xs">No data</span> : (
+                          <input type="number" min="0" max="100" step="0.01" value={r.computed_attendance_pct.toFixed(2)}
+                            onChange={e => updateRow(r.employee_id_code, { computed_attendance_pct: parseFloat(e.target.value) || 0 })}
+                            className="w-20 border border-gray-200 rounded px-1.5 py-1 text-xs text-gray-800" />
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" min="0" step="0.5" value={r.billable_hours} onChange={e => updateRow(r.employee_id_code, { billable_hours: parseFloat(e.target.value)||0 })} className="w-20 border border-gray-200 rounded px-1.5 py-1 text-xs text-gray-800" />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" min="0" step="0.5" value={r.non_billable_hours} onChange={e => updateRow(r.employee_id_code, { non_billable_hours: parseFloat(e.target.value)||0 })} className="w-20 border border-gray-200 rounded px-1.5 py-1 text-xs text-gray-800" />
+                      </td>
+                      <td className="px-3 py-2">
+                        {r.computed_attendance_pct !== null && (
+                          <button onClick={() => applyOne(r)} disabled={!r.employee_id || saving === r.employee_id_code} className="text-blue-700 hover:underline text-xs font-medium disabled:opacity-40 disabled:no-underline">
+                            {saving === r.employee_id_code ? 'Applying...' : 'Apply'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100"><h3 className="font-semibold text-gray-700 text-sm">Past Imports</h3></div>
+        <div className="px-4 py-3 border-b border-gray-100"><h3 className="font-semibold text-gray-700 text-sm">Past Periods Applied</h3></div>
         {loadingPast ? (
           <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
-        ) : pastEntries.length === 0 ? (
-          <div className="text-center py-8 text-gray-400 text-sm">No imports yet.</div>
+        ) : pastPeriods.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 text-sm">No periods applied yet.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead><tr className="bg-gray-50 border-b border-gray-100">
-                {['Employee','Period','Status','Date','Non-Billable Hrs','Applied'].map(h => <th key={h} className="px-3 py-2 font-medium text-gray-500 text-left">{h}</th>)}
+                {['Employee','ID','Period','Attendance %','Billable Hrs','Non-Billable Hrs','Applied'].map(h => <th key={h} className="px-3 py-2 font-medium text-gray-500 text-left">{h}</th>)}
               </tr></thead>
               <tbody>
-                {pastEntries.slice(0, 100).map((e:any) => (
-                  <tr key={e.id} className="border-b border-gray-50">
-                    <td className="px-3 py-1.5 text-gray-800">{e.employee_name}</td>
-                    <td className="px-3 py-1.5 text-gray-500">{e.period_label}</td>
-                    <td className="px-3 py-1.5 text-gray-600">{e.status}</td>
-                    <td className="px-3 py-1.5 text-gray-500">{e.work_date}</td>
-                    <td className="px-3 py-1.5 text-gray-600">{e.non_billable_hours || 0}</td>
-                    <td className="px-3 py-1.5">{e.applied_to_attendance ? <span className="text-emerald-600">✓</span> : <span className="text-gray-300">-</span>}</td>
+                {pastPeriods.slice(0, 100).map((p:any) => (
+                  <tr key={p.id} className="border-b border-gray-50">
+                    <td className="px-3 py-1.5 text-gray-800">{p.employee_name}</td>
+                    <td className="px-3 py-1.5 text-gray-500">{p.employee_id_code}</td>
+                    <td className="px-3 py-1.5 text-gray-500">{p.period_label}</td>
+                    <td className="px-3 py-1.5 text-gray-600">{p.computed_attendance_pct != null ? Number(p.computed_attendance_pct).toFixed(2)+'%' : '-'}</td>
+                    <td className="px-3 py-1.5 text-gray-600">{p.billable_hours}</td>
+                    <td className="px-3 py-1.5 text-gray-600">{p.non_billable_hours}</td>
+                    <td className="px-3 py-1.5">{p.applied_to_attendance ? <span className="text-emerald-600">✓</span> : <span className="text-gray-300">-</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -7542,6 +7546,7 @@ function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplie
     </div>
   )
 }
+
 
 function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
