@@ -2,9 +2,9 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
-import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star } from 'lucide-react'
+import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'tl-scorecard'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1240,6 +1240,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     'resources': { label: 'Resources', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
     'hris-referral': { label: 'Employee Referral', icon: <UserPlus className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
     'hris-records': { label: 'Employee Records', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
+    'hris-timetracker': { label: 'Time Tracker', icon: <Clock className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
     'entry': { label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
     'observations': { label: 'Observations', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
     'tl-tools': { label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
@@ -1390,11 +1391,12 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* HRIS */}
-      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records','hris-invoice'].includes(view)} />
+      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records','hris-invoice','hris-timetracker'].includes(view)} />
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
+          <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
         </div>
       )}
@@ -1715,6 +1717,8 @@ export default function KPIApp() {
             {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
+            {view === 'hris-timetracker' && (userRole === 'super_admin' || userRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={user} showToast={showToast} onApplied={() => loadData()} />}
+            {view === 'hris-timetracker' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Time Tracker requires Manager access or higher</p></div>}
             {view === 'hris-invoice' && (
               <div className="max-w-lg mx-auto text-center py-20 space-y-4">
                 <div className="w-20 h-20 bg-pink-50 rounded-2xl flex items-center justify-center mx-auto">
@@ -7238,6 +7242,307 @@ function TLComplianceReport({ employees, currentUser, userRole }:
 }
 
 // -- HRIS: Employee Referral -------------------------------------------------
+// -- Time Tracker -------------------------------------------------------------
+type TTRow = {
+  employee_name: string
+  employee_id: string | null
+  work_date: string // yyyy-mm-dd
+  hours: number
+  raw_remark: string
+  status: 'Present'|'Late'|'Sick Leave'|'Emergency Leave'|'Slide Shift'|'Half Day'|'Absent'|'Day Off'
+  late_hours: number
+  non_billable_hours: number
+}
+
+const TT_STATUSES: TTRow['status'][] = ['Present','Late','Sick Leave','Emergency Leave','Slide Shift','Half Day','Absent','Day Off']
+
+// Deduction weights -- late is proportional (mirrors the Hours/Late-Rendered/%/weight
+// formula shared: %late = lateHours/8*100, deduction = %late * 0.05). Sick/Emergency
+// Leave and Absent are flat per-instance deductions since they're whole-day events.
+function computeAttendancePct(rows: TTRow[]): number {
+  let deduction = 0
+  rows.forEach(r => {
+    if (r.status === 'Late') deduction += (r.late_hours / 8) * 100 * 0.05
+    else if (r.status === 'Sick Leave' || r.status === 'Emergency Leave') deduction += 5
+    else if (r.status === 'Absent') deduction += 10
+    else if (r.status === 'Half Day') deduction += 2.5
+    // Present, Slide Shift, Day Off -> no deduction
+  })
+  return Math.max(0, Math.min(100, 100 - deduction))
+}
+
+function classifyRow(hours: number, remark: unknown): { status: TTRow['status'], late_hours: number } {
+  if (typeof remark === 'number') return { status: 'Late', late_hours: remark }
+  const r = (remark || '').toString().trim()
+  if (r === 'Sick Leave') return { status: 'Sick Leave', late_hours: 0 }
+  if (r === 'Emergency Leave') return { status: 'Emergency Leave', late_hours: 0 }
+  if (r === 'Slide Shift') return { status: 'Slide Shift', late_hours: 0 }
+  if (r === 'Late') return { status: 'Late', late_hours: Math.max(0, 8 - hours) }
+  if (r === 'Half Day') return { status: 'Half Day', late_hours: 0 }
+  if (r === 'Absent') return { status: 'Absent', late_hours: 0 }
+  if (!hours || hours === 0) return { status: 'Day Off', late_hours: 0 }
+  return { status: 'Present', late_hours: 0 }
+}
+
+// Derives "June 2026" from a period label like "June 16-30, 2026" or "June 16-30.2026"
+function periodToMonthLabel(periodLabel: string): string {
+  const yearMatch = periodLabel.match(/(20\d{2})/)
+  const year = yearMatch ? yearMatch[1] : String(new Date().getFullYear())
+  const monthMatch = MONTHS.find(m => periodLabel.toLowerCase().includes(m.toLowerCase()) || periodLabel.toLowerCase().includes(m.slice(0,3).toLowerCase()))
+  return monthMatch ? `${monthMatch} ${year}` : periodLabel
+}
+
+function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplied }:
+  { employees: Employee[], records: KpiRecord[], currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void, onApplied: () => void }) {
+  const [parsing, setParsing] = useState(false)
+  const [sheetNames, setSheetNames] = useState<string[]>([])
+  const [workbook, setWorkbook] = useState<any>(null)
+  const [selectedSheet, setSelectedSheet] = useState('')
+  const [periodLabel, setPeriodLabel] = useState('')
+  const [rows, setRows] = useState<TTRow[]>([])
+  const [saving, setSaving] = useState<string | null>(null) // employee name currently being saved
+  const [pastEntries, setPastEntries] = useState<any[]>([])
+  const [loadingPast, setLoadingPast] = useState(true)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { loadPastEntries() }, [])
+
+  async function loadPastEntries() {
+    setLoadingPast(true)
+    const { data } = await supabase.from('time_tracker_entries').select('*').order('uploaded_at', { ascending: false })
+    setPastEntries(data || [])
+    setLoadingPast(false)
+  }
+
+  function nameByEmployee(name: string): string | null {
+    const clean = name.trim().toLowerCase()
+    const match = employees.find(e => e.name.trim().toLowerCase() === clean)
+    return match?.id || null
+  }
+
+  async function handleFile(file: File) {
+    setParsing(true)
+    try {
+      const XLSX = await import('xlsx')
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array', cellDates: true })
+      setWorkbook(wb)
+      setSheetNames(wb.SheetNames)
+      // Try to guess the most likely sheet -- prefer one with "16-3" or "1-15" in the name
+      const guess = wb.SheetNames.find((n: string) => /\d/.test(n)) || wb.SheetNames[0]
+      setSelectedSheet(guess)
+      loadSheet(wb, guess)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to read file', 'error')
+    }
+    setParsing(false)
+  }
+
+  function loadSheet(wb: any, sheetName: string) {
+    setSelectedSheet(sheetName)
+    setPeriodLabel(sheetName)
+    const ws = wb.Sheets[sheetName]
+    if (!ws) return
+    import('xlsx').then(XLSX => {
+      const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
+      const parsed: TTRow[] = []
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i]
+        const [contractor, , , dateVal, hoursVal, remarkVal] = row || []
+        if (!contractor || !dateVal) continue
+        const hours = typeof hoursVal === 'number' ? hoursVal : parseFloat(hoursVal) || 0
+        const dateObj = dateVal instanceof Date ? dateVal : new Date(dateVal)
+        if (isNaN(dateObj.getTime())) continue
+        const { status, late_hours } = classifyRow(hours, remarkVal)
+        parsed.push({
+          employee_name: String(contractor).trim(),
+          employee_id: nameByEmployee(String(contractor)),
+          work_date: dateObj.toISOString().slice(0,10),
+          hours, raw_remark: remarkVal != null ? String(remarkVal) : '',
+          status, late_hours, non_billable_hours: 0,
+        })
+      }
+      setRows(parsed)
+    })
+  }
+
+  // Group parsed rows by employee for the review UI
+  const byEmployee = new Map<string, TTRow[]>()
+  rows.forEach(r => { if (!byEmployee.has(r.employee_name)) byEmployee.set(r.employee_name, []); byEmployee.get(r.employee_name)!.push(r) })
+  const employeeNames = Array.from(byEmployee.keys()).sort()
+  const monthLabel = periodToMonthLabel(periodLabel)
+
+  function updateRow(empName: string, idx: number, patch: Partial<TTRow>) {
+    setRows(prev => {
+      let count = -1
+      return prev.map(r => {
+        if (r.employee_name !== empName) return r
+        count++
+        return count === idx ? { ...r, ...patch } : r
+      })
+    })
+  }
+
+  async function saveAndApply(empName: string) {
+    const empRows = byEmployee.get(empName) || []
+    if (empRows.length === 0) return
+    const empId = empRows[0].employee_id
+    if (!empId) { showToast(`No matching employee found for "${empName}" -- check the name matches Employees exactly.`, 'error'); return }
+    setSaving(empName)
+    try {
+      // 1. Persist the raw entries
+      const insertRows = empRows.map(r => ({
+        employee_name: r.employee_name, employee_id: r.employee_id, work_date: r.work_date,
+        hours: r.hours, raw_remark: r.raw_remark, status: r.status, late_hours: r.late_hours,
+        non_billable_hours: r.non_billable_hours, period_label: periodLabel, month_label: monthLabel,
+        uploaded_by: currentUser, applied_to_attendance: true, applied_at: new Date().toISOString(),
+      }))
+      const { error: insErr } = await supabase.from('time_tracker_entries').insert(insertRows)
+      if (insErr) throw insErr
+
+      // 2. Compute attendance % and apply to the matching KPI record
+      const attendancePct = computeAttendancePct(empRows) / 100
+      const existing = records.find(r => r.employee_id === empId && r.month_label === monthLabel)
+      if (existing) {
+        const overall = attendancePct*0.2 + (existing.accuracy||0)*0.3 + (existing.efficiency||0)*0.3 + (existing.feedback||0)*0.15 + (existing.compliance_score||0)*0.05
+        const { error } = await supabase.from('kpi_records').update({ attendance: attendancePct, overall_score: overall, updated_at: new Date().toISOString() }).eq('id', existing.id)
+        if (error) throw error
+        await writeAuditLog('APPLY_TIME_TRACKER', currentUser || '', empName, monthLabel, 'Attendance', pct(existing.attendance), pct(attendancePct))
+      } else {
+        const { error } = await supabase.from('kpi_records').insert({
+          employee_id: empId, employee_name: empName, designation: employees.find(e=>e.id===empId)?.designation || '',
+          month_label: monthLabel, attendance: attendancePct, overall_score: null, updated_at: new Date().toISOString(),
+        })
+        if (error) throw error
+        await writeAuditLog('APPLY_TIME_TRACKER', currentUser || '', empName, monthLabel, 'Attendance', 'N/A', pct(attendancePct))
+      }
+      showToast(`${empName}: attendance set to ${(attendancePct*100).toFixed(2)}% for ${monthLabel}`)
+      onApplied()
+      loadPastEntries()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to apply', 'error')
+    }
+    setSaving(null)
+  }
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto">
+      <div>
+        <h2 className="text-xl font-bold text-blue-900 flex items-center gap-2"><Clock className="w-5 h-5"/>Time Tracker</h2>
+        <p className="text-sm text-gray-500">Import fortnightly time logs and apply computed Attendance % to KPI records</p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={() => fileInputRef.current?.click()} disabled={parsing} className="flex items-center gap-2 bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">
+            <Upload className="w-4 h-4"/>{parsing ? 'Reading file...' : 'Upload Time Tracker (.xlsx)'}
+          </button>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+          {sheetNames.length > 0 && (
+            <>
+              <label className="text-xs text-gray-500 font-medium">Period sheet:</label>
+              <select value={selectedSheet} onChange={e => loadSheet(workbook, e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                {sheetNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </>
+          )}
+        </div>
+        {rows.length > 0 && (
+          <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
+            <span>Detected period: <span className="font-semibold text-gray-900">{periodLabel}</span></span>
+            <span>→ applies to KPI month: <span className="font-semibold text-blue-700">{monthLabel}</span></span>
+            <span className="text-gray-400">({rows.length} rows, {employeeNames.length} employees)</span>
+          </div>
+        )}
+      </div>
+
+      {employeeNames.length > 0 && (
+        <div className="space-y-4">
+          <p className="text-xs text-gray-400">Review and adjust classification/non-billable hours below, then apply per employee. Applying updates their Attendance % on the {monthLabel} KPI record and recalculates their Overall score.</p>
+          {employeeNames.map(empName => {
+            const empRows = byEmployee.get(empName)!
+            const attendancePct = computeAttendancePct(empRows)
+            const totalNonBillable = empRows.reduce((s,r) => s + (r.non_billable_hours||0), 0)
+            const hasMatch = !!empRows[0].employee_id
+            return (
+              <div key={empName} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-900">{empName}</span>
+                    {!hasMatch && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">No employee match</span>}
+                    <span className="text-xs text-gray-400">{empRows.length} days logged</span>
+                    {totalNonBillable > 0 && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">{totalNonBillable}h non-billable</span>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-sm font-bold px-2 py-1 rounded-lg ${attendancePct>=97?'bg-emerald-50 text-emerald-700':attendancePct>=94?'bg-amber-50 text-amber-700':'bg-red-50 text-red-700'}`}>{attendancePct.toFixed(2)}% attendance</span>
+                    <button onClick={() => saveAndApply(empName)} disabled={!hasMatch || saving === empName} className="bg-blue-900 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-800 disabled:opacity-50 transition">
+                      {saving === empName ? 'Applying...' : 'Save & Apply to Attendance'}
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead><tr className="bg-gray-50/60 border-b border-gray-100">
+                      {['Date','Hours','Status','Late Hrs','Non-Billable Hrs','Raw Remark'].map(h => <th key={h} className="px-3 py-2 font-medium text-gray-500 text-left">{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {empRows.map((r, idx) => (
+                        <tr key={idx} className="border-b border-gray-50">
+                          <td className="px-3 py-1.5 text-gray-700 whitespace-nowrap">{r.work_date}</td>
+                          <td className="px-3 py-1.5 text-gray-600">{r.hours}</td>
+                          <td className="px-3 py-1.5">
+                            <select value={r.status} onChange={e => updateRow(empName, idx, { status: e.target.value as TTRow['status'] })} className="border border-gray-200 rounded px-1.5 py-1 text-xs text-gray-800">
+                              {TT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-600">{r.status === 'Late' ? r.late_hours.toFixed(2) : '-'}</td>
+                          <td className="px-3 py-1.5">
+                            <input type="number" min="0" step="0.5" value={r.non_billable_hours} onChange={e => updateRow(empName, idx, { non_billable_hours: parseFloat(e.target.value)||0 })} className="w-16 border border-gray-200 rounded px-1.5 py-1 text-xs text-gray-800" />
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-400">{r.raw_remark || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100"><h3 className="font-semibold text-gray-700 text-sm">Past Imports</h3></div>
+        {loadingPast ? (
+          <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+        ) : pastEntries.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 text-sm">No imports yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="bg-gray-50 border-b border-gray-100">
+                {['Employee','Period','Status','Date','Non-Billable Hrs','Applied'].map(h => <th key={h} className="px-3 py-2 font-medium text-gray-500 text-left">{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {pastEntries.slice(0, 100).map((e:any) => (
+                  <tr key={e.id} className="border-b border-gray-50">
+                    <td className="px-3 py-1.5 text-gray-800">{e.employee_name}</td>
+                    <td className="px-3 py-1.5 text-gray-500">{e.period_label}</td>
+                    <td className="px-3 py-1.5 text-gray-600">{e.status}</td>
+                    <td className="px-3 py-1.5 text-gray-500">{e.work_date}</td>
+                    <td className="px-3 py-1.5 text-gray-600">{e.non_billable_hours || 0}</td>
+                    <td className="px-3 py-1.5">{e.applied_to_attendance ? <span className="text-emerald-600">✓</span> : <span className="text-gray-300">-</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
   const canRefer = true // everyone can submit a referral
