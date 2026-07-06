@@ -1893,6 +1893,16 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
   const [selTeam, setSelTeam] = useState<string>('all')
   const [selClient, setSelClient] = useState<string>('All')
   const [showAtRisk, setShowAtRisk] = useState(false)
+  const canDeleteScores = ['super_admin','admin'].includes(userRole)
+
+  async function deleteRecord(r: KpiRecord) {
+    if (!confirm(`Delete the ${r.month_label} KPI record for ${r.employee_name}? This cannot be undone.`)) return
+    const { error } = await supabase.from('kpi_records').delete().eq('id', r.id)
+    if (error) { showToast(error.message, 'error'); return }
+    await writeAuditLog('DELETE_RECORD', currentUser, r.employee_name || '', r.month_label || '', 'Record', pct(r.overall_score), 'deleted')
+    showToast('Record deleted')
+    onEditRecord()
+  }
   const [showPerfect, setShowPerfect] = useState(false)
   const CLIENTS_FILTER = ['All', 'EMMA', 'AB BSS', 'Harlan + Holden']
   const CLIENT_COLORS: Record<string,string> = { 'EMMA': '#3b82f6', 'AB BSS': '#10b981', 'Harlan + Holden': '#f59e0b' }
@@ -2159,7 +2169,10 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
                   {userRole !== 'agent' && <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>}
                   {userRole !== 'agent' && <td className="px-4 py-3 whitespace-nowrap">
-                    {(perfView==='monthly'||perfView==='weekly') && <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>}
+                    <div className="flex items-center gap-1">
+                      {(perfView==='monthly'||perfView==='weekly') && <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>}
+                      {(perfView==='monthly'||perfView==='weekly') && canDeleteScores && <button onClick={() => deleteRecord(r)} className="text-gray-400 hover:text-red-600 p-1 transition" title="Delete record"><Trash2 className="w-4 h-4"/></button>}
+                    </div>
                   </td>}
                 </tr>
               ))}
@@ -2182,6 +2195,16 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUse
   const [loading, setLoading] = useState(true)
   const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
   const canEditScores = ['super_admin','admin','Team Lead'].includes(userRole)
+  const canDeleteScores = ['super_admin','admin'].includes(userRole)
+
+  async function deleteRecord(r: KpiRecord) {
+    if (!confirm(`Delete the ${r.month_label} KPI record for ${r.employee_name}? This cannot be undone.`)) return
+    const { error } = await supabase.from('kpi_records').delete().eq('id', r.id)
+    if (error) { showToast(error.message, 'error'); return }
+    await writeAuditLog('DELETE_RECORD', currentUser, r.employee_name || '', r.month_label || '', 'Record', pct(r.overall_score), 'deleted')
+    showToast('Record deleted')
+    onEditRecord()
+  }
 
   async function loadTeams() {
     setLoading(true)
@@ -2289,7 +2312,10 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUse
                   <td className="px-4 py-3 text-right text-gray-700">{pct(r.compliance_score)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
                   <td className="px-4 py-3 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
-                  {canEditScores && <td className="px-4 py-3"><button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button></td>}
+                  {canEditScores && <td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-1">
+                    <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>
+                    {canDeleteScores && <button onClick={() => deleteRecord(r)} className="text-gray-400 hover:text-red-600 p-1 transition" title="Delete record"><Trash2 className="w-4 h-4"/></button>}
+                  </div></td>}
                 </tr>
               ))}
             </tbody>
@@ -2308,6 +2334,16 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
   const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set())
   const canEditScores = ['super_admin','admin','Team Lead'].includes(userRole)
+  const canDeleteScores = ['super_admin','admin'].includes(userRole)
+
+  async function deleteRecord(r: KpiRecord) {
+    if (!confirm(`Delete the ${r.month_label} KPI record for ${r.employee_name}? This cannot be undone.`)) return
+    const { error } = await supabase.from('kpi_records').delete().eq('id', r.id)
+    if (error) { showToast(error.message, 'error'); return }
+    await writeAuditLog('DELETE_RECORD', currentUser, r.employee_name || '', r.month_label || '', 'Record', pct(r.overall_score), 'deleted')
+    showToast('Record deleted')
+    onEditRecord()
+  }
 
   const emp = employees.find(e => e.id === selEmployee)
   const empRecords = records.filter(r => r.employee_id === selEmployee && r.overall_score !== null && (r.overall_score||0) > 0)
@@ -2464,7 +2500,10 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
                             <td className="px-4 py-2.5 text-right text-gray-600">{pct(r.compliance_score)}</td>
                             <td className="px-4 py-2.5 text-right"><span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${scoreBg(r.overall_score)}`}>{pct(r.overall_score)}</span></td>
                             <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs"><ExpandableNote note={r.notes} /></td>
-                            {canEditScores && <td className="px-4 py-2.5"><button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button></td>}
+                            {canEditScores && <td className="px-4 py-2.5 whitespace-nowrap"><div className="flex items-center gap-1">
+                              <button onClick={() => setEditRecord(r)} className="text-gray-400 hover:text-blue-600 p-1 transition" title="Edit scores"><Edit2 className="w-4 h-4"/></button>
+                              {canDeleteScores && <button onClick={() => deleteRecord(r)} className="text-gray-400 hover:text-red-600 p-1 transition" title="Delete record"><Trash2 className="w-4 h-4"/></button>}
+                            </div></td>}
                           </tr>
                         ))}
                       </Fragment>
