@@ -1711,7 +1711,7 @@ export default function KPIApp() {
             {view === 'tasks' && <TasksPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='agent'?'employee_email':'agent_acknowledged', userRole==='agent'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
-            {view === 'tl-scorecard' && <TLScorecard currentUser={user} userRole={userRole} showToast={showToast} />}
+            {view === 'tl-scorecard' && <TLScorecard currentUser={user} userRole={userRole} showToast={showToast} records={records} />}
             {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
@@ -6221,7 +6221,7 @@ function ViewerCoachingBanner({ currentUser }: { currentUser: string | null }) {
 
 // -- TL Scorecard -------------------------------------------------------------
 // TLScorecard v3
-function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m:string,t?:'success'|'error')=>void }) {
+function TLScorecard({ currentUser, userRole, showToast, records }: { currentUser: string|null, userRole: string, showToast: (m:string,t?:'success'|'error')=>void, records: KpiRecord[] }) {
   const isManager = userRole === 'super_admin' || userRole === 'admin'
   const [period, setPeriod] = useState<'mtd'|'weekly'>('mtd')
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()) // 0-indexed
@@ -6273,7 +6273,7 @@ function TLScorecard({ currentUser, userRole, showToast }: { currentUser: string
 
   useEffect(() => {
     if (selectedTL) loadScorecard()
-  }, [selectedTL, period, selectedMonth, selectedYear, selectedTeamId])
+  }, [selectedTL, period, selectedMonth, selectedYear, selectedTeamId, records])
 
   async function loadTLTeams(resetTeam = false) {
     const { data } = await supabase.from('teams').select('id,name').eq('team_lead_id', selectedTL).eq('active', true)
