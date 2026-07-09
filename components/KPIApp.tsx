@@ -6198,7 +6198,7 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
 }
 
 function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'>(userRole === 'agent' ? 'password' : 'users')
+  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'|'manual'>(userRole === 'agent' ? 'password' : 'users')
   const [oldPassword, setOldPassword] = useState('')
   const [newPass, setNewPass] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
@@ -6234,7 +6234,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
     <div className="max-w-4xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">Settings</h2><p className="text-sm text-gray-500">Manage app users, activity, and security</p></div>
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['users','App Users'],['activity','Audit Log'],['password','Change Password']] as [string,string][]).map(([t,l])=>(
+        {([['users','App Users'],['activity','Audit Log'],['manual','Manual'],['password','Change Password']] as [string,string][]).map(([t,l])=>(
           <button key={t} onClick={()=>setActiveTab(t as any)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab===t?'bg-white shadow text-blue-900':'text-gray-600 hover:text-gray-900'}`}>{l}</button>
         ))}
       </div>
@@ -6282,6 +6282,88 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
               </table>
             </div>
           )}
+        </div>
+      )}
+      {activeTab==='manual' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><FileText className="w-4 h-4 text-blue-500"/>What Each Tab Does</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                ['Announcements', 'Company-wide posts. Everyone can acknowledge; Team Lead+ can post.'],
+                ['Gaming Hub', 'Monthly game leaderboard. Submit a screenshot score; admins review and approve.'],
+                ['Tickets', 'Issue/request tracking with comments, screenshot attachments, and auto-resetting 24hr SLA.'],
+                ['Tasks', 'Assign to-dos to one or more people. Board view groups by status; feeds into Compliance scoring.'],
+                ['BCP', 'Business continuity plan and contingency procedures reference.'],
+                ['Links', 'Quick-access company tools, grouped by client, with search.'],
+                ['Resources', 'Shared reference documents and guides.'],
+                ['Employee Referral', 'Submit and track referral candidates through the hiring pipeline.'],
+                ['Employee Records', 'Full HR profile data. Manager access and above.'],
+                ['Time Tracker', 'Paste time-tracking period exports to compute Attendance % and apply it to KPI records.'],
+                ['KPI Entry', 'Enter or edit an employee\'s monthly Attendance/Accuracy/Efficiency/Feedback/Compliance scores.'],
+                ['Observations', 'Log coaching observations and 1-on-1 notes for an employee.'],
+                ['Coaching & 1-on-1', 'Structured coaching session records, with optional acknowledgment.'],
+                ['Operating Cadence', 'Recurring team rituals (huddles, reviews) and completion tracking.'],
+                ['TL Scorecard', 'A Team Lead\'s own composite score: Compliance + Team Performance + Attendance.'],
+                ['Dashboard', 'Team-wide KPI overview -- filterable by client, team, and time period, with charts.'],
+                ['Employee Trends', 'One employee\'s performance history over time, with a focus-month selector.'],
+                ['Team View', 'KPI scores for one team at a time, editable inline by Team Lead+.'],
+                ['Employees', 'Manage employee profiles, roles, and status.'],
+                ['Teams', 'Group employees into teams and assign a Team Lead.'],
+                ['Org Chart', 'Visual reporting structure by client and team.'],
+                ['Matrix', 'Internal dev log of features shipped, issues, and pending SQL migrations.'],
+                ['Settings', 'App users, audit log, this manual, and your own password.'],
+              ].map(([title, desc]) => (
+                <div key={title} className="border border-gray-100 rounded-lg p-3">
+                  <p className="font-semibold text-sm text-gray-900">{title}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="font-semibold text-gray-700 text-sm mb-1 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>Who Can Do What</h3>
+            <p className="text-xs text-gray-400 mb-4">General access pattern by role. Some features have finer-grained rules than shown here -- ask if you need the exact behavior for something specific.</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-3 py-2 font-medium text-gray-600">Feature</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">Agent</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">Team Lead</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">Admin</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">Super Admin</th>
+                </tr></thead>
+                <tbody>
+                  {[
+                    ['KPI scores -- view', 'View only', 'View', 'View', 'View'],
+                    ['KPI scores -- edit/delete', '—', '✓', '✓', '✓'],
+                    ['Compliance auto-calc', 'View only', 'View', 'View', 'View'],
+                    ['Tasks -- assign to others', '—', '✓', '✓', '✓'],
+                    ['Tasks -- visibility', 'Own only', 'Own + assigned by them', 'Own + assigned by them', 'Everyone'],
+                    ['Tickets -- manage/close', 'Own only', '✓', '✓', '✓'],
+                    ['Announcements -- post', '—', '✓', '✓', '✓'],
+                    ['Employee Records', '—', '—', '✓', '✓'],
+                    ['Time Tracker', '—', '—', '✓', '✓'],
+                    ['Employees / Teams -- manage', '—', '—', '✓', '✓'],
+                    ['Directory Links -- manage', '—', '—', '✓', '✓'],
+                    ['TL Scorecard -- view', '—', 'Own only', 'Everyone', 'Everyone'],
+                    ['Matrix (dev log)', '—', '—', '✓', '✓'],
+                    ['App Users -- create/edit roles', '—', '—', 'View', '✓'],
+                    ['Settings access', '—', '—', '—', '✓'],
+                  ].map(row => (
+                    <tr key={row[0]} className="border-b border-gray-50">
+                      <td className="px-3 py-2 font-medium text-gray-800">{row[0]}</td>
+                      {row.slice(1).map((cell, i) => (
+                        <td key={i} className={`px-3 py-2 text-center ${cell === '✓' ? 'text-emerald-600 font-semibold' : cell === '—' ? 'text-gray-300' : 'text-gray-500'}`}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-gray-400 mt-4">To change what a specific person can access, go to the <button onClick={()=>setActiveTab('users')} className="text-blue-700 hover:underline font-medium">App Users</button> tab and update their role. Per-user access grants beyond the 4 standard roles aren't supported yet -- let your admin know if you need something more granular.</p>
+          </div>
         </div>
       )}
       {activeTab==='password' && (
