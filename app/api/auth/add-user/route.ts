@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import bcrypt from 'bcryptjs'
 
 const ALLOWED_DOMAIN = '@ab-businesssupport.com'
 
@@ -23,10 +24,11 @@ export async function POST(req: NextRequest) {
 
     const usernameOnly = email.split('@')[0]
     const supabase = getSupabase()
+    const hash = await bcrypt.hash(password, 12)
     const { error } = await supabase.from('app_users').insert({
       username: usernameOnly,
       email: email,
-      password_hash: password,
+      password_hash: hash,
       role: role || 'viewer',
       active: true,
       must_change_password: true,
