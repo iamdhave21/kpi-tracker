@@ -614,7 +614,7 @@ function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackD
                 ) : (
                   <div className="flex flex-wrap gap-1">
                     {ackDetails[a.id].map((ac:any) => (
-                      <span key={ac.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
+                      <span key={ac.id} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">{ac.user_email.split('@')[0]} · {new Date(ac.acknowledged_at).toLocaleDateString()}</span>
                     ))}
                   </div>
                 )}
@@ -1724,7 +1724,7 @@ export default function KPIApp() {
                 <div className="w-20 h-20 bg-pink-50 rounded-2xl flex items-center justify-center mx-auto">
                   <FileText className="w-10 h-10 text-pink-400" />
                 </div>
-                <h2 className="text-xl font-bold text-gray-900">Invoice</h2>
+                <h2 className="text-xl font-bold text-blue-900">Invoice</h2>
                 <p className="text-gray-500 text-sm">Invoice management is coming soon. This will allow you to log, track, and manage invoices directly from the portal.</p>
                 <span className="inline-block bg-pink-100 text-pink-700 text-xs font-semibold px-3 py-1.5 rounded-full">🚧 Coming Soon</span>
               </div>
@@ -2869,7 +2869,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
             {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-          <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
         <div className="mt-3">
           <p className="text-xs font-medium text-gray-500 mb-1.5">Department(s) — used for ticket routing and org mapping</p>
@@ -3018,7 +3018,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={()=>saveEdit(emps[0].id)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><Save className="w-3.5 h-3.5"/>Save Changes</button>
+                    <button onClick={()=>saveEdit(emps[0].id)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><Save className="w-3.5 h-3.5"/>Save Changes</button>
                     <button onClick={()=>setEditId(null)} className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
                   </div>
                 </div>
@@ -3089,7 +3089,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={()=>saveEdit(emp.id)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><Save className="w-3.5 h-3.5"/>Save Changes</button>
+                        <button onClick={()=>saveEdit(emp.id)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><Save className="w-3.5 h-3.5"/>Save Changes</button>
                         <button onClick={()=>setEditId(null)} className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
                       </div>
                     </div>
@@ -3198,7 +3198,7 @@ function TeamManager({ employees, showToast, userRole }:
           <input value={newTeamName} onChange={e=>setNewTeamName(e.target.value)} placeholder="Team name" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <input value={newDept} onChange={e=>setNewDept(e.target.value)} placeholder="Department" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <select value={newLeadId} onChange={e=>setNewLeadId(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"><option value="">Select team lead...</option>{employees.filter(e=>e.active).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>
-          <button onClick={createTeam} disabled={!newTeamName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2"><PlusCircle className="w-4 h-4"/>Create</button>
+          <button onClick={createTeam} disabled={!newTeamName.trim()} className="bg-blue-600 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2"><PlusCircle className="w-4 h-4"/>Create</button>
         </div>
       </div>
       )}
@@ -3212,7 +3212,7 @@ function TeamManager({ employees, showToast, userRole }:
                   <input value={editTeamName} onChange={e=>setEditTeamName(e.target.value)} placeholder="Team name" className="flex-1 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
                   <input value={editTeamDept} onChange={e=>setEditTeamDept(e.target.value)} placeholder="Department" className="flex-1 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
                   <div className="flex gap-1">
-                    <button onClick={()=>updateTeam(team.id)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition">Save</button>
+                    <button onClick={()=>updateTeam(team.id)} className="bg-blue-600 hover:bg-blue-900 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition">Save</button>
                     <button onClick={()=>setEditTeamId(null)} className="text-gray-500 hover:text-gray-700 px-2 py-1.5 text-xs transition">Cancel</button>
                   </div>
                 </div>
@@ -3239,7 +3239,7 @@ function TeamManager({ employees, showToast, userRole }:
               </div>
               {canEdit && (
               <div className="p-4 border-b border-gray-100">
-                <div className="flex gap-2"><select value={addMemberId} onChange={e=>setAddMemberId(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"><option value="">Add member...</option>{availableToAdd.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select><button onClick={addMember} disabled={!addMemberId} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">Add</button></div>
+                <div className="flex gap-2"><select value={addMemberId} onChange={e=>setAddMemberId(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"><option value="">Add member...</option>{availableToAdd.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select><button onClick={addMember} disabled={!addMemberId} className="bg-blue-600 hover:bg-blue-900 text-white px-3 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">Add</button></div>
               </div>
               )}
               <div>
@@ -3577,7 +3577,7 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
         <div className="flex items-center gap-2">
           {filtered.length > 0 && (
             <div className="flex gap-1">
-              <button onClick={exportCSV} className="text-xs px-3 py-1.5 rounded-lg bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 transition">⬇ CSV</button>
+              <button onClick={exportCSV} className="text-xs px-3 py-1.5 rounded-lg bg-green-50 hover:bg-emerald-100 text-emerald-700 border border-green-200 transition">⬇ CSV</button>
               <button onClick={exportPrint} className="text-xs px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 transition">🖨 Print</button>
             </div>
           )}
@@ -3997,7 +3997,7 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Team Leader Operating Cadence</h1>
+        <h1 className="text-xl font-bold text-blue-900">Team Leader Operating Cadence</h1>
         <p className="text-sm text-gray-500 mt-0.5">Your daily, weekly, and monthly rhythm for effective team leadership</p>
       </div>
 
@@ -4016,7 +4016,7 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
         <div className="space-y-3">
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800">⏱️ <strong>15-30 minutes</strong> at the start of each shift — resets automatically each new day</div>
           <Card title="Daily Operations Check" items={dailyItems} />
-          <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-sm text-green-800"><strong>Output:</strong> Risks identified + immediate action plan</div>
+          <div className="bg-green-50 border border-emerald-100 rounded-xl p-3 text-sm text-green-800"><strong>Output:</strong> Risks identified + immediate action plan</div>
         </div>
       )}
 
@@ -4024,7 +4024,7 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
         <div className="space-y-3">
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800">Resets automatically every Monday</div>
           <Card title="This Week" items={weeklyItems} />
-          <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-sm text-green-800"><strong>Tip:</strong> Track weekly to spot trends before month-end</div>
+          <div className="bg-green-50 border border-emerald-100 rounded-xl p-3 text-sm text-green-800"><strong>Tip:</strong> Track weekly to spot trends before month-end</div>
         </div>
       )}
 
@@ -4323,7 +4323,7 @@ function ResourcesPanel({ userRole, showToast }: { userRole: string, showToast: 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Resources</h1>
+        <h1 className="text-xl font-bold text-blue-900">Resources</h1>
         <p className="text-sm text-gray-500 mt-0.5">Forms, documents, and templates for the team</p>
       </div>
 
@@ -5687,7 +5687,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
                               📎
                               <input type="file" className="hidden" disabled={uploadingComment} onChange={e => { const f = e.target.files?.[0]; if (f) uploadCommentFile(f); e.target.value = '' }} />
                             </label>
-                            <button onClick={() => postComment(t)} disabled={postingComment||uploadingComment||(!commentDraft.trim() && commentAttachments.length===0)} className="bg-blue-900 hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50">{postingComment?'...':uploadingComment?'Uploading...':'Add'}</button>
+                            <button onClick={() => postComment(t)} disabled={postingComment||uploadingComment||(!commentDraft.trim() && commentAttachments.length===0)} className="bg-blue-900 hover:bg-blue-900 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50">{postingComment?'...':uploadingComment?'Uploading...':'Add'}</button>
                           </div>
                         </div>
                       )}
@@ -5868,7 +5868,7 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
               placeholder="e.g. Consistently meets deadlines, needs improvement on accuracy..." />
           </div>
           <button type="submit" disabled={saving || !text.trim() || !selMonth}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2">
+            className="bg-blue-600 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2">
             <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Observation'}
           </button>
         </form>
@@ -5964,7 +5964,7 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
       </div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-700">{currentUser}</p>
-        <label className={`cursor-pointer inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+        <label className={`cursor-pointer inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-900 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
           <PlusCircle className="w-4 h-4"/>
           {uploading ? 'Uploading...' : avatarUrl ? 'Change Photo' : 'Upload Photo'}
           <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading}/>
@@ -6539,7 +6539,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Team Lead Scorecard</h1>
+          <h1 className="text-xl font-bold text-blue-900">Team Lead Scorecard</h1>
           <p className="text-sm text-gray-500 mt-0.5">Performance overview across Compliance, Team, and Attendance</p>
         </div>
         <div className="flex items-center gap-2">
@@ -6882,7 +6882,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
         </div>
         {canManage && (
           <button onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
             <PlusCircle className="w-4 h-4" /> Log Session
           </button>
         )}
@@ -6965,7 +6965,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
           </div>
           <div className="flex gap-3">
             <button onClick={() => handleSave(false)} disabled={saving}
-              className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+              className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
               <Save className="w-4 h-4" />{saving ? 'Saving…' : (editingDraftId ? 'Finalize Session' : 'Save Session')}
             </button>
             <button onClick={() => handleSave(true)} disabled={saving || !form.employee_id}
@@ -7016,7 +7016,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
                           log.type === 'Performance' ? 'bg-blue-100 text-blue-700' :
                           log.type === 'Behavior' ? 'bg-yellow-100 text-yellow-700' :
-                          log.type === 'Development' ? 'bg-green-100 text-green-700' :
+                          log.type === 'Development' ? 'bg-emerald-100 text-emerald-700' :
                           log.type === 'Recognition' ? 'bg-purple-100 text-purple-700' :
                           'bg-red-100 text-red-700'}`}>{log.type}</span>
                       </td>
@@ -7041,12 +7041,12 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                           <span className="text-gray-300 text-xs">—</span>
                         ) : log.agent_acknowledged ? (
                           <div>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Acknowledged</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">✓ Acknowledged</span>
                             {log.agent_acknowledged_at && <p className="text-xs text-gray-400 mt-0.5">{new Date(log.agent_acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</p>}
                           </div>
                         ) : userRole === 'agent' ? (
                           <button onClick={() => acknowledgeCoaching(log.id)} disabled={ackLoading === log.id}
-                            className="flex items-center gap-1 bg-blue-700 hover:bg-blue-800 text-white px-3 py-1 rounded-lg text-xs font-medium transition disabled:opacity-50">
+                            className="flex items-center gap-1 bg-blue-700 hover:bg-blue-900 text-white px-3 py-1 rounded-lg text-xs font-medium transition disabled:opacity-50">
                             {ackLoading === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"/> : '✍️'} Sign & Acknowledge
                           </button>
                         ) : (
@@ -7185,7 +7185,7 @@ function TLComplianceReport({ employees, currentUser, userRole }:
                     </td>
                     <td className="px-4 py-3 text-gray-600">{uniqueEmps} employee{uniqueEmps !== 1 ? 's' : ''}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${onTrack ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${onTrack ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                         {onTrack ? '✓ Compliant' : '⚠ Below Target'}
                       </span>
                     </td>
@@ -7652,7 +7652,7 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
     'Pending': 'bg-yellow-100 text-yellow-700',
     'Under Review': 'bg-blue-100 text-blue-700',
     'Interviewed': 'bg-purple-100 text-purple-700',
-    'Hired': 'bg-green-100 text-green-700',
+    'Hired': 'bg-emerald-100 text-emerald-700',
     'Declined': 'bg-red-100 text-red-700',
   }
 
@@ -7684,7 +7684,7 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
         <div className="flex items-center gap-2">
           {canManage && <button onClick={exportReferralsToExcel} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-green-300 text-green-700 bg-green-50 hover:bg-green-100 font-medium transition"><FileSpreadsheet className="w-3.5 h-3.5"/>Export to Excel</button>}
           {canRefer && (
-            <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
               <PlusCircle className="w-4 h-4" /> Refer Someone
             </button>
           )}
@@ -7722,7 +7722,7 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
             <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" onChange={e => e.target.files?.[0] && uploadResume(e.target.files[0])} className="hidden" />
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSubmit} disabled={saving} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+            <button onClick={handleSubmit} disabled={saving} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
               <Save className="w-4 h-4" />{saving ? 'Submitting...' : 'Submit Referral'}
             </button>
             <button onClick={() => { setShowForm(false); setForm({...emptyForm}) }} className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
@@ -7960,7 +7960,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                           </td>
                         ))}
                         <td className="px-3 py-2.5 text-center">
-                          <span className={`inline-flex px-2 py-0.5 rounded-full font-medium ${complete ? 'bg-green-100 text-green-700' : count === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>
+                          <span className={`inline-flex px-2 py-0.5 rounded-full font-medium ${complete ? 'bg-emerald-100 text-emerald-700' : count === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>
                             {count}/{REQUIRED_DOCS.length}
                           </span>
                         </td>
