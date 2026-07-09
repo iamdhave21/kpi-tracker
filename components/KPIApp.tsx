@@ -6053,19 +6053,19 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
 // -- Matrix (dev tracker: features, issues, pending SQL) --------------------
 type MatrixItem = {
   id: string
-  category: 'Feature' | 'Issue' | 'Pending SQL'
+  category: 'Feature' | 'Issue' | 'Pending SQL' | 'Security Fix' | 'RLS Fix' | 'Refactor' | 'Documentation'
   title: string
   description: string | null
-  status: 'Open' | 'In Progress' | 'Done'
+  status: 'Open' | 'In Progress' | 'Blocked' | 'Done'
   priority: 'Low' | 'Medium' | 'High'
   created_by: string | null
   created_at: string
 }
 
-const MATRIX_CATEGORIES = ['Feature', 'Issue', 'Pending SQL'] as const
-const MATRIX_STATUS_COLORS: Record<string, string> = { Open: 'bg-blue-100 text-blue-700', 'In Progress': 'bg-amber-100 text-amber-700', Done: 'bg-emerald-100 text-emerald-700' }
+const MATRIX_CATEGORIES = ['Feature', 'Issue', 'Pending SQL', 'Security Fix', 'RLS Fix', 'Refactor', 'Documentation'] as const
+const MATRIX_STATUS_COLORS: Record<string, string> = { Open: 'bg-blue-100 text-blue-700', 'In Progress': 'bg-amber-100 text-amber-700', Blocked: 'bg-red-100 text-red-700', Done: 'bg-emerald-100 text-emerald-700' }
 const MATRIX_PRIORITY_COLORS: Record<string, string> = { Low: 'bg-gray-100 text-gray-600', Medium: 'bg-orange-100 text-orange-700', High: 'bg-red-100 text-red-700' }
-const MATRIX_CATEGORY_COLORS: Record<string, string> = { Feature: 'bg-indigo-50 text-indigo-700 border-indigo-200', Issue: 'bg-red-50 text-red-700 border-red-200', 'Pending SQL': 'bg-purple-50 text-purple-700 border-purple-200' }
+const MATRIX_CATEGORY_COLORS: Record<string, string> = { Feature: 'bg-indigo-50 text-indigo-700 border-indigo-200', Issue: 'bg-red-50 text-red-700 border-red-200', 'Pending SQL': 'bg-purple-50 text-purple-700 border-purple-200', 'Security Fix': 'bg-rose-50 text-rose-700 border-rose-200', 'RLS Fix': 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200', Refactor: 'bg-cyan-50 text-cyan-700 border-cyan-200', Documentation: 'bg-slate-50 text-slate-700 border-slate-200' }
 
 function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [items, setItems] = useState<MatrixItem[]>([])
@@ -6074,6 +6074,7 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
   const [saving, setSaving] = useState(false)
   const [filterCategory, setFilterCategory] = useState<string>('All')
   const [filterStatus, setFilterStatus] = useState<string>('All')
+  const [handoverView, setHandoverView] = useState(false)
   const emptyForm = { category: 'Issue' as MatrixItem['category'], title: '', description: '', priority: 'Medium' as MatrixItem['priority'] }
   const [form, setForm] = useState(emptyForm)
 
@@ -6132,10 +6133,13 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
             <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2"><FileSpreadsheet className="w-4 h-4 text-blue-500"/>Matrix — Build Tracker</h3>
             <p className="text-xs text-gray-400 mt-0.5">Track features shipped, issues to fix, and SQL still pending in Supabase. {openCount} open item{openCount !== 1 ? 's' : ''}.</p>
           </div>
-          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition flex items-center gap-1.5"><PlusCircle className="w-4 h-4"/>{showForm ? 'Cancel' : 'Add Item'}</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setHandoverView(!handoverView)} className="text-sm border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5"><FileText className="w-4 h-4"/>{handoverView ? 'Back to Matrix' : 'Handover View'}</button>
+            <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition flex items-center gap-1.5"><PlusCircle className="w-4 h-4"/>{showForm ? 'Cancel' : 'Add Item'}</button>
+          </div>
         </div>
 
-        {showForm && (
+        {!handoverView && showForm && (
           <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
             <div className="flex items-center gap-3 flex-wrap">
               <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value as MatrixItem['category'] }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
@@ -6154,12 +6158,16 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
         )}
       </div>
 
+      {handoverView ? (
+        <HandoverDoc items={items} />
+      ) : (
+      <>
       <div className="flex items-center gap-2 flex-wrap">
         {['All', ...MATRIX_CATEGORIES].map(c => (
           <button key={c} onClick={() => setFilterCategory(c)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterCategory === c ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{c}</button>
         ))}
         <span className="text-gray-300">|</span>
-        {['All', 'Open', 'In Progress', 'Done'].map(s => (
+        {['All', 'Open', 'In Progress', 'Blocked', 'Done'].map(s => (
           <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
         ))}
       </div>
@@ -6184,7 +6192,7 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
               <div className="flex items-center justify-between pt-1">
                 <span className="text-xs text-gray-400">{item.created_by?.split('@')[0] || 'Unknown'} · {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <div className="flex items-center gap-1.5">
-                  {(['Open', 'In Progress', 'Done'] as MatrixItem['status'][]).map(s => (
+                  {(['Open', 'In Progress', 'Blocked', 'Done'] as MatrixItem['status'][]).map(s => (
                     <button key={s} onClick={() => updateStatus(item.id, s)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${item.status === s ? MATRIX_STATUS_COLORS[s] + ' ring-1 ring-offset-1 ring-blue-300' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{s}</button>
                   ))}
                 </div>
@@ -6193,6 +6201,57 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
           ))}
         </div>
       )}
+      </>
+      )}
+    </div>
+  )
+}
+
+function HandoverDoc({ items }: { items: MatrixItem[] }) {
+  const shipped = items.filter(i => i.status === 'Done').sort((a,b) => a.created_at.localeCompare(b.created_at))
+  const pendingSql = items.filter(i => i.category === 'Pending SQL' && i.status !== 'Done')
+  const openIssues = items.filter(i => i.category === 'Issue' && i.status !== 'Done')
+  const blocked = items.filter(i => i.status === 'Blocked')
+  const other = items.filter(i => i.status !== 'Done' && i.category !== 'Pending SQL' && i.category !== 'Issue' && i.status !== 'Blocked')
+
+  function handlePrint() {
+    document.body.classList.add('printing-handover')
+    window.print()
+    setTimeout(() => document.body.classList.remove('printing-handover'), 500)
+  }
+
+  const Section = ({ title, list, emptyText, tone }: { title: string, list: MatrixItem[], emptyText: string, tone: string }) => (
+    <div className="mb-6">
+      <h3 className={`text-sm font-bold uppercase tracking-wide mb-2 ${tone}`}>{title} ({list.length})</h3>
+      {list.length === 0 ? <p className="text-sm text-gray-400 italic">{emptyText}</p> : (
+        <div className="space-y-2">
+          {list.map(i => (
+            <div key={i.id} className="border-l-2 border-gray-200 pl-3 py-1">
+              <p className="font-semibold text-sm text-gray-900">{i.title} <span className="text-xs text-gray-400 font-normal">({i.category}{i.priority === 'High' ? ' · High priority' : ''})</span></p>
+              {i.description && <p className="text-xs text-gray-600 mt-0.5 whitespace-pre-wrap">{i.description}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div>
+      <div className="flex justify-end mb-3">
+        <button onClick={handlePrint} className="text-sm bg-blue-900 text-white px-4 py-2 rounded-lg hover:bg-blue-800 transition">🖨 Print / Save as PDF</button>
+      </div>
+      <div className="print-handover bg-white rounded-xl border border-gray-200 p-8 max-w-3xl mx-auto">
+        <h1 className="text-2xl font-bold text-gray-900">ABBSS Operations Portal — Handover Summary</h1>
+        <p className="text-sm text-gray-500 mt-1">Generated {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} · {items.length} total Matrix entries</p>
+        <hr className="my-5 border-gray-200" />
+
+        <Section title="⚠ Blocked -- needs attention before proceeding" list={blocked} emptyText="Nothing currently blocked." tone="text-red-700" />
+        <Section title="Pending SQL migrations -- must be run in Supabase" list={pendingSql} emptyText="No pending SQL migrations outstanding." tone="text-purple-700" />
+        <Section title="Open issues" list={openIssues} emptyText="No open issues logged." tone="text-orange-700" />
+        {other.length > 0 && <Section title="Other open items" list={other} emptyText="" tone="text-gray-600" />}
+        <Section title="Shipped features (chronological)" list={shipped} emptyText="Nothing marked Done yet." tone="text-emerald-700" />
+      </div>
     </div>
   )
 }

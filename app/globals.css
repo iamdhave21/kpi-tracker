@@ -24,3 +24,13 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Handover doc printing: hides the sidebar/header chrome and shows only
+   the content marked .print-handover, so "Print" from the Matrix's
+   Handover View produces a clean document instead of the full app UI. */
+@media print {
+  body.printing-handover * { visibility: hidden; }
+  body.printing-handover .print-handover, body.printing-handover .print-handover * { visibility: visible; }
+  body.printing-handover .print-handover { position: absolute; left: 0; top: 0; width: 100%; }
+}
+
