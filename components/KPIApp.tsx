@@ -4911,18 +4911,30 @@ type AppTask = {
   assigned_by: string
   due_date: string | null
   is_done: boolean
+  priority: 'Low'|'Medium'|'High'
+  status: 'No Status'|'To Do'|'In Progress'|'Complete'
   created_at: string
+}
+
+const TASK_STATUSES: AppTask['status'][] = ['No Status','To Do','In Progress','Complete']
+const TASK_STATUS_STYLE: Record<AppTask['status'], string> = {
+  'No Status': 'text-gray-400', 'To Do': 'text-gray-500', 'In Progress': 'text-blue-600', 'Complete': 'text-emerald-600'
+}
+const TASK_PRIORITY_STYLE: Record<AppTask['priority'], string> = {
+  Low: 'bg-emerald-100 text-emerald-700', Medium: 'bg-amber-100 text-amber-700', High: 'bg-red-100 text-red-700'
 }
 
 function TasksPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canAssign = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
-  const canSeeAll = userRole === 'super_admin' || userRole === 'admin'
+  const canSeeAll = userRole === 'super_admin'
   const [tasks, setTasks] = useState<AppTask[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [posting, setPosting] = useState(false)
+  const [viewMode, setViewMode] = useState<'list'|'board'>('list')
   const [filterStatus, setFilterStatus] = useState<'All' | 'To Do' | 'Done'>('All')
-  const [form, setForm] = useState({ title: '', description: '', due_date: '' })
+  const [assignerFilter, setAssignerFilter] = useState('All') // Super Admin only: filter by who assigned it
+  const [form, setForm] = useState({ title: '', description: '', due_date: '', priority: 'Medium' as AppTask['priority'] })
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
   const [recipientSearch, setRecipientSearch] = useState('')
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
@@ -4936,11 +4948,11 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
   async function loadTasks() {
     setLoading(true)
     let q = supabase.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false })
-    // Agents and Team Leads only see tasks assigned to them (plus, for Team
-    // Leads, tasks they personally assigned to others so they can track
-    // completion). Only Admin/Super Admin see everyone's tasks/history.
+    // Agents, Team Leads, and Admins only see tasks assigned to them, plus
+    // (for Team Lead/Admin) tasks they personally assigned to others so
+    // they can track completion. Only Super Admin sees everyone's tasks.
     if (!canSeeAll) {
-      if (userRole === 'Team Lead') {
+      if (userRole === 'Team Lead' || userRole === 'admin') {
         q = q.or(`assigned_to.eq.${currentUser.toLowerCase()},assigned_by.eq.${currentUser}`)
       } else {
         q = q.eq('assigned_to', currentUser.toLowerCase())
@@ -4973,6 +4985,8 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
       assigned_to: email,
       assigned_by: currentUser,
       due_date: form.due_date || null,
+      priority: form.priority,
+      status: 'To Do',
       is_done: false,
     }))
     const { error } = await supabase.from('tasks').insert(rows)
@@ -4985,14 +4999,20 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
         body: JSON.stringify({ assignedTo: email, assignedBy: currentUser, title: form.title.trim(), description: form.description.trim(), dueDate: form.due_date || null })
       }).catch(() => {})
     })
-    setForm({ title: '', description: '', due_date: '' })
+    setForm({ title: '', description: '', due_date: '', priority: 'Medium' })
     setSelectedEmails(new Set()); setRecipientSearch('')
     setShowForm(false)
     loadTasks()
   }
 
+  async function setStatus(task: AppTask, status: AppTask['status']) {
+    await supabase.from('tasks').update({ status, is_done: status === 'Complete' }).eq('id', task.id)
+    loadTasks()
+  }
+
   async function toggleDone(task: AppTask) {
-    await supabase.from('tasks').update({ is_done: !task.is_done }).eq('id', task.id)
+    const next = !task.is_done
+    await supabase.from('tasks').update({ is_done: next, status: next ? 'Complete' : 'To Do' }).eq('id', task.id)
     loadTasks()
   }
 
@@ -5003,13 +5023,36 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
     loadTasks()
   }
 
+  const assigners = canSeeAll ? Array.from(new Set(tasks.map(t => t.assigned_by))).sort() : []
   const filtered = tasks.filter(t => {
-    if (filterStatus === 'To Do') return !t.is_done
-    if (filterStatus === 'Done') return t.is_done
+    if (filterStatus === 'To Do' && t.is_done) return false
+    if (filterStatus === 'Done' && !t.is_done) return false
+    if (canSeeAll && assignerFilter !== 'All' && t.assigned_by !== assignerFilter) return false
     return true
   })
 
   const isOverdue = (dueDate: string | null) => dueDate ? new Date(dueDate) < new Date(new Date().toDateString()) : false
+
+  const TaskRow = ({ t }: { t: AppTask }) => (
+    <div className={`bg-white border rounded-xl p-4 flex items-start gap-3 ${t.is_done ? 'border-gray-200 opacity-60' : isOverdue(t.due_date) ? 'border-red-300' : 'border-gray-200'}`}>
+      <button onClick={() => toggleDone(t)} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${t.is_done ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-blue-400'}`}>
+        {t.is_done && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className={`font-semibold text-sm ${t.is_done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{t.title}</p>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${TASK_PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
+        </div>
+        {t.description && <p className="text-sm text-gray-500 mt-0.5">{t.description}</p>}
+        <p className="text-xs text-gray-400 mt-1.5">
+          {canSeeAll && <>Assigned to <span className="font-medium text-gray-600">{nameByEmail(t.assigned_to)}</span> · </>}
+          By {t.assigned_by.split('@')[0]}
+          {t.due_date && <> · <span className={isOverdue(t.due_date) && !t.is_done ? 'text-red-500 font-medium' : ''}>{isOverdue(t.due_date) && !t.is_done ? '⚠ Overdue: ' : 'Due '}{new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></>}
+        </p>
+      </div>
+      {(canAssign && (canSeeAll || t.assigned_by === currentUser)) && <button onClick={() => deleteTask(t.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">×</button>}
+    </div>
+  )
 
   // Group into month buckets (by created_at) so history can be collapsed
   // month-over-month. Current month is expanded by default.
@@ -5027,21 +5070,18 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
   }
   const isMonthExpanded = (key: string) => key === currentMonthKey || expandedMonths.has(key)
 
-  const TaskRow = ({ t }: { t: AppTask }) => (
-    <div className={`bg-white border rounded-xl p-4 flex items-start gap-3 ${t.is_done ? 'border-gray-200 opacity-60' : isOverdue(t.due_date) ? 'border-red-300' : 'border-gray-200'}`}>
-      <button onClick={() => toggleDone(t)} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${t.is_done ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-blue-400'}`}>
-        {t.is_done && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-      </button>
-      <div className="flex-1 min-w-0">
-        <p className={`font-semibold text-sm ${t.is_done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{t.title}</p>
-        {t.description && <p className="text-sm text-gray-500 mt-0.5">{t.description}</p>}
-        <p className="text-xs text-gray-400 mt-1.5">
-          {canSeeAll && <>Assigned to <span className="font-medium text-gray-600">{nameByEmail(t.assigned_to)}</span> · </>}
-          By {t.assigned_by.split('@')[0]}
-          {t.due_date && <> · <span className={isOverdue(t.due_date) && !t.is_done ? 'text-red-500 font-medium' : ''}>{isOverdue(t.due_date) && !t.is_done ? '⚠ Overdue: ' : 'Due '}{new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></>}
-        </p>
+  const BoardCard = ({ t }: { t: AppTask }) => (
+    <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-2">
+        <p className={`font-semibold text-sm text-gray-900 ${t.status === 'Complete' ? 'line-through text-gray-400' : ''}`}>{t.title}</p>
+        {(canAssign && (canSeeAll || t.assigned_by === currentUser)) && <button onClick={() => deleteTask(t.id)} className="text-gray-300 hover:text-red-500 text-xs flex-shrink-0">×</button>}
       </div>
-      {(canAssign && (canSeeAll || t.assigned_by === currentUser)) && <button onClick={() => deleteTask(t.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">×</button>}
+      <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${TASK_PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
+      {t.due_date && <p className={`text-xs ${isOverdue(t.due_date) && t.status !== 'Complete' ? 'text-red-500 font-medium' : 'text-gray-500'}`}>{new Date(t.due_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>}
+      {canSeeAll && <p className="text-xs text-gray-400">{nameByEmail(t.assigned_to)}</p>}
+      <select value={t.status} onChange={e => setStatus(t, e.target.value as AppTask['status'])} className="w-full border border-gray-200 rounded px-1.5 py-1 text-[11px] text-gray-700">
+        {TASK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
     </div>
   )
 
@@ -5052,9 +5092,15 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
           <h2 className="text-xl font-bold text-blue-900">Tasks</h2>
           <p className="text-sm text-gray-500">{canSeeAll ? `${tasks.length} task${tasks.length !== 1 ? 's' : ''} across the team` : `${tasks.length} task${tasks.length !== 1 ? 's' : ''} involving you`}</p>
         </div>
-        {canAssign && (
-          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Assign Task'}</button>
-        )}
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs">
+            <button onClick={() => setViewMode('list')} className={`px-3 py-2 font-medium transition ${viewMode === 'list' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>☰ List</button>
+            <button onClick={() => setViewMode('board')} className={`px-3 py-2 font-medium transition ${viewMode === 'board' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>▤ By Status</button>
+          </div>
+          {canAssign && (
+            <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Assign Task'}</button>
+          )}
+        </div>
       </div>
 
       {showForm && canAssign && (
@@ -5098,6 +5144,9 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
 
           <div className="flex items-center gap-3 flex-wrap">
             <input type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
+            <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as AppTask['priority'] }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
+              {(['Low','Medium','High'] as const).map(p => <option key={p} value={p}>{p} priority</option>)}
+            </select>
           </div>
           <div className="flex justify-end">
             <button onClick={createTask} disabled={posting} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Assigning...' : `Assign to ${selectedEmails.size || ''} ${selectedEmails.size === 1 ? 'Person' : 'People'}`}</button>
@@ -5105,16 +5154,39 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        {(['All', 'To Do', 'Done'] as const).map(s => (
+      <div className="flex items-center gap-2 flex-wrap">
+        {viewMode === 'list' && (['All', 'To Do', 'Done'] as const).map(s => (
           <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
         ))}
+        {canSeeAll && assigners.length > 0 && (
+          <select value={assignerFilter} onChange={e => setAssignerFilter(e.target.value)} className="text-xs border border-gray-200 rounded-full px-3 py-1.5 text-gray-600 ml-auto">
+            <option value="All">All assigners (TL/Admin)</option>
+            {assigners.map(a => <option key={a} value={a}>{a.split('@')[0]}</option>)}
+          </select>
+        )}
       </div>
 
       {loading ? (
         <div className="text-center py-8 text-gray-400 text-sm">Loading tasks...</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-8 text-gray-500 text-sm">No tasks found.</div>
+      ) : viewMode === 'board' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {TASK_STATUSES.map(status => {
+            const colTasks = filtered.filter(t => (t.status || 'To Do') === status)
+            return (
+              <div key={status} className="space-y-2">
+                <div className="flex items-center gap-2 px-1">
+                  <span className={`text-sm font-semibold ${TASK_STATUS_STYLE[status]}`}>{status}</span>
+                  <span className="text-xs text-gray-400">{colTasks.length}</span>
+                </div>
+                <div className="space-y-2 min-h-[60px]">
+                  {colTasks.map(t => <BoardCard key={t.id} t={t} />)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       ) : (
         <div className="space-y-3">
           {sortedMonthKeys.map(key => {
@@ -5142,7 +5214,6 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
     </div>
   )
 }
-
 function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
   const canEdit = (t: Ticket) => canManage || t.created_by === currentUser
