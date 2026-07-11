@@ -1228,8 +1228,16 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     )
   }
 
-  // Metadata lookup so Favorites can render the same label/icon/color
-  // without duplicating JSX -- single source of truth per nav item.
+  const ExternalNavItem = ({ label, icon, url, dotColor }: { label: string, icon: React.ReactNode, url: string, dotColor?: string }) => (
+    <a href={url} target="_blank" rel="noopener noreferrer" onClick={() => setMobileMenuOpen(false)} className={`w-full flex items-center gap-2 px-2.5 py-2.5 text-sm font-medium transition-all rounded-lg text-gray-900 hover:bg-gray-100 hover:text-blue-900`}>
+      {dotColor && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />}
+      {icon}
+      <span className="truncate font-semibold">{label}</span>
+      <span className="ml-auto text-gray-300 text-xs flex-shrink-0">↗</span>
+    </a>
+  )
+
+
   const NAV_META: Record<string, { label: string, icon: React.ReactNode, dotColor: string }> = {
     'announcements': { label: 'Announcements', icon: <Bell className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-sky-400' },
     'gaming-hub': { label: 'Gaming Hub', icon: <Gamepad2 className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-sky-400' },
@@ -1395,6 +1403,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
+          <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
