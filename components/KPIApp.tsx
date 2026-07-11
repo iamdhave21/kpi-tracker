@@ -1249,7 +1249,6 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     'bcp': { label: 'BCP', icon: <Shield className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
     'links': { label: 'Links', icon: <TrendingUp className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
     'resources': { label: 'Resources', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
-    'hris-referral': { label: 'Employee Referral', icon: <UserPlus className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
     'hris-records': { label: 'Employee Records', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
     'hris-timetracker': { label: 'Time Tracker', icon: <Clock className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
     'entry': { label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
@@ -1402,10 +1401,9 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* HRIS */}
-      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-referral','hris-records','hris-invoice','hris-timetracker'].includes(view)} />
+      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-invoice','hris-timetracker'].includes(view)} />
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="hris-referral" label="Employee Referral" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
@@ -1726,7 +1724,6 @@ export default function KPIApp() {
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='agent'?'employee_email':'agent_acknowledged', userRole==='agent'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
             {view === 'tl-scorecard' && <TLScorecard currentUser={user} userRole={userRole} showToast={showToast} records={records} />}
-            {view === 'hris-referral' && <HRISReferral userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-records' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
             {view === 'hris-timetracker' && (userRole === 'super_admin' || userRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={user} showToast={showToast} onApplied={() => loadData()} />}
@@ -6368,12 +6365,13 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
                 ['BCP', 'Business continuity plan and contingency procedures reference.'],
                 ['Links', 'Quick-access company tools, grouped by client, with search.'],
                 ['Resources', 'Shared reference documents and guides.'],
-                ['Employee Referral', 'Submit and track referral candidates through the hiring pipeline.'],
-                ['Employee Records', 'Full HR profile data. Manager access and above.'],
                 ['Time Tracker', 'Paste time-tracking period exports to compute Attendance % and apply it to KPI records.'],
+                ['Employee Records', 'Full HR profile data. Manager access and above.'],
+                ['Hiring Pipeline', 'External recruiting/hiring tool -- opens in a new tab.'],
                 ['KPI Entry', 'Enter or edit an employee\'s monthly Attendance/Accuracy/Efficiency/Feedback/Compliance scores.'],
                 ['Observations', 'Log coaching observations and 1-on-1 notes for an employee.'],
                 ['Coaching & 1-on-1', 'Structured coaching session records, with optional acknowledgment.'],
+                ['Team Compliance', 'Who has and hasn\'t acknowledged coaching sessions/announcements or completed tasks, per employee, per month -- with a drill-down to the exact missing items.'],
                 ['Operating Cadence', 'Recurring team rituals (huddles, reviews) and completion tracking.'],
                 ['TL Scorecard', 'A Team Lead\'s own composite score: Compliance + Team Performance + Attendance.'],
                 ['Dashboard', 'Team-wide KPI overview -- filterable by client, team, and time period, with charts.'],
@@ -6419,6 +6417,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
                     ['Employees / Teams -- manage', '—', '—', '✓', '✓'],
                     ['Directory Links -- manage', '—', '—', '✓', '✓'],
                     ['TL Scorecard -- view', '—', 'Own only', 'Everyone', 'Everyone'],
+                    ['Team Compliance (acks) -- view', '—', 'Own team only', 'Everyone', 'Everyone'],
                     ['Matrix (dev log)', '—', '—', '✓', '✓'],
                     ['App Users -- create/edit roles', '—', '—', 'View', '✓'],
                     ['Settings access', '—', '—', '—', '✓'],
@@ -6959,10 +6958,18 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
   const [selMonth, setSelMonth] = useState(MONTHS[new Date().getMonth()])
   const [selYear, setSelYear] = useState(String(new Date().getFullYear()))
   const [selClient, setSelClient] = useState('All')
+  const [selTeam, setSelTeam] = useState('all')
+  const [teams, setTeams] = useState<any[]>([])
+  const [teamMembers, setTeamMembers] = useState<{team_id:string, employee_id:string}[]>([])
   const [details, setDetails] = useState<Record<string, ComplianceDetail>>({})
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [teamMemberIds, setTeamMemberIds] = useState<Set<string> | null>(null)
+
+  useEffect(() => {
+    supabase.from('teams').select('id, name, team_lead:employees(client)').order('name').then(({data}) => setTeams(data||[]))
+    supabase.from('team_members').select('team_id, employee_id').then(({data}) => setTeamMembers(data||[]))
+  }, [])
 
   // Team Leads only see their own team's members; Admin/Super Admin see everyone.
   useEffect(() => {
@@ -6977,9 +6984,11 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
   }, [userRole, currentUser, employees])
 
   const monthLabel = `${selMonth} ${selYear}`
+  const teamFilterIds = selTeam !== 'all' ? new Set(teamMembers.filter(m => m.team_id === selTeam).map(m => m.employee_id)) : null
   const scopedEmployees = employees.filter(e => e.active && e.email
     && (selClient === 'All' || e.client === selClient)
-    && (teamMemberIds === null || teamMemberIds.has(e.id)))
+    && (teamMemberIds === null || teamMemberIds.has(e.id))
+    && (teamFilterIds === null || teamFilterIds.has(e.id)))
 
   useEffect(() => {
     let cancelled = false
@@ -7013,10 +7022,21 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
             {allMonths.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
           {userRole !== 'Team Lead' && (
-            <select value={selClient} onChange={e => setSelClient(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900">
-              <option value="All">All Clients</option>
-              {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <>
+              <select value={selClient} onChange={e => { setSelClient(e.target.value); setSelTeam('all') }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900">
+                <option value="All">All Clients</option>
+                {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {(() => {
+                const clientTeams = teams.filter((t:any) => selClient === 'All' || t.team_lead?.client === selClient)
+                return (
+                  <select value={selTeam} onChange={e => setSelTeam(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900">
+                    <option value="all">All Teams{selClient !== 'All' ? ` (${selClient})` : ''}</option>
+                    {clientTeams.map((t:any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                )
+              })()}
+            </>
           )}
         </div>
       </div>
