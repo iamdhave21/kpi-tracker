@@ -709,7 +709,7 @@ function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string,
 
 
 // -- Monthly Leaderboard -----------------------------------------------------
-function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: number, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+function GameLeaderboard({ refreshKey, userRole, showToast, currentUser }: { refreshKey: number, userRole: string, showToast: (m: string, t: 'success'|'error') => void, currentUser?: string | null }) {
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
   const now = new Date()
   const [lbMonth, setLbMonth] = useState(now.getMonth() + 1) // 1-indexed
@@ -725,7 +725,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
   async function loadScores() {
     const now = new Date()
     const monthYear = `${lbYear}-${String(lbMonth).padStart(2,'0')}`
-    const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url,played_at').eq('game_key','game_of_month').eq('month_year',monthYear).order('score',{ascending:false})
+    const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url,played_at,approved_by').eq('game_key','game_of_month').eq('month_year',monthYear).order('score',{ascending:false})
     const best: Record<string,any> = {}
     data?.forEach((row:any) => { if (!best[row.user_email]||row.score>best[row.user_email].score) best[row.user_email]=row })
     setScores(Object.values(best).sort((a,b)=>b.score-a.score).slice(0,10))
@@ -742,15 +742,18 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
     setApproving(sub.id)
     const now = new Date()
     const monthYear = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
-    await supabase.from('game_scores').insert({ user_email: sub.user_email, user_name: sub.user_name, game_key: 'game_of_month', score, month_year: monthYear, screenshot_url: sub.screenshot_url, verified: true })
-    await supabase.from('game_score_submissions').update({ status: 'approved', approved_score: score }).eq('id', sub.id)
+    await supabase.from('game_scores').insert({ user_email: sub.user_email, user_name: sub.user_name, game_key: 'game_of_month', score, month_year: monthYear, screenshot_url: sub.screenshot_url, verified: true, approved_by: currentUser })
+    await supabase.from('game_score_submissions').update({ status: 'approved', approved_score: score, reviewed_by: currentUser }).eq('id', sub.id)
+    await writeAuditLog('APPROVE_GAME_SCORE', currentUser || '', sub.user_name, monthYear, 'Game Score', 'Pending', `${score.toLocaleString()} (approved)`)
     showToast(`Score ${score.toLocaleString()} approved for ${sub.user_name}!`, 'success')
     setApproving(null)
     loadScores(); loadPending()
   }
 
   async function rejectSubmission(id: string) {
-    await supabase.from('game_score_submissions').update({ status: 'rejected' }).eq('id', id)
+    const sub = pending.find((p:any) => p.id === id)
+    await supabase.from('game_score_submissions').update({ status: 'rejected', reviewed_by: currentUser }).eq('id', id)
+    if (sub) await writeAuditLog('REJECT_GAME_SCORE', currentUser || '', sub.user_name, '', 'Game Score', 'Pending', 'Rejected')
     showToast('Submission rejected', 'success')
     loadPending()
   }
@@ -814,7 +817,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast }: { refreshKey: numb
               <span className="text-sm w-5">{medals[i]||`${i+1}.`}</span>
               <span className="text-sm text-gray-800 flex-1 font-medium truncate">{s.user_name||s.user_email.split('@')[0]}</span>
               <div className="text-right">
-                <span className="text-sm font-bold text-blue-900 block">{s.score.toLocaleString()}</span>
+                <span className="text-sm font-bold text-blue-900 block" title={s.approved_by && userRole !== 'agent' ? `Approved by ${s.approved_by.split('@')[0]}` : undefined}>{s.score.toLocaleString()}</span>
                 {s.played_at && <span className="text-xs text-gray-400">{new Date(s.played_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>}
               </div>
               {s.screenshot_url && <a href={s.screenshot_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600 transition" title="View screenshot">📸</a>}
@@ -914,7 +917,7 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl 
             <GameOfMonth userEmail={currentUser} userName={userName} onScoreSaved={() => setLeaderboardKey(k => k + 1)} />
           </div>
           <div className="bg-white/95 backdrop-blur-sm border border-white/50 rounded-xl p-6 shadow-lg">
-            <GameLeaderboard refreshKey={leaderboardKey} userRole={userRole} showToast={showToast} />
+            <GameLeaderboard refreshKey={leaderboardKey} userRole={userRole} showToast={showToast} currentUser={currentUser} />
           </div>
         </div>
         </div>
