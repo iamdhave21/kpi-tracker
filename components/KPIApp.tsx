@@ -6898,10 +6898,187 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
 }
 
 // -- TL Tools: Coaching Log + Compliance ------------------------------------
+type ComplianceDetail = ComplianceBreakdown & {
+  missingCoaching: { title: string, date: string }[]
+  missingAnnouncements: { title: string }[]
+  missingTasks: { title: string }[]
+}
+
+// Like getComplianceBreakdown, but also returns the specific items still
+// needing acknowledgment so a Team Lead can see exactly who's missing what,
+// not just a percentage.
+async function getComplianceDetail(employeeEmail: string | null | undefined, monthLabel: string): Promise<ComplianceDetail> {
+  const empty: ComplianceDetail = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, totalRequired: 0, totalAcked: 0, missingCoaching: [], missingAnnouncements: [], missingTasks: [] }
+  if (!employeeEmail) return empty
+  const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
+  if (mIdx < 0 || !yr) return empty
+  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
+  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+
+  const { data: coaching } = await supabase.from('coaching_logs')
+    .select('agent_acknowledged, date, type')
+    .eq('employee_email', employeeEmail)
+    .eq('requires_acknowledgment', true)
+    .eq('status', 'Final')
+    .gte('date', start).lt('date', end)
+
+  const { data: anns } = await supabase.from('announcements')
+    .select('id, title')
+    .gte('created_at', start).lt('created_at', end)
+
+  const annIds = (anns || []).map((a:any) => a.id)
+  let ackedIds: string[] = []
+  if (annIds.length) {
+    const { data: acks } = await supabase.from('announcement_acknowledgements')
+      .select('announcement_id').eq('user_email', employeeEmail).in('announcement_id', annIds)
+    ackedIds = (acks || []).map((a:any) => a.announcement_id)
+  }
+
+  const { data: taskData } = await supabase.from('tasks')
+    .select('title, is_done')
+    .eq('assigned_to', employeeEmail.toLowerCase())
+    .gte('created_at', start).lt('created_at', end)
+
+  const coachTotal = (coaching || []).length
+  const coachAcked = (coaching || []).filter((c:any) => c.agent_acknowledged).length
+  const taskTotal = (taskData || []).length
+  const taskDone = (taskData || []).filter((t:any) => t.is_done).length
+  const totalRequired = coachTotal + annIds.length + taskTotal
+  const totalAcked = coachAcked + (annIds.length - (annIds.length - ackedIds.length)) + taskDone
+
+  return {
+    rate: totalRequired > 0 ? totalAcked / totalRequired : null,
+    coachTotal, coachAcked, annTotal: annIds.length, annAcked: ackedIds.length, taskTotal, taskDone, totalRequired, totalAcked,
+    missingCoaching: (coaching || []).filter((c:any) => !c.agent_acknowledged).map((c:any) => ({ title: c.type || 'Coaching session', date: c.date })),
+    missingAnnouncements: (anns || []).filter((a:any) => !ackedIds.includes(a.id)).map((a:any) => ({ title: a.title })),
+    missingTasks: (taskData || []).filter((t:any) => !t.is_done).map((t:any) => ({ title: t.title })),
+  }
+}
+
+function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: Employee[], userRole: string, currentUser: string | null }) {
+  const [selMonth, setSelMonth] = useState(MONTHS[new Date().getMonth()])
+  const [selYear, setSelYear] = useState(String(new Date().getFullYear()))
+  const [selClient, setSelClient] = useState('All')
+  const [details, setDetails] = useState<Record<string, ComplianceDetail>>({})
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [teamMemberIds, setTeamMemberIds] = useState<Set<string> | null>(null)
+
+  // Team Leads only see their own team's members; Admin/Super Admin see everyone.
+  useEffect(() => {
+    if (userRole !== 'Team Lead') { setTeamMemberIds(null); return }
+    (async () => {
+      const { data: teams } = await supabase.from('teams').select('id, team_lead_id')
+      const myTeamIds = (teams || []).filter((t:any) => employees.find(e => e.id === t.team_lead_id)?.email === currentUser).map((t:any) => t.id)
+      if (myTeamIds.length === 0) { setTeamMemberIds(new Set()); return }
+      const { data: members } = await supabase.from('team_members').select('employee_id').in('team_id', myTeamIds)
+      setTeamMemberIds(new Set((members || []).map((m:any) => m.employee_id)))
+    })()
+  }, [userRole, currentUser, employees])
+
+  const monthLabel = `${selMonth} ${selYear}`
+  const scopedEmployees = employees.filter(e => e.active && e.email
+    && (selClient === 'All' || e.client === selClient)
+    && (teamMemberIds === null || teamMemberIds.has(e.id)))
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    Promise.all(scopedEmployees.map(async e => [e.id, await getComplianceDetail(e.email, monthLabel)] as const))
+      .then(results => {
+        if (cancelled) return
+        const map: Record<string, ComplianceDetail> = {}
+        results.forEach(([id, detail]) => { map[id] = detail })
+        setDetails(map)
+        setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [monthLabel, scopedEmployees.map(e=>e.id).join(','), teamMemberIds])
+
+  function toggleExpand(id: string) {
+    setExpanded(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  }
+
+  const allMonths = ['2024','2025','2026','2027','2028','2029','2030'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2"><CheckCircle className="w-4 h-4 text-emerald-500"/>Team Acknowledgment Compliance</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Coaching sessions, announcements, and tasks -- who has and hasn't acknowledged/completed what.</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={`${selMonth} ${selYear}`} onChange={e => { const [m,y] = e.target.value.split(' '); setSelMonth(m); setSelYear(y) }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900">
+            {allMonths.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          {userRole !== 'Team Lead' && (
+            <select value={selClient} onChange={e => setSelClient(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900">
+              <option value="All">All Clients</option>
+              {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading compliance data...</div>
+      ) : scopedEmployees.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 text-sm">{userRole === 'Team Lead' ? 'No team members found under you.' : 'No employees match this filter.'}</div>
+      ) : (
+        <div className="space-y-2">
+          {scopedEmployees.map(e => {
+            const d = details[e.id]
+            const isExpanded = expanded.has(e.id)
+            const pct = d?.rate !== null && d?.rate !== undefined ? Math.round(d.rate * 100) : null
+            const missingCount = d ? d.missingCoaching.length + d.missingAnnouncements.length + d.missingTasks.length : 0
+            return (
+              <div key={e.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <button onClick={() => toggleExpand(e.id)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition text-left">
+                  <div className="flex items-center gap-3">
+                    {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
+                    <span className="font-medium text-sm text-gray-900">{e.name}</span>
+                    <span className="text-xs text-gray-400">{e.designation}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {missingCount > 0 && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">{missingCount} pending</span>}
+                    <span className={`text-sm font-bold px-2 py-1 rounded-lg ${pct === null ? 'bg-gray-50 text-gray-400' : pct >= 97 ? 'bg-emerald-50 text-emerald-700' : pct >= 80 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+                      {pct === null ? 'No data' : `${pct}%`}
+                    </span>
+                  </div>
+                </button>
+                {isExpanded && d && (
+                  <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-3">
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div><p className="text-xs text-gray-400">Coaching</p><p className="text-sm font-semibold text-gray-800">{d.coachAcked}/{d.coachTotal}</p></div>
+                      <div><p className="text-xs text-gray-400">Announcements</p><p className="text-sm font-semibold text-gray-800">{d.annAcked}/{d.annTotal}</p></div>
+                      <div><p className="text-xs text-gray-400">Tasks</p><p className="text-sm font-semibold text-gray-800">{d.taskDone}/{d.taskTotal}</p></div>
+                    </div>
+                    {missingCount === 0 ? (
+                      <p className="text-xs text-emerald-600 font-medium">✓ Fully acknowledged/completed this month.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {d.missingCoaching.map((c,i) => <p key={`c${i}`} className="text-xs text-gray-600">📋 Not acknowledged: <span className="font-medium">{c.title}</span> ({new Date(c.date).toLocaleDateString('en-US',{month:'short',day:'numeric'})})</p>)}
+                        {d.missingAnnouncements.map((a,i) => <p key={`a${i}`} className="text-xs text-gray-600">📢 Not acknowledged: <span className="font-medium">{a.title}</span></p>)}
+                        {d.missingTasks.map((t,i) => <p key={`t${i}`} className="text-xs text-gray-600">✅ Not completed: <span className="font-medium">{t.title}</span></p>)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange }:
   { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, onAckChange?: () => void }) {
 
-  const [activeTab, setActiveTab] = useState<'coaching'|'compliance'>('coaching')
+  const [activeTab, setActiveTab] = useState<'coaching'|'compliance'|'ackCompliance'>('coaching')
   const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
   const isViewer = userRole === 'agent'
 
@@ -6918,7 +7095,7 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange
 
       {/* Tab switcher */}
       <div className="flex gap-2 border-b border-gray-200">
-        {([['coaching','📋 Coaching Log'],['compliance','📊 TL Compliance']] as [string,string][]).map(([tab, label]) => (
+        {([['coaching','📋 Coaching Log'],['compliance','📊 TL Compliance'],['ackCompliance','✅ Team Compliance']] as [string,string][]).map(([tab, label]) => (
           <button key={tab} onClick={() => setActiveTab(tab as any)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${activeTab === tab ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {label}
@@ -6931,6 +7108,9 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange
       )}
       {activeTab === 'compliance' && canManage && (
         <TLComplianceReport employees={employees} currentUser={currentUser} userRole={userRole} />
+      )}
+      {activeTab === 'ackCompliance' && canManage && (
+        <TeamCompliancePanel employees={employees} userRole={userRole} currentUser={currentUser} />
       )}
       {activeTab === 'compliance' && !canManage && (
         <div className="text-center py-16 text-gray-400">
