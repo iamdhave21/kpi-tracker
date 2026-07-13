@@ -2636,6 +2636,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string }) {
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
+  const [newPortalRole, setNewPortalRole] = useState<string>('agent')
   const [newEmpId, setNewEmpId] = useState('')
   const [newDepartments, setNewDepartments] = useState<string[]>([])
   const [newEmpType, setNewEmpType] = useState('Agent')
@@ -2757,7 +2758,26 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       active:true
     })
     if (error) showToast(error.message,'error')
-    else { await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active'); setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClient(CLIENTS[0]); onChanged() }
+    else {
+      await writeAuditLog('ADD_EMPLOYEE',currentUser,newName.trim(),'','Status','','Active')
+      // Create their portal login immediately -- this used to only happen
+      // if/when someone later opened and re-saved the record, which meant
+      // new employees could go without a working login indefinitely.
+      if (emailTrimmed) {
+        const { data: existingUser } = await supabase.from('app_users').select('id').or(`email.eq.${emailTrimmed},username.eq.${emailTrimmed}`).maybeSingle()
+        if (!existingUser) {
+          const tempPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 100)
+          await supabase.from('app_users').insert({
+            username: emailTrimmed, email: emailTrimmed, name: newName.trim(),
+            role: newPortalRole || 'agent', password_hash: tempPassword,
+            must_change_password: true, active: true,
+          })
+          showToast(`Login created for ${emailTrimmed.split('@')[0]} — temp password: ${tempPassword}`, 'success')
+          fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailTrimmed, newRole: newPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
+        }
+      }
+      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClient(CLIENTS[0]); setNewPortalRole('agent'); onChanged()
+    }
     setAdding(false)
   }
 
@@ -2903,6 +2923,14 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
             {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          {userRole === 'super_admin' && (
+            <select value={newPortalRole} onChange={e=>setNewPortalRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Portal Role -- creates their login immediately if a work email is set">
+              <option value="agent">Portal: Agent</option>
+              <option value="Team Lead">Portal: Team Lead</option>
+              <option value="admin">Portal: Admin</option>
+              <option value="super_admin">Portal: Super Admin</option>
+            </select>
+          )}
           <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
         <div className="mt-3">
