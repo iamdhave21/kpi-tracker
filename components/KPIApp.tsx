@@ -306,7 +306,8 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
   }
 
   async function acknowledge(id: string) {
-    await supabase.from('announcement_acknowledgements').insert({ announcement_id: id, user_email: userEmail })
+    const { error } = await supabase.from('announcement_acknowledgements').insert({ announcement_id: id, user_email: userEmail })
+    if (error) { showToast('Failed to acknowledge: ' + error.message, 'error'); return }
     setAcks(prev => ({ ...prev, [id]: true })); showToast('Acknowledged!','success')
   }
 
