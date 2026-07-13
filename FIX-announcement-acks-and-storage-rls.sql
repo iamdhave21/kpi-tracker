@@ -26,8 +26,12 @@ create policy "Allow delete" on announcement_acknowledgements for delete using (
 -- the first check of the storage layer itself, which could explain upload
 -- failures on Game of the Month screenshots, ticket attachments, etc. even
 -- when the destination table's own policies are fine.
-
-alter table storage.objects enable row level security;
+--
+-- Note: storage.objects is owned by Supabase's internal system role, so
+-- you can't run ALTER TABLE ... ENABLE ROW LEVEL SECURITY on it yourself --
+-- that's fine, Supabase already has RLS enabled on it by default for every
+-- project. You CAN still create policies on it though, which is all that's
+-- actually needed here.
 
 drop policy if exists "Allow read attachments" on storage.objects;
 create policy "Allow read attachments" on storage.objects for select
