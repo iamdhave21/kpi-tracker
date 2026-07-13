@@ -2763,11 +2763,31 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     const generatedDesig = generateDesignation(editEmpType, editClient, existingForPerson, id)
     const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,client:editClient}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
-    // Always sync portal role to app_users if email is present
+    // Sync to app_users if a work email is present. If the email actually
+    // changed, look up their EXISTING login by the OLD email first and
+    // rename it -- otherwise this silently creates a duplicate orphaned
+    // login account under the new email while the old one lingers forever
+    // (this is exactly how stale/incorrect login emails have crept in).
     if (editEmail && editEmail.trim()) {
       const emailLower = editEmail.trim().toLowerCase()
-      const {data: existingUser} = await supabase.from('app_users').select('id,role').or(`email.eq.${emailLower},username.eq.${emailLower}`).maybeSingle()
+      const oldEmailLower = emp?.email?.trim().toLowerCase()
+      let existingUser: any = null
+      if (oldEmailLower && oldEmailLower !== emailLower) {
+        const { data } = await supabase.from('app_users').select('id,role,email').or(`email.eq.${oldEmailLower},username.eq.${oldEmailLower}`).maybeSingle()
+        existingUser = data
+      }
       if (!existingUser) {
+        const { data } = await supabase.from('app_users').select('id,role,email').or(`email.eq.${emailLower},username.eq.${emailLower}`).maybeSingle()
+        existingUser = data
+      }
+
+      if (existingUser && existingUser.email?.toLowerCase() !== emailLower) {
+        // Found their login under the old email -- rename it rather than
+        // creating a second account.
+        await supabase.from('app_users').update({ username: emailLower, email: emailLower, ...(editPortalRole ? { role: editPortalRole } : {}) }).eq('id', existingUser.id)
+        showToast(`Login email corrected to ${emailLower} (was ${existingUser.email}). They'll log in with the new address going forward.`, 'success')
+        fetch('/api/notify/role-changed', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: emailLower, oldRole: existingUser.role, newRole: existingUser.role, changedBy: currentUser || 'admin' }) }).catch(() => {})
+      } else if (!existingUser) {
         const tempPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 100)
         await supabase.from('app_users').insert({
           username: emailLower, email: emailLower, name: editName,
