@@ -1464,6 +1464,7 @@ export default function KPIApp() {
   const [userRole, setUserRole] = useState<string>('agent')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
   const [pendingTaskCount, setPendingTaskCount] = useState(0)
+  const [tasksRefreshKey, setTasksRefreshKey] = useState(0)
   const [favoriteViews, setFavoriteViews] = useState<string[]>([])
   const [bgUrl, setBgUrl] = useState<string|null>(null)
 
@@ -1569,18 +1570,21 @@ export default function KPIApp() {
     loadPending()
   }, [user, userRole])
 
-  // Load pending tasks count -- Agents see their own assigned/incomplete
-  // tasks, Manager/Team Lead see all incomplete tasks across everyone.
+  // Load pending tasks count -- matches the same scoping TasksPanel itself
+  // uses: Agent sees only their own, Team Lead/Admin see own + assigned by
+  // them, Super Admin sees everyone. Also re-runs on tasksRefreshKey so the
+  // badge doesn't go stale after tasks are completed elsewhere in the app.
   useEffect(() => {
     if (!user) return
     async function loadPendingTasks() {
       let q = supabase.from('tasks').select('id').eq('is_done', false)
       if (userRole === 'agent') q = q.eq('assigned_to', user!.toLowerCase())
+      else if (userRole === 'Team Lead' || userRole === 'admin') q = q.or(`assigned_to.eq.${user!.toLowerCase()},assigned_by.eq.${user}`)
       const { data } = await q
       setPendingTaskCount((data || []).length)
     }
     loadPendingTasks()
-  }, [user, userRole])
+  }, [user, userRole, tasksRefreshKey])
 
   // Load this user's favorited sidebar items (persisted per-account, not
   // device-specific) and a helper to save changes back.
@@ -1721,7 +1725,7 @@ export default function KPIApp() {
             {view === 'settings' && (userRole === 'super_admin' ? <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} /> : <NoAccessPage userRole={userRole} onBack={() => setView('announcements')} />)}
             {view === 'org-chart' && <OrgChart employees={employees} showToast={showToast} />}
             {view === 'tickets' && <TicketsPanel currentUser={user || ''} userRole={userRole} showToast={showToast} />}
-            {view === 'tasks' && <TasksPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
+            {view === 'tasks' && <TasksPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} onTasksChanged={() => setTasksRefreshKey(k => k+1)} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='agent'?'employee_email':'agent_acknowledged', userRole==='agent'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
             {view === 'tl-scorecard' && <TLScorecard currentUser={user} userRole={userRole} showToast={showToast} records={records} />}
@@ -4954,7 +4958,7 @@ const TASK_PRIORITY_STYLE: Record<AppTask['priority'], string> = {
   Low: 'bg-emerald-100 text-emerald-700', Medium: 'bg-amber-100 text-amber-700', High: 'bg-red-100 text-red-700'
 }
 
-function TasksPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+function TasksPanel({ employees, currentUser, userRole, showToast, onTasksChanged }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, onTasksChanged?: () => void }) {
   const canAssign = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
   const canSeeAll = userRole === 'super_admin'
   const [tasks, setTasks] = useState<AppTask[]>([])
@@ -4991,6 +4995,7 @@ function TasksPanel({ employees, currentUser, userRole, showToast }: { employees
     const { data, error } = await q
     if (!error) setTasks((data || []) as AppTask[])
     setLoading(false)
+    onTasksChanged?.()
   }
 
   useEffect(() => { loadTasks() }, [])
