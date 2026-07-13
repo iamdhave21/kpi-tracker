@@ -743,8 +743,10 @@ function GameLeaderboard({ refreshKey, userRole, showToast, currentUser }: { ref
     setApproving(sub.id)
     const now = new Date()
     const monthYear = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
-    await supabase.from('game_scores').insert({ user_email: sub.user_email, user_name: sub.user_name, game_key: 'game_of_month', score, month_year: monthYear, screenshot_url: sub.screenshot_url, verified: true, approved_by: currentUser })
-    await supabase.from('game_score_submissions').update({ status: 'approved', approved_score: score, reviewed_by: currentUser }).eq('id', sub.id)
+    const { error: e1 } = await supabase.from('game_scores').insert({ user_email: sub.user_email, user_name: sub.user_name, game_key: 'game_of_month', score, month_year: monthYear, screenshot_url: sub.screenshot_url, verified: true, approved_by: currentUser })
+    if (e1) { showToast('Failed to approve: ' + e1.message, 'error'); setApproving(null); return }
+    const { error: e2 } = await supabase.from('game_score_submissions').update({ status: 'approved', approved_score: score, reviewed_by: currentUser }).eq('id', sub.id)
+    if (e2) { showToast('Score added but failed to update submission status: ' + e2.message, 'error'); setApproving(null); return }
     await writeAuditLog('APPROVE_GAME_SCORE', currentUser || '', sub.user_name, monthYear, 'Game Score', 'Pending', `${score.toLocaleString()} (approved)`)
     showToast(`Score ${score.toLocaleString()} approved for ${sub.user_name}!`, 'success')
     setApproving(null)
@@ -753,7 +755,8 @@ function GameLeaderboard({ refreshKey, userRole, showToast, currentUser }: { ref
 
   async function rejectSubmission(id: string) {
     const sub = pending.find((p:any) => p.id === id)
-    await supabase.from('game_score_submissions').update({ status: 'rejected', reviewed_by: currentUser }).eq('id', id)
+    const { error } = await supabase.from('game_score_submissions').update({ status: 'rejected', reviewed_by: currentUser }).eq('id', id)
+    if (error) { showToast('Failed to reject: ' + error.message, 'error'); return }
     if (sub) await writeAuditLog('REJECT_GAME_SCORE', currentUser || '', sub.user_name, '', 'Game Score', 'Pending', 'Rejected')
     showToast('Submission rejected', 'success')
     loadPending()
@@ -4830,11 +4833,10 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
 
   async function toggleCoverage(taskId: string, employeeId: string, currentlyTrained: boolean) {
     setSavingCoverage(taskId + employeeId)
-    if (currentlyTrained) {
-      await supabase.from('bcp_task_coverage').delete().eq('task_id', taskId).eq('employee_id', employeeId)
-    } else {
-      await supabase.from('bcp_task_coverage').insert({ task_id: taskId, employee_id: employeeId })
-    }
+    const { error } = currentlyTrained
+      ? await supabase.from('bcp_task_coverage').delete().eq('task_id', taskId).eq('employee_id', employeeId)
+      : await supabase.from('bcp_task_coverage').insert({ task_id: taskId, employee_id: employeeId })
+    if (error) { showToast('Failed to update coverage: ' + error.message, 'error'); setSavingCoverage(null); return }
     await loadData()
     setSavingCoverage(null)
   }
@@ -5069,13 +5071,15 @@ function TasksPanel({ employees, currentUser, userRole, showToast, onTasksChange
   }
 
   async function setStatus(task: AppTask, status: AppTask['status']) {
-    await supabase.from('tasks').update({ status, is_done: status === 'Complete' }).eq('id', task.id)
+    const { error } = await supabase.from('tasks').update({ status, is_done: status === 'Complete' }).eq('id', task.id)
+    if (error) { showToast('Failed to update status: ' + error.message, 'error'); return }
     loadTasks()
   }
 
   async function toggleDone(task: AppTask) {
     const next = !task.is_done
-    await supabase.from('tasks').update({ is_done: next, status: next ? 'Complete' : 'To Do' }).eq('id', task.id)
+    const { error } = await supabase.from('tasks').update({ is_done: next, status: next ? 'Complete' : 'To Do' }).eq('id', task.id)
+    if (error) { showToast('Failed to update: ' + error.message, 'error'); return }
     loadTasks()
   }
 
@@ -5367,11 +5371,12 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     if (!commentDraft.trim() && commentAttachments.length === 0) return
     setPostingComment(true)
     const newDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-    await supabase.from('ticket_comments').insert({
+    const { error } = await supabase.from('ticket_comments').insert({
       ticket_id: ticket.id, comment: commentDraft.trim() || '(attachment only)',
       commented_by: currentUser, is_resolution: canManage,
       attachments: commentAttachments,
     })
+    if (error) { showToast('Failed to post comment: ' + error.message, 'error'); setPostingComment(false); return }
     // Any update resets the SLA clock 24hrs from now
     await supabase.from('tickets').update({ sla_deadline: newDeadline, updated_at: new Date().toISOString() }).eq('id', ticket.id)
     setPostingComment(false)
@@ -5464,7 +5469,8 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   async function updateStatus(id: string, status: Ticket['status']) {
     const ticket = tickets.find(t => t.id === id)
     const newDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-    await supabase.from('tickets').update({ status, sla_deadline: newDeadline, updated_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('tickets').update({ status, sla_deadline: newDeadline, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) { showToast('Failed to update status: ' + error.message, 'error'); return }
     showToast('Status updated', 'success'); loadTickets()
     if (ticket) notifySubmitter(ticket, 'status', `Status changed to ${status}`)
   }
@@ -6170,7 +6176,8 @@ function MatrixPanel({ currentUser, showToast }: { currentUser: string|null, sho
   }
 
   async function updateStatus(id: string, status: MatrixItem['status']) {
-    await supabase.from('dev_matrix').update({ status }).eq('id', id)
+    const { error } = await supabase.from('dev_matrix').update({ status }).eq('id', id)
+    if (error) { showToast('Failed to update: ' + error.message, 'error'); return }
     loadItems()
   }
 
@@ -8114,7 +8121,8 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
   }
 
   async function updateStatus(id: string, status: string) {
-    await supabase.from('hris_referrals').update({ status }).eq('id', id)
+    const { error } = await supabase.from('hris_referrals').update({ status }).eq('id', id)
+    if (error) { showToast('Failed to update: ' + error.message, 'error'); return }
     showToast(`Status updated to ${status}`)
     loadReferrals()
   }
