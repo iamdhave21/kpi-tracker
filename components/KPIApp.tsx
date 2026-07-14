@@ -8387,6 +8387,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
         (() => {
           const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase())
           const myName = myEmp?.name
+          const myDocsList = myName ? hrDocs.filter(d => !d.is_private && d.employee_name === myName) : []
           const has = myName ? (compMap[myName] || new Set<string>()) : new Set<string>()
           const count = REQUIRED_DOCS.filter(d => has.has(d)).length
           const complete = count === REQUIRED_DOCS.length
@@ -8399,14 +8400,18 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                 <span className={`inline-flex px-2.5 py-1 rounded-full text-sm font-medium ${complete ? 'bg-emerald-100 text-emerald-700' : count === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>{count}/{REQUIRED_DOCS.length} on file</span>
               </div>
               <div className="space-y-2">
-                {REQUIRED_DOCS.map(d => (
-                  <div key={d} className="flex items-center gap-2 text-sm">
-                    {has.has(d) ? <span className="text-emerald-500">✓</span> : <span className="text-red-300">—</span>}
-                    <span className={has.has(d) ? 'text-gray-700' : 'text-gray-400'}>{DOC_ICON[d] || '📄'} {d}</span>
-                  </div>
-                ))}
+                {REQUIRED_DOCS.map(d => {
+                  const myDoc = myDocsList.find(doc => doc.doc_type === d)
+                  return (
+                    <div key={d} className="flex items-center gap-2 text-sm">
+                      {has.has(d) ? <span className="text-emerald-500">✓</span> : <span className="text-red-300">—</span>}
+                      <span className={has.has(d) ? 'text-gray-700' : 'text-gray-400'}>{DOC_ICON[d] || '📄'} {d}</span>
+                      {myDoc && <a href={myDoc.file_url} target="_blank" rel="noopener noreferrer" className="ml-auto text-blue-600 hover:text-blue-800 text-xs font-medium">⬇ Download</a>}
+                    </div>
+                  )
+                })}
               </div>
-              <p className="text-xs text-gray-400 mt-4">If anything's missing, submit it to your Admin/HR to update -- documents themselves aren't downloadable from here.</p>
+              <p className="text-xs text-gray-400 mt-4">You can download your own documents above. If anything's missing, submit it to your Admin/HR to have it added.</p>
             </div>
           )
         })()
