@@ -8313,16 +8313,18 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   }
 
   async function handleUpload(file: File, isMyDoc = false) {
-    const empName = isMyDoc ? (currentUser?.split('@')[0] || '') : uploadForm.employee_name.trim()
+    const myEmpRecord = isMyDoc ? employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase()) : null
+    const empName = isMyDoc ? (myEmpRecord?.name || currentUser?.split('@')[0] || '') : uploadForm.employee_name.trim()
     const docType = isMyDoc ? myUploadForm.doc_type : uploadForm.doc_type
     const notes = isMyDoc ? myUploadForm.notes : uploadForm.notes
     if (!empName) { showToast('Employee name required', 'error'); return }
+    if (isMyDoc && !myEmpRecord) { showToast('Could not match your employee record -- ask admin to confirm your work email is set correctly. Upload paused to avoid mislabeling this document.', 'error'); return }
     setUploading(true)
     const path = `hris/${isMyDoc ? 'private' : 'shared'}/${Date.now()}-${file.name}`
     const { error } = await supabase.storage.from('attachments').upload(path, file)
     if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
     const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
-    await supabase.from('hris_documents').insert({
+    const { error: insertErr } = await supabase.from('hris_documents').insert({
       employee_name: empName,
       doc_type: docType,
       file_name: file.name,
@@ -8335,6 +8337,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
       owner_email: isMyDoc ? currentUser : null,
     })
     setUploading(false)
+    if (insertErr) { showToast('Upload saved but failed to record: ' + insertErr.message, 'error'); return }
     showToast('Document uploaded!')
     if (isMyDoc) setMyUploadForm({ doc_type: 'Resume', notes: '' })
     else setUploadForm({ employee_name: '', doc_type: 'Resume', notes: '' })
