@@ -1732,8 +1732,7 @@ export default function KPIApp() {
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='agent'?'employee_email':'agent_acknowledged', userRole==='agent'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
             {view === 'tl-scorecard' && <TLScorecard currentUser={user} userRole={userRole} showToast={showToast} records={records} />}
-            {view === 'hris-records' && (userRole === 'super_admin' || userRole === 'admin') && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
-            {view === 'hris-records' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Employee Records requires Manager access or higher</p></div>}
+            {view === 'hris-records' && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-timetracker' && (userRole === 'super_admin' || userRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={user} showToast={showToast} onApplied={() => loadData()} />}
             {view === 'hris-timetracker' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Time Tracker requires Manager access or higher</p></div>}
             {view === 'hris-invoice' && (
@@ -6474,6 +6473,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
                     ['Tickets -- manage/close', 'Own only', '✓', '✓', '✓'],
                     ['Announcements -- post', '—', '✓', '✓', '✓'],
                     ['Employee Records', '—', '—', '✓', '✓'],
+                    ['Employee Records -- own compliance % only', '✓', '✓', '(full access above)', '(full access above)'],
                     ['Time Tracker', '—', '—', '✓', '✓'],
                     ['Employees / Teams -- manage', '—', '—', '✓', '✓'],
                     ['Directory Links -- manage', '—', '—', '✓', '✓'],
@@ -8293,6 +8293,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [searchQ, setSearchQ] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'active'|'inactive'>('active')
   const fileRef = useRef<HTMLInputElement>(null)
   const myFileRef = useRef<HTMLInputElement>(null)
   const [uploadForm, setUploadForm] = useState({ employee_name: '', doc_type: 'Resume', notes: '' })
@@ -8304,7 +8305,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
     setLoading(true)
     const [{ data: docs }, { data: emps }] = await Promise.all([
       supabase.from('hris_documents').select('*').order('employee_name'),
-      supabase.from('employees').select('name, employee_id').eq('active', true).order('name')
+      supabase.from('employees').select('name, employee_id, email, active').order('name')
     ])
     setAllDocs(docs || [])
     setEmployees(emps || [])
@@ -8362,8 +8363,9 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
     compMap[d.employee_name].add(d.doc_type)
   })
 
-  // All employee names from DB employees list
-  const empNames = employees.map(e => e.name)
+  // All employee names from DB employees list, scoped by active/inactive toggle
+  const scopedEmployees = employees.filter(e => statusFilter === 'active' ? e.active : !e.active)
+  const empNames = scopedEmployees.map(e => e.name)
   const filteredNames = empNames.filter(n => !searchQ || n.toLowerCase().includes(searchQ.toLowerCase()))
 
   // Count how many are complete
@@ -8375,10 +8377,41 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Employee Records</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Document compliance tracker and file storage</p>
+          <p className="text-sm text-gray-500 mt-0.5">{isViewer ? 'Your document compliance status' : 'Document compliance tracker and file storage'}</p>
         </div>
       </div>
 
+      {isViewer ? (
+        // Agents/Team Leads only ever see their own status -- no downloads,
+        // no other employees' names or documents.
+        (() => {
+          const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase())
+          const myName = myEmp?.name
+          const has = myName ? (compMap[myName] || new Set<string>()) : new Set<string>()
+          const count = REQUIRED_DOCS.filter(d => has.has(d)).length
+          const complete = count === REQUIRED_DOCS.length
+          if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600"/></div>
+          if (!myName) return <div className="text-center py-12 text-gray-400 text-sm">Couldn't find your employee record. Ask your admin to confirm your work email is set correctly.</div>
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-lg">
+              <div className="flex items-center justify-between mb-4">
+                <p className="font-semibold text-gray-900">{myName}</p>
+                <span className={`inline-flex px-2.5 py-1 rounded-full text-sm font-medium ${complete ? 'bg-emerald-100 text-emerald-700' : count === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>{count}/{REQUIRED_DOCS.length} on file</span>
+              </div>
+              <div className="space-y-2">
+                {REQUIRED_DOCS.map(d => (
+                  <div key={d} className="flex items-center gap-2 text-sm">
+                    {has.has(d) ? <span className="text-emerald-500">✓</span> : <span className="text-red-300">—</span>}
+                    <span className={has.has(d) ? 'text-gray-700' : 'text-gray-400'}>{DOC_ICON[d] || '📄'} {d}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-4">If anything's missing, submit it to your Admin/HR to update -- documents themselves aren't downloadable from here.</p>
+            </div>
+          )
+        })()
+      ) : (
+      <>
       {/* Tabs */}
       <div className="flex gap-2 border-b border-gray-200">
         {([
@@ -8401,7 +8434,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
               <div className="text-2xl font-bold text-blue-900">{empNames.length}</div>
-              <div className="text-xs text-gray-500 mt-1">Active Employees</div>
+              <div className="text-xs text-gray-500 mt-1">{statusFilter === 'active' ? 'Active' : 'Inactive'} Employees</div>
             </div>
             <div className="bg-white rounded-xl border border-green-200 p-4 text-center">
               <div className="text-2xl font-bold text-green-600">{completeCount}</div>
@@ -8413,9 +8446,16 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-            <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search employee..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs">
+              {(['active','inactive'] as const).map(s => (
+                <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-2 font-medium transition capitalize ${statusFilter === s ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{s}</button>
+              ))}
+            </div>
+            <div className="relative flex-1 min-w-48">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+              <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search employee..." className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+            </div>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -8569,6 +8609,8 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
           </div>
         </div>
       ) : null}
+      </>
+      )}
     </div>
   )
 }
