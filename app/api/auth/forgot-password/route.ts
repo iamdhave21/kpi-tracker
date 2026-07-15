@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 import crypto from 'crypto'
 
 function getSupabase() {
@@ -14,6 +14,10 @@ export async function POST(req: NextRequest) {
   try {
     const { email } = await req.json()
     if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
+      console.error('Forgot password: GMAIL_USER/GMAIL_PASS not configured')
+      return NextResponse.json({ error: 'Email sending is not configured. Contact your admin.' }, { status: 500 })
+    }
 
     const supabase = getSupabase()
     const emailLower = email.trim().toLowerCase()
@@ -21,7 +25,7 @@ export async function POST(req: NextRequest) {
     // Check user exists
     const { data: user } = await supabase
       .from('app_users')
-      .select('id, email, name')
+      .select('id, email, display_name')
       .eq('email', emailLower)
       .single()
 
@@ -48,13 +52,17 @@ export async function POST(req: NextRequest) {
       expires_at: expiresAt.toISOString(),
     })
 
-    // Send email via Resend
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://kpi-tracker-git-main-ab-bss.vercel.app'
+    // Send email via Gmail (same transport used for every other email in the app)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://abbss-ops-portal.vercel.app'
     const resetLink = `${appUrl}?reset=${resetToken}`
 
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    await resend.emails.send({
-      from: 'AB BSS Portal <onboarding@resend.dev>',
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS },
+    })
+
+    await transporter.sendMail({
+      from: `"AB BSS Operations Portal" <${process.env.GMAIL_USER}>`,
       to: emailLower,
       subject: 'Reset your AB BSS Portal password',
       html: `
@@ -62,7 +70,7 @@ export async function POST(req: NextRequest) {
           <img src="${appUrl}/ab-logo.png" alt="AB BSS" style="height:40px;margin-bottom:24px;" />
           <h2 style="color:#1e3a5f;margin-bottom:8px;">Reset your password</h2>
           <p style="color:#6b7280;margin-bottom:24px;">
-            Hi ${user.name || emailLower},<br/><br/>
+            Hi ${user.display_name || emailLower},<br/><br/>
             We received a request to reset your AB BSS Operations Portal password.
             Click the button below to set a new password. This link expires in <strong>1 hour</strong>.
           </p>
