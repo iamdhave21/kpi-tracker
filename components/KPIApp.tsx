@@ -2692,7 +2692,9 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         setUploadingFor(null)
         return
       }
-      await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', emailLower)
+      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', emailLower).select()
+      if (dbErr) throw dbErr
+      if (!updated || updated.length === 0) throw new Error(`Photo uploaded but couldn't be linked to ${email}'s account -- their login username may not exactly match this email.`)
       showToast('Photo updated!')
       loadAvatars()
     } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Upload failed', 'error') }
@@ -6079,7 +6081,9 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
       const publicUrl = urlData.publicUrl + '?t=' + Date.now()
-      await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', currentUser)
+      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', currentUser).select()
+      if (dbErr) throw dbErr
+      if (!updated || updated.length === 0) throw new Error(`Photo uploaded but couldn't be linked to your login ("${currentUser}") -- please flag this with your admin.`)
       setAvatarUrl(publicUrl)
       showToast('Profile picture updated!')
     } catch (err: unknown) { showToast(err instanceof Error ? err.message : 'Upload failed', 'error') }
