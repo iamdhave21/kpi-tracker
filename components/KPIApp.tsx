@@ -842,7 +842,7 @@ function MyProfileCard({ currentUser, userName, showToast }: { currentUser: stri
 
   useEffect(() => {
     if (!currentUser) return
-    supabase.from('app_users').select('avatar_url').eq('username', currentUser.toLowerCase()).single()
+    supabase.from('app_users').select('avatar_url').or(`email.eq.${currentUser.toLowerCase()},username.eq.${currentUser.toLowerCase()}`).single()
       .then(({data}) => { setAvatarUrl(data?.avatar_url || null); setLoaded(true) })
   }, [currentUser])
 
@@ -862,7 +862,7 @@ function MyProfileCard({ currentUser, userName, showToast }: { currentUser: stri
       // a genuine "0 rows matched" apart from a real success — .update() alone
       // returns no error even when nothing matched, which silently looked like
       // success before while actually saving nothing.
-      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', currentUser.toLowerCase()).select()
+      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).or(`email.eq.${currentUser.toLowerCase()},username.eq.${currentUser.toLowerCase()}`).select()
       if (dbErr) throw dbErr
       if (!updated || updated.length === 0) {
         throw new Error(`No account found for "${currentUser}" — your photo was uploaded but couldn't be linked to your login. Please flag this in Matrix with your exact login email.`)
@@ -1285,7 +1285,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
 
   useEffect(() => {
     if (!user) return
-    supabase.from('app_users').select('avatar_url').eq('username', user.toLowerCase()).single()
+    supabase.from('app_users').select('avatar_url').or(`email.eq.${user.toLowerCase()},username.eq.${user.toLowerCase()}`).single()
       .then(({ data }) => setSidebarAvatarUrl(data?.avatar_url || null))
   }, [user])
 
@@ -1301,7 +1301,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
       const publicUrl = urlData.publicUrl + '?t=' + Date.now()
-      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', user.toLowerCase()).select()
+      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).or(`email.eq.${user.toLowerCase()},username.eq.${user.toLowerCase()}`).select()
       if (dbErr) throw dbErr
       if (!updated || updated.length === 0) throw new Error(`No account found for "${user}".`)
       setSidebarAvatarUrl(publicUrl)
@@ -1593,14 +1593,14 @@ export default function KPIApp() {
   // device-specific) and a helper to save changes back.
   useEffect(() => {
     if (!user) return
-    supabase.from('app_users').select('favorite_views').eq('username', user.toLowerCase()).single()
+    supabase.from('app_users').select('favorite_views').or(`email.eq.${user.toLowerCase()},username.eq.${user.toLowerCase()}`).single()
       .then(({ data }) => { if (data?.favorite_views) setFavoriteViews(data.favorite_views) })
   }, [user])
 
   async function saveFavorites(next: string[]) {
     setFavoriteViews(next)
     if (!user) return
-    await supabase.from('app_users').update({ favorite_views: next }).eq('username', user.toLowerCase())
+    await supabase.from('app_users').update({ favorite_views: next }).or(`email.eq.${user.toLowerCase()},username.eq.${user.toLowerCase()}`)
   }
 
   function toggleFavorite(viewId: string) {
@@ -1767,7 +1767,7 @@ function UserAvatar({ username, size = 'md' }: { username: string, size?: 'sm'|'
   const [avatarUrl, setAvatarUrl] = useState<string|null>(null)
   useEffect(() => {
     if (!username) return
-    supabase.from('app_users').select('avatar_url').eq('username', username).single()
+    supabase.from('app_users').select('avatar_url').or(`email.eq.${username},username.eq.${username}`).single()
       .then(({data}) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url) })
   }, [username])
   return <Avatar name={username} avatarUrl={avatarUrl} size={size} />
@@ -2686,13 +2686,13 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       // Photo lives on app_users.avatar_url. If they don't have a login yet,
       // there's no row to attach it to — surface that clearly rather than
       // silently doing nothing.
-      const { data: existing } = await supabase.from('app_users').select('id').eq('username', emailLower).single()
+      const { data: existing } = await supabase.from('app_users').select('id').or(`email.eq.${emailLower},username.eq.${emailLower}`).single()
       if (!existing) {
         showToast(`${email} doesn't have a portal login yet — grant access in Settings first, then their photo will save.`, 'error')
         setUploadingFor(null)
         return
       }
-      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', emailLower).select()
+      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).or(`email.eq.${emailLower},username.eq.${emailLower}`).select()
       if (dbErr) throw dbErr
       if (!updated || updated.length === 0) throw new Error(`Photo uploaded but couldn't be linked to ${email}'s account -- their login username may not exactly match this email.`)
       showToast('Photo updated!')
@@ -6065,7 +6065,7 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
 
   useEffect(() => {
     if (!currentUser) return
-    supabase.from('app_users').select('avatar_url').eq('username', currentUser).single()
+    supabase.from('app_users').select('avatar_url').or(`email.eq.${currentUser},username.eq.${currentUser}`).single()
       .then(({data}) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url) })
   }, [currentUser])
 
@@ -6081,7 +6081,7 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
       const publicUrl = urlData.publicUrl + '?t=' + Date.now()
-      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).eq('username', currentUser).select()
+      const { data: updated, error: dbErr } = await supabase.from('app_users').update({ avatar_url: publicUrl }).or(`email.eq.${currentUser},username.eq.${currentUser}`).select()
       if (dbErr) throw dbErr
       if (!updated || updated.length === 0) throw new Error(`Photo uploaded but couldn't be linked to your login ("${currentUser}") -- please flag this with your admin.`)
       setAvatarUrl(publicUrl)
@@ -6092,7 +6092,7 @@ function ProfilePictureUpload({ currentUser, showToast }: { currentUser: string 
 
   async function removeAvatar() {
     if (!currentUser) return
-    await supabase.from('app_users').update({ avatar_url: null }).eq('username', currentUser)
+    await supabase.from('app_users').update({ avatar_url: null }).or(`email.eq.${currentUser},username.eq.${currentUser}`)
     setAvatarUrl(null)
     showToast('Profile picture removed')
   }
