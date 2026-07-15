@@ -2771,13 +2771,16 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         const { data: existingUser } = await supabase.from('app_users').select('id').or(`email.eq.${emailTrimmed},username.eq.${emailTrimmed}`).maybeSingle()
         if (!existingUser) {
           const tempPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 100)
-          await supabase.from('app_users').insert({
-            username: emailTrimmed, email: emailTrimmed, name: newName.trim(),
+          const { error: acctErr } = await supabase.from('app_users').insert({
+            username: emailTrimmed, email: emailTrimmed, display_name: newName.trim(),
             role: newPortalRole || 'agent', password_hash: tempPassword,
             must_change_password: true, active: true,
           })
-          showToast(`Login created for ${emailTrimmed.split('@')[0]} — temp password: ${tempPassword}`, 'success')
-          fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailTrimmed, newRole: newPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
+          if (acctErr) { showToast(`Employee added, but login creation failed: ${acctErr.message}`, 'error') }
+          else {
+            showToast(`Login created for ${emailTrimmed.split('@')[0]} — temp password: ${tempPassword}`, 'success')
+            fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailTrimmed, newRole: newPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
+          }
         }
       }
       setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClient(CLIENTS[0]); setNewPortalRole('agent'); onChanged()
@@ -2817,13 +2820,16 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         fetch('/api/notify/role-changed', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: emailLower, oldRole: existingUser.role, newRole: existingUser.role, changedBy: currentUser || 'admin' }) }).catch(() => {})
       } else if (!existingUser) {
         const tempPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 100)
-        await supabase.from('app_users').insert({
-          username: emailLower, email: emailLower, name: editName,
+        const { error: acctErr } = await supabase.from('app_users').insert({
+          username: emailLower, email: emailLower, display_name: editName,
           role: editPortalRole || 'agent', password_hash: tempPassword,
           must_change_password: true, active: true,
         })
-        showToast(`Login created for ${emailLower.split('@')[0]} — temp password: ${tempPassword}`, 'success')
-        fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailLower, newRole: editPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
+        if (acctErr) { showToast(`Login creation failed: ${acctErr.message}`, 'error') }
+        else {
+          showToast(`Login created for ${emailLower.split('@')[0]} — temp password: ${tempPassword}`, 'success')
+          fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailLower, newRole: editPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
+        }
       } else if (existingUser.role !== editPortalRole && userRole === 'super_admin') {
         await supabase.from('app_users').update({ role: editPortalRole }).eq('id', existingUser.id)
         showToast(`Portal role updated to ${editPortalRole} for ${emailLower.split('@')[0]}`, 'success')

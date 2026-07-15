@@ -9,7 +9,7 @@
 -- Employees after this runs (editing there now correctly syncs to their
 -- login, per the fix from earlier this session).
 
-insert into app_users (username, email, name, role, password_hash, must_change_password, active)
+insert into app_users (username, email, display_name, role, password_hash, must_change_password, active)
 select
   e.email,
   e.email,
