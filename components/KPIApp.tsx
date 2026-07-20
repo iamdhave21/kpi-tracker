@@ -4309,8 +4309,10 @@ function ResourcesPanel({ userRole, showToast }: { userRole: string, showToast: 
     const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
     const ext = file.name.split('.').pop()?.toLowerCase() || ''
     const fileType = ext === 'pdf' ? 'pdf' : ['doc','docx'].includes(ext) ? 'doc' : ['xls','xlsx'].includes(ext) ? 'xls' : ['png','jpg','jpeg','webp'].includes(ext) ? 'image' : 'file'
-    await supabase.from('resources').insert({ title: title.trim() || file.name, file_name: file.name, file_url: urlData.publicUrl, file_type: fileType, uploaded_by: 'admin' })
-    setTitle(''); setUploading(false); showToast('Resource added!', 'success'); loadResources()
+    const { error: insertErr } = await supabase.from('resources').insert({ title: title.trim() || file.name, file_name: file.name, file_url: urlData.publicUrl, file_type: fileType, uploaded_by: 'admin' })
+    setTitle(''); setUploading(false)
+    if (insertErr) { showToast('Upload saved but failed to record: ' + insertErr.message, 'error'); return }
+    showToast('Resource added!', 'success'); loadResources()
     if (fileRef.current) fileRef.current.value = ''
   }
 
