@@ -3144,7 +3144,9 @@ function TeamManager({ employees, showToast, userRole }:
 
   async function deleteTeam(id: string) {
     if (!confirm('Delete this team?')) return
-    await supabase.from('teams').delete().eq('id',id); setSelTeam(null); loadTeams(); showToast('Team deleted')
+    const { error } = await supabase.from('teams').delete().eq('id',id)
+    if (error) { showToast('Failed to delete team: ' + error.message, 'error'); return }
+    setSelTeam(null); loadTeams(); showToast('Team deleted')
   }
 
   async function updateTeam(id: string) {
@@ -3325,14 +3327,16 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
   }
 
   async function toggleActive(u: any) {
-    await supabase.from('app_users').update({ active: !u.active }).eq('id', u.id)
+    const { error } = await supabase.from('app_users').update({ active: !u.active }).eq('id', u.id)
+    if (error) { showToast('Failed to update: ' + error.message, 'error'); return }
     showToast(`${u.username.split('@')[0]} ${!u.active ? 'activated' : 'deactivated'}`, 'success')
     loadUsers()
   }
 
   async function deleteUser(u: any) {
     if (!confirm(`Permanently delete "${u.username}"? This cannot be undone.`)) return
-    await supabase.from('app_users').delete().eq('id', u.id)
+    const { error } = await supabase.from('app_users').delete().eq('id', u.id)
+    if (error) { showToast('Failed to delete: ' + error.message, 'error'); return }
     showToast('User deleted', 'success')
     loadUsers()
   }
