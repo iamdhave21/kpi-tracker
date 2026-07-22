@@ -4943,6 +4943,7 @@ function TasksPanel({ employees, currentUser, userRole, showToast, onTasksChange
   const [viewMode, setViewMode] = useState<'list'|'board'>('list')
   const [filterStatus, setFilterStatus] = useState<'All' | 'To Do' | 'Done'>('All')
   const [assignerFilter, setAssignerFilter] = useState('All') // Super Admin only: filter by who assigned it
+  const [nameFilter, setNameFilter] = useState('')
   const [form, setForm] = useState({ title: '', description: '', due_date: '', priority: 'Medium' as AppTask['priority'] })
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
   const [recipientSearch, setRecipientSearch] = useState('')
@@ -5040,6 +5041,7 @@ function TasksPanel({ employees, currentUser, userRole, showToast, onTasksChange
     if (filterStatus === 'To Do' && t.is_done) return false
     if (filterStatus === 'Done' && !t.is_done) return false
     if (canSeeAll && assignerFilter !== 'All' && t.assigned_by !== assignerFilter) return false
+    if (nameFilter.trim() && !nameByEmail(t.assigned_to).toLowerCase().includes(nameFilter.trim().toLowerCase())) return false
     return true
   })
 
@@ -5170,6 +5172,12 @@ function TasksPanel({ employees, currentUser, userRole, showToast, onTasksChange
         {viewMode === 'list' && (['All', 'To Do', 'Done'] as const).map(s => (
           <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
         ))}
+        {userRole !== 'agent' && (
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input value={nameFilter} onChange={e => setNameFilter(e.target.value)} placeholder="Filter by name..." className="text-xs border border-gray-200 rounded-full pl-7 pr-3 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-900 w-40" />
+          </div>
+        )}
         {canSeeAll && assigners.length > 0 && (
           <select value={assignerFilter} onChange={e => setAssignerFilter(e.target.value)} className="text-xs border border-gray-200 rounded-full px-3 py-1.5 text-gray-600 ml-auto">
             <option value="All">All assigners (TL/Admin)</option>
@@ -8235,7 +8243,7 @@ const DOC_ICON: Record<string, string> = { 'Resume': '📄', 'CV': '📋', 'Cont
 function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
   const isViewer = userRole === 'agent' || userRole === 'Team Lead'
-  const [tab, setTab] = useState<'compliance'|'upload'|'my-docs'>('compliance')
+  const [tab, setTab] = useState<'compliance'|'upload'|'private-all'|'my-docs'>('compliance')
   const [allDocs, setAllDocs] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -8366,13 +8374,61 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
             </div>
           )
         })()
-      ) : (
+      ) : null}
+
+      {isViewer && (
+        <div className="mt-6 max-w-lg">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2 mb-4">
+            <span>🔒</span>
+            <span>Only you and HR/Managers can see the documents you upload here.</span>
+          </div>
+          <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4 shadow-sm">
+            <h3 className="font-semibold text-blue-900 text-sm">Upload My Document</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Document Type</label>
+                <select value={myUploadForm.doc_type} onChange={e => setMyUploadForm({...myUploadForm, doc_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900">
+                  {ALL_DOC_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select></div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                <input value={myUploadForm.notes} onChange={e => setMyUploadForm({...myUploadForm, notes: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. Updated resume"/></div>
+            </div>
+            <button onClick={() => myFileRef.current?.click()} disabled={uploading}
+              className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-40">
+              {uploading ? '⏳ Uploading...' : '📁 Upload my document (PDF, Word, Image)'}
+            </button>
+            <input ref={myFileRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0], true)} className="hidden"/>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <p className="text-sm font-semibold text-gray-700">My Documents ({myDocs.length})</p>
+            </div>
+            {myDocs.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-sm">No documents uploaded yet</div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {myDocs.map(r => (
+                  <div key={r.id} className="flex items-center justify-between px-4 py-2.5">
+                    <div>
+                      <span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full mr-2">{DOC_ICON[r.doc_type]||'📄'} {r.doc_type}</span>
+                      <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 text-sm font-medium">⬇ {r.file_name}</a>
+                    </div>
+                    <button onClick={() => deleteDoc(r.id, r.storage_path)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 className="w-3.5 h-3.5"/></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isViewer && (
       <>
       {/* Tabs */}
       <div className="flex gap-2 border-b border-gray-200">
         {([
           ['compliance', '📊 Compliance Tracker'],
           ...(canManage ? [['upload', '📁 Upload Documents']] : []),
+          ...(canManage ? [['private-all', '🔒 Private Documents']] : []),
           ['my-docs', '🔒 My Documents'],
         ] as [string,string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t as any)}
@@ -8504,6 +8560,41 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                     </tr>
                   ))}
                   {hrDocs.filter(d => !d.is_private).length === 0 && <tr><td colSpan={6} className="text-center py-8 text-gray-400">No documents uploaded yet</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : tab === 'private-all' && canManage ? (
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
+            <span>🔒</span>
+            <span>These are documents employees uploaded themselves as private -- visible only to you (Admin/Super Admin) and the person who uploaded them.</span>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <p className="text-sm font-semibold text-gray-700">All Private Documents ({allDocs.filter(d => d.is_private).length})</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-gray-100"><tr>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Employee</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">File</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Notes</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                </tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {allDocs.filter(d => d.is_private).map(r => (
+                    <tr key={r.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2.5 text-gray-800 font-medium">{employees.find((e:any) => e.email?.toLowerCase() === r.owner_email?.toLowerCase())?.name || r.owner_email}</td>
+                      <td className="px-4 py-2.5"><span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{DOC_ICON[r.doc_type]||'📄'} {r.doc_type}</span></td>
+                      <td className="px-4 py-2.5"><a href={r.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 text-sm font-medium">⬇ {r.file_name}</a></td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs">{r.notes||'—'}</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
+                    </tr>
+                  ))}
+                  {allDocs.filter(d => d.is_private).length === 0 && <tr><td colSpan={5} className="text-center py-8 text-gray-400">No private documents uploaded yet</td></tr>}
                 </tbody>
               </table>
             </div>
