@@ -4534,7 +4534,9 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
         supabase.from('team_members').select('*, employee:employees(id, name, designation, employment_type, employee_id, client, email)'),
         supabase.from('app_users').select('username, avatar_url').not('avatar_url', 'is', null),
       ])
-      setTeams(t||[]); setMembers(m||[]); setLoading(false)
+      setTeams(t||[])
+      setMembers((m||[]).filter((mem: any) => mem.employee?.active !== false))
+      setLoading(false)
       const map: Record<string, string> = {}
       ;(users || []).forEach((u: any) => { if (u.avatar_url) map[u.username.toLowerCase()] = u.avatar_url })
       setAvatarMap(map)
