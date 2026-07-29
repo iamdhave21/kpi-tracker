@@ -8343,14 +8343,18 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
 
   const formatSize = (b: number) => b < 1024*1024 ? (b/1024).toFixed(0)+'KB' : (b/1024/1024).toFixed(1)+'MB'
 
-  // Compliance: docs visible to HR (non-private only)
+  // Compliance: docs visible to HR (non-private only) -- governs which
+  // actual files/links people can see, not who counts toward compliance
   const hrDocs = allDocs.filter(d => !d.is_private || canManage)
   // My docs: only mine
   const myDocs = allDocs.filter(d => d.is_private && d.owner_email === currentUser)
 
-  // Build compliance map: employee_id → Set of doc_types
+  // Build compliance map: employee_id → Set of doc_types.
+  // Counts every document regardless of private/shared -- a self-uploaded
+  // doc still proves the requirement is satisfied, even though the file
+  // itself stays visible only to the employee and Admin/Super Admin.
   const compMap: Record<string, Set<string>> = {}
-  hrDocs.filter(d => !d.is_private).forEach(d => {
+  allDocs.forEach(d => {
     if (!d.employee_id) return // legacy/unlinked rows shouldn't silently count toward anyone
     if (!compMap[d.employee_id]) compMap[d.employee_id] = new Set()
     compMap[d.employee_id].add(d.doc_type)
@@ -8379,7 +8383,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
         (() => {
           const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase())
           const myName = myEmp?.name
-          const myDocsList = myEmp ? hrDocs.filter(d => !d.is_private && d.employee_id === myEmp.id) : []
+          const myDocsList = myEmp ? allDocs.filter(d => d.employee_id === myEmp.id) : []
           const has = myEmp ? (compMap[myEmp.id] || new Set<string>()) : new Set<string>()
           const count = REQUIRED_DOCS.filter(d => has.has(d)).length
           const complete = count === REQUIRED_DOCS.length
