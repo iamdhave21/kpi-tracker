@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabase()
 
     if (!adminReset) {
-      const { data: user } = await supabase.from('app_users').select('password_hash').eq('username', username).single()
+      const { data: user } = await supabase.from('app_users').select('password_hash').ilike('username', username).single()
       if (!user) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 })
 
       const stored = user.password_hash as string
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       password_hash: hash,
       must_change_password: false,
       updated_at: new Date().toISOString()
-    }).eq('username', username)
+    }).ilike('username', username)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ success: true })

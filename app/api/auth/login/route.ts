@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       const { data: byEmail } = await supabase
         .from('app_users')
         .select('*')
-        .eq('email', input)
+        .ilike('email', input)
         .eq('active', true)
         .single()
       if (byEmail) {
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
         const { data: byPrefix } = await supabase
           .from('app_users')
           .select('*')
-          .eq('username', usernamePrefix)
+          .ilike('username', usernamePrefix)
           .eq('active', true)
           .single()
         if (byPrefix) user = byPrefix
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       const { data: byUsername } = await supabase
         .from('app_users')
         .select('*')
-        .eq('username', input)
+        .ilike('username', input)
         .eq('active', true)
         .single()
       if (byUsername) user = byUsername

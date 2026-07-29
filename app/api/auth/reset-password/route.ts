@@ -33,12 +33,13 @@ export async function POST(req: NextRequest) {
     // Hash new password before storing
     const hash = await bcrypt.hash(newPassword, 12)
 
-    const { error } = await supabase
+    const { error, count } = await supabase
       .from('app_users')
-      .update({ password_hash: hash, updated_at: new Date().toISOString() })
-      .eq('email', resetRecord.email)
+      .update({ password_hash: hash, updated_at: new Date().toISOString() }, { count: 'exact' })
+      .ilike('email', resetRecord.email)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!count) return NextResponse.json({ error: 'No matching account found for this reset link.' }, { status: 400 })
 
     // Mark token as used
     await supabase.from('password_reset_tokens').update({ used: true }).eq('token', token)

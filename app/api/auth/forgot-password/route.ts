@@ -22,11 +22,11 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabase()
     const emailLower = email.trim().toLowerCase()
 
-    // Check user exists
+    // Check user exists (case-insensitive: stored emails may have mixed case)
     const { data: user } = await supabase
       .from('app_users')
       .select('id, email, display_name')
-      .eq('email', emailLower)
+      .ilike('email', emailLower)
       .single()
 
     // Always return success (don't reveal if email exists)
