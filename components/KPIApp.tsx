@@ -4531,7 +4531,7 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
       setLoading(true)
       const [{data:t},{data:m},{data:users}] = await Promise.all([
         supabase.from('teams').select('*, team_lead:employees(id, name, designation, employment_type, client, email)').eq('active', true).order('department').order('name'),
-        supabase.from('team_members').select('*, employee:employees(id, name, designation, employment_type, employee_id, client, email)'),
+        supabase.from('team_members').select('*, employee:employees(id, name, designation, employment_type, employee_id, client, email, active)'),
         supabase.from('app_users').select('username, avatar_url').not('avatar_url', 'is', null),
       ])
       setTeams(t||[])
