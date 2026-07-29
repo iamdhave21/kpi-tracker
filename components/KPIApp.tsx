@@ -8282,7 +8282,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   const [statusFilter, setStatusFilter] = useState<'active'|'inactive'>('active')
   const fileRef = useRef<HTMLInputElement>(null)
   const myFileRef = useRef<HTMLInputElement>(null)
-  const [uploadForm, setUploadForm] = useState({ employee_name: '', doc_type: 'Resume', notes: '' })
+  const [uploadForm, setUploadForm] = useState({ employee_id: '', doc_type: 'Resume', notes: '' })
   const [myUploadForm, setMyUploadForm] = useState({ doc_type: 'Resume', notes: '' })
 
   useEffect(() => { loadData() }, [])
@@ -8291,7 +8291,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
     setLoading(true)
     const [{ data: docs }, { data: emps }] = await Promise.all([
       supabase.from('hris_documents').select('*').order('employee_name'),
-      supabase.from('employees').select('name, employee_id, email, active').order('name')
+      supabase.from('employees').select('id, name, employee_id, email, active').order('name')
     ])
     setAllDocs(docs || [])
     setEmployees(emps || [])
@@ -8300,18 +8300,19 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
 
   async function handleUpload(file: File, isMyDoc = false) {
     const myEmpRecord = isMyDoc ? employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase()) : null
-    const empName = isMyDoc ? (myEmpRecord?.name || currentUser?.split('@')[0] || '') : uploadForm.employee_name.trim()
+    const selectedEmp = isMyDoc ? myEmpRecord : employees.find(e => e.id === uploadForm.employee_id)
     const docType = isMyDoc ? myUploadForm.doc_type : uploadForm.doc_type
     const notes = isMyDoc ? myUploadForm.notes : uploadForm.notes
-    if (!empName) { showToast('Employee name required', 'error'); return }
     if (isMyDoc && !myEmpRecord) { showToast('Could not match your employee record -- ask admin to confirm your work email is set correctly. Upload paused to avoid mislabeling this document.', 'error'); return }
+    if (!isMyDoc && !selectedEmp) { showToast('Please select an employee from the list.', 'error'); return }
     setUploading(true)
     const path = `hris/${isMyDoc ? 'private' : 'shared'}/${Date.now()}-${file.name}`
     const { error } = await supabase.storage.from('attachments').upload(path, file)
     if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
     const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
     const { error: insertErr } = await supabase.from('hris_documents').insert({
-      employee_name: empName,
+      employee_id: selectedEmp!.id,
+      employee_name: selectedEmp!.name, // kept in sync for display/legacy use, but no longer the matching key
       doc_type: docType,
       file_name: file.name,
       file_url: urlData.publicUrl,
@@ -8326,7 +8327,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
     if (insertErr) { showToast('Upload saved but failed to record: ' + insertErr.message, 'error'); return }
     showToast('Document uploaded!')
     if (isMyDoc) setMyUploadForm({ doc_type: 'Resume', notes: '' })
-    else setUploadForm({ employee_name: '', doc_type: 'Resume', notes: '' })
+    else setUploadForm({ employee_id: '', doc_type: 'Resume', notes: '' })
     loadData()
   }
 
@@ -8345,21 +8346,21 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   // My docs: only mine
   const myDocs = allDocs.filter(d => d.is_private && d.owner_email === currentUser)
 
-  // Build compliance map: employee_name → Set of doc_types
+  // Build compliance map: employee_id → Set of doc_types
   const compMap: Record<string, Set<string>> = {}
   hrDocs.filter(d => !d.is_private).forEach(d => {
-    if (!compMap[d.employee_name]) compMap[d.employee_name] = new Set()
-    compMap[d.employee_name].add(d.doc_type)
+    if (!d.employee_id) return // legacy/unlinked rows shouldn't silently count toward anyone
+    if (!compMap[d.employee_id]) compMap[d.employee_id] = new Set()
+    compMap[d.employee_id].add(d.doc_type)
   })
 
-  // All employee names from DB employees list, scoped by active/inactive toggle
+  // All employees from DB, scoped by active/inactive toggle
   const scopedEmployees = employees.filter(e => statusFilter === 'active' ? e.active : !e.active)
-  const empNames = scopedEmployees.map(e => e.name)
-  const filteredNames = empNames.filter(n => !searchQ || n.toLowerCase().includes(searchQ.toLowerCase()))
+  const filteredEmployees = scopedEmployees.filter(e => !searchQ || e.name.toLowerCase().includes(searchQ.toLowerCase()))
 
   // Count how many are complete
-  const completeCount = empNames.filter(n => REQUIRED_DOCS.every(d => compMap[n]?.has(d))).length
-  const missingCount = empNames.length - completeCount
+  const completeCount = scopedEmployees.filter(e => REQUIRED_DOCS.every(d => compMap[e.id]?.has(d))).length
+  const missingCount = scopedEmployees.length - completeCount
 
   return (
     <div className="space-y-5">
@@ -8376,8 +8377,8 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
         (() => {
           const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase())
           const myName = myEmp?.name
-          const myDocsList = myName ? hrDocs.filter(d => !d.is_private && d.employee_name === myName) : []
-          const has = myName ? (compMap[myName] || new Set<string>()) : new Set<string>()
+          const myDocsList = myEmp ? hrDocs.filter(d => !d.is_private && d.employee_id === myEmp.id) : []
+          const has = myEmp ? (compMap[myEmp.id] || new Set<string>()) : new Set<string>()
           const count = REQUIRED_DOCS.filter(d => has.has(d)).length
           const complete = count === REQUIRED_DOCS.length
           if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600"/></div>
@@ -8475,7 +8476,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-              <div className="text-2xl font-bold text-blue-900">{empNames.length}</div>
+              <div className="text-2xl font-bold text-blue-900">{scopedEmployees.length}</div>
               <div className="text-xs text-gray-500 mt-1">{statusFilter === 'active' ? 'Active' : 'Inactive'} Employees</div>
             </div>
             <div className="bg-white rounded-xl border border-green-200 p-4 text-center">
@@ -8513,13 +8514,13 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {filteredNames.map(name => {
-                    const has = compMap[name] || new Set()
+                  {filteredEmployees.map(emp => {
+                    const has = compMap[emp.id] || new Set()
                     const complete = REQUIRED_DOCS.every(d => has.has(d))
                     const count = REQUIRED_DOCS.filter(d => has.has(d)).length
                     return (
-                      <tr key={name} className="hover:bg-gray-50">
-                        <td className="px-3 py-2.5 font-medium text-gray-900 sticky left-0 bg-white">{name}</td>
+                      <tr key={emp.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2.5 font-medium text-gray-900 sticky left-0 bg-white">{emp.name}</td>
                         {REQUIRED_DOCS.map(d => (
                           <td key={d} className="px-2 py-2.5 text-center">
                             {has.has(d)
@@ -8546,8 +8547,10 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
             <h3 className="font-semibold text-blue-900 text-sm">Upload Employee Document</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div><label className="block text-xs font-medium text-gray-600 mb-1">Employee *</label>
-                <input list="emp-list" value={uploadForm.employee_name} onChange={e => setUploadForm({...uploadForm, employee_name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Start typing name..."/>
-                <datalist id="emp-list">{employees.map(e => <option key={e.name} value={e.name}/>)}</datalist>
+                <select value={uploadForm.employee_id} onChange={e => setUploadForm({...uploadForm, employee_id: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900">
+                  <option value="">Select employee...</option>
+                  {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
               </div>
               <div><label className="block text-xs font-medium text-gray-600 mb-1">Document Type</label>
                 <select value={uploadForm.doc_type} onChange={e => setUploadForm({...uploadForm, doc_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900">
@@ -8556,7 +8559,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
               <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
                 <input value={uploadForm.notes} onChange={e => setUploadForm({...uploadForm, notes: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. Valid until Dec 2026"/></div>
             </div>
-            <button onClick={() => fileRef.current?.click()} disabled={uploading || !uploadForm.employee_name.trim()}
+            <button onClick={() => fileRef.current?.click()} disabled={uploading || !uploadForm.employee_id}
               className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-lg py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-40">
               {uploading ? '⏳ Uploading...' : '📁 Click to choose file (PDF, Word, Image)'}
             </button>
