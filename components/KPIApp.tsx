@@ -7175,6 +7175,27 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   const [filterEmp, setFilterEmp] = useState('')
   const [filterMonth, setFilterMonth] = useState('')
   const [deleting, setDeleting] = useState<string|null>(null)
+  const [tlTeamEmails, setTlTeamEmails] = useState<Set<string> | null>(null)
+
+  // Team Leads: resolve which employee emails belong to teams they lead, so
+  // the coaching log list below can be scoped to just their own team instead
+  // of showing every team's sessions.
+  useEffect(() => {
+    if (userRole !== 'Team Lead' || !currentUser) { setTlTeamEmails(null); return }
+    let cancelled = false
+    ;(async () => {
+      const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
+      if (!myEmp) { if (!cancelled) setTlTeamEmails(new Set()); return }
+      const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
+      const ledTeamIds = (teamsData || []).filter((t:any) => t.team_lead_id === myEmp.id).map((t:any) => t.id)
+      if (ledTeamIds.length === 0) { if (!cancelled) setTlTeamEmails(new Set()); return }
+      const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
+      const memberIds = new Set((memberData || []).map((m:any) => m.employee_id))
+      const emails = new Set(employees.filter(e => memberIds.has(e.id) && e.email).map(e => e.email!.toLowerCase()))
+      if (!cancelled) setTlTeamEmails(emails)
+    })()
+    return () => { cancelled = true }
+  }, [userRole, currentUser, employees])
 
   const emptyForm = { employee_id: '', date: new Date().toISOString().split('T')[0], type: 'Performance', initiated_by: 'Team Lead', discussion: '', action_items: '', next_session_date: '', send_for_ack: false }
   const [form, setForm] = useState<any>({ ...emptyForm })
@@ -7182,17 +7203,22 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   const [editingDraftId, setEditingDraftId] = useState<string|null>(null)
 
   async function loadLogs() {
+    // Team Leads' scope hasn't resolved yet -- wait rather than briefly
+    // flashing every team's sessions before the correct filter kicks in.
+    if (userRole === 'Team Lead' && tlTeamEmails === null) return
     setLoading(true)
     let query = supabase.from('coaching_logs').select('*').order('date', { ascending: false })
     if (userRole === 'agent' && currentUser) {
       query = query.eq('employee_email', currentUser.toLowerCase())
+    } else if (userRole === 'Team Lead') {
+      query = query.in('employee_email', Array.from(tlTeamEmails || []))
     }
     const { data } = await query
     setLogs(data || [])
     setLoading(false)
   }
 
-  useEffect(() => { loadLogs() }, [])
+  useEffect(() => { loadLogs() }, [tlTeamEmails, userRole])
 
   async function acknowledgeCoaching(logId: string) {
     setAckLoading(logId)
