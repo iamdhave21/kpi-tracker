@@ -8274,7 +8274,9 @@ const DOC_ICON: Record<string, string> = { 'Resume': '📄', 'CV': '📋', 'Cont
 
 function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
-  const isViewer = userRole === 'agent' || userRole === 'Team Lead'
+  const isTL = userRole === 'Team Lead'
+  const isViewer = userRole === 'agent'
+  const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
   const [tab, setTab] = useState<'compliance'|'upload'|'private-all'|'my-docs'>('compliance')
   const [allDocs, setAllDocs] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
@@ -8288,6 +8290,24 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   const [myUploadForm, setMyUploadForm] = useState({ doc_type: 'Resume', notes: '' })
 
   useEffect(() => { loadData() }, [])
+
+  // Team Leads: resolve which employee ids belong to teams they lead, so
+  // private document visibility/compliance scope can be limited to their
+  // own team instead of every employee.
+  useEffect(() => {
+    if (!isTL || !currentUser) { setMyTeamEmpIds(null); return }
+    let cancelled = false
+    ;(async () => {
+      const { data: empData } = await supabase.from('employees').select('id').eq('email', currentUser).single()
+      if (!empData) { if (!cancelled) setMyTeamEmpIds(new Set()); return }
+      const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
+      const ledTeamIds = (teamsData || []).filter((t:any) => t.team_lead_id === empData.id).map((t:any) => t.id)
+      if (ledTeamIds.length === 0) { if (!cancelled) setMyTeamEmpIds(new Set()); return }
+      const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
+      if (!cancelled) setMyTeamEmpIds(new Set((memberData || []).map((m:any) => m.employee_id)))
+    })()
+    return () => { cancelled = true }
+  }, [isTL, currentUser])
 
   async function loadData() {
     setLoading(true)
@@ -8343,9 +8363,10 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
 
   const formatSize = (b: number) => b < 1024*1024 ? (b/1024).toFixed(0)+'KB' : (b/1024/1024).toFixed(1)+'MB'
 
-  // Compliance: docs visible to HR (non-private only) -- governs which
-  // actual files/links people can see, not who counts toward compliance
-  const hrDocs = allDocs.filter(d => !d.is_private || canManage)
+  // Compliance: docs visible to HR (non-private only), or private docs
+  // belonging to a Team Lead's own team -- governs which actual
+  // files/links people can see, not who counts toward compliance
+  const hrDocs = allDocs.filter(d => !d.is_private || canManage || (isTL && d.employee_id && myTeamEmpIds?.has(d.employee_id)))
   // My docs: only mine
   const myDocs = allDocs.filter(d => d.is_private && d.owner_email === currentUser)
 
@@ -8361,7 +8382,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   })
 
   // All employees from DB, scoped by active/inactive toggle
-  const scopedEmployees = employees.filter(e => statusFilter === 'active' ? e.active : !e.active)
+  const scopedEmployees = employees.filter(e => (statusFilter === 'active' ? e.active : !e.active) && (!isTL || myTeamEmpIds?.has(e.id)))
   const filteredEmployees = scopedEmployees.filter(e => !searchQ || e.name.toLowerCase().includes(searchQ.toLowerCase()))
 
   // Count how many are complete
@@ -8465,7 +8486,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
         {([
           ['compliance', '📊 Compliance Tracker'],
           ...(canManage ? [['upload', '📁 Upload Documents']] : []),
-          ...(canManage ? [['private-all', '🔒 Private Documents']] : []),
+          ...(canManage || isTL ? [['private-all', '🔒 Private Documents']] : []),
           ['my-docs', '🔒 My Documents'],
         ] as [string,string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t as any)}
@@ -8604,15 +8625,17 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
             </div>
           </div>
         </div>
-      ) : tab === 'private-all' && canManage ? (
+      ) : tab === 'private-all' && (canManage || isTL) ? (() => {
+        const privateDocs = allDocs.filter(d => d.is_private && (canManage || (d.employee_id && myTeamEmpIds?.has(d.employee_id))))
+        return (
         <div className="space-y-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
             <span>🔒</span>
-            <span>These are documents employees uploaded themselves as private -- visible only to you (Admin/Super Admin) and the person who uploaded them.</span>
+            <span>These are documents employees uploaded themselves as private -- visible only to {canManage ? 'you (Admin/Super Admin)' : 'you (as their Team Lead)'} and the person who uploaded them.</span>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-              <p className="text-sm font-semibold text-gray-700">All Private Documents ({allDocs.filter(d => d.is_private).length})</p>
+              <p className="text-sm font-semibold text-gray-700">All Private Documents ({privateDocs.length})</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -8624,7 +8647,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                   <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Date</th>
                 </tr></thead>
                 <tbody className="divide-y divide-gray-100">
-                  {allDocs.filter(d => d.is_private).map(r => (
+                  {privateDocs.map(r => (
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-4 py-2.5 text-gray-800 font-medium">{employees.find((e:any) => e.email?.toLowerCase() === r.owner_email?.toLowerCase())?.name || r.owner_email}</td>
                       <td className="px-4 py-2.5"><span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{DOC_ICON[r.doc_type]||'📄'} {r.doc_type}</span></td>
@@ -8633,13 +8656,15 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                       <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
                     </tr>
                   ))}
-                  {allDocs.filter(d => d.is_private).length === 0 && <tr><td colSpan={5} className="text-center py-8 text-gray-400">No private documents uploaded yet</td></tr>}
+                  {privateDocs.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-gray-400">No private documents uploaded yet</td></tr>}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
-      ) : tab === 'my-docs' ? (
+        )
+      })()
+      : tab === 'my-docs' ? (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
             <span>🔒</span>
