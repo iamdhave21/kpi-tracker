@@ -8277,7 +8277,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   const isTL = userRole === 'Team Lead'
   const isViewer = userRole === 'agent'
   const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
-  const [tab, setTab] = useState<'compliance'|'upload'|'private-all'|'my-docs'>('compliance')
+  const [tab, setTab] = useState<'compliance'|'upload'|'my-docs'>('compliance')
   const [allDocs, setAllDocs] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -8379,6 +8379,18 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
     if (!d.employee_id) return // legacy/unlinked rows shouldn't silently count toward anyone
     if (!compMap[d.employee_id]) compMap[d.employee_id] = new Set()
     compMap[d.employee_id].add(d.doc_type)
+  })
+
+  // Lookup for clicking a compliance checkmark to open/download the actual
+  // file. Built only from hrDocs (what this viewer is actually permitted
+  // to see) so a checkmark never links to a file outside their access --
+  // e.g. an Agent's or another team's private upload a TL shouldn't open.
+  const docLookup: Record<string, any> = {}
+  hrDocs.forEach(d => {
+    if (!d.employee_id) return
+    const key = `${d.employee_id}::${d.doc_type}`
+    const existing = docLookup[key]
+    if (!existing || new Date(d.created_at) > new Date(existing.created_at)) docLookup[key] = d
   })
 
   // All employees from DB, scoped by active/inactive toggle
@@ -8486,7 +8498,6 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
         {([
           ['compliance', '📊 Compliance Tracker'],
           ...(canManage ? [['upload', '📁 Upload Documents']] : []),
-          ...(canManage || isTL ? [['private-all', '🔒 Private Documents']] : []),
           ['my-docs', '🔒 My Documents'],
         ] as [string,string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t as any)}
@@ -8548,13 +8559,18 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                     return (
                       <tr key={emp.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2.5 font-medium text-gray-900 sticky left-0 bg-white">{emp.name}</td>
-                        {REQUIRED_DOCS.map(d => (
-                          <td key={d} className="px-2 py-2.5 text-center">
-                            {has.has(d)
-                              ? <span title="On file" className="text-green-500 text-base">✓</span>
-                              : <span title="Missing" className="text-red-300 text-base">—</span>}
-                          </td>
-                        ))}
+                        {REQUIRED_DOCS.map(d => {
+                          const doc = docLookup[`${emp.id}::${d}`]
+                          return (
+                            <td key={d} className="px-2 py-2.5 text-center">
+                              {has.has(d)
+                                ? (doc
+                                    ? <a href={doc.file_url} target="_blank" rel="noopener noreferrer" title={`Open ${doc.file_name}`} className="text-green-500 hover:text-green-700 text-base inline-block">✓</a>
+                                    : <span title="On file" className="text-green-500 text-base">✓</span>)
+                                : <span title="Missing" className="text-red-300 text-base">—</span>}
+                            </td>
+                          )
+                        })}
                         <td className="px-3 py-2.5 text-center">
                           <span className={`inline-flex px-2 py-0.5 rounded-full font-medium ${complete ? 'bg-emerald-100 text-emerald-700' : count === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>
                             {count}/{REQUIRED_DOCS.length}
@@ -8625,46 +8641,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
             </div>
           </div>
         </div>
-      ) : tab === 'private-all' && (canManage || isTL) ? (() => {
-        const privateDocs = allDocs.filter(d => d.is_private && (canManage || (d.employee_id && myTeamEmpIds?.has(d.employee_id))))
-        return (
-        <div className="space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
-            <span>🔒</span>
-            <span>These are documents employees uploaded themselves as private -- visible only to {canManage ? 'you (Admin/Super Admin)' : 'you (as their Team Lead)'} and the person who uploaded them.</span>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-              <p className="text-sm font-semibold text-gray-700">All Private Documents ({privateDocs.length})</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b border-gray-100"><tr>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Employee</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Type</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">File</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Notes</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Date</th>
-                </tr></thead>
-                <tbody className="divide-y divide-gray-100">
-                  {privateDocs.map(r => (
-                    <tr key={r.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2.5 text-gray-800 font-medium">{employees.find((e:any) => e.email?.toLowerCase() === r.owner_email?.toLowerCase())?.name || r.owner_email}</td>
-                      <td className="px-4 py-2.5"><span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{DOC_ICON[r.doc_type]||'📄'} {r.doc_type}</span></td>
-                      <td className="px-4 py-2.5"><a href={r.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 text-sm font-medium">⬇ {r.file_name}</a></td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs">{r.notes||'—'}</td>
-                      <td className="px-4 py-2.5 text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
-                    </tr>
-                  ))}
-                  {privateDocs.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-gray-400">No private documents uploaded yet</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-        )
-      })()
-      : tab === 'my-docs' ? (
+      ) : tab === 'my-docs' ? (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
             <span>🔒</span>
