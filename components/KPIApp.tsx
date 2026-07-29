@@ -8268,7 +8268,7 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
 }
 
 // -- HRIS: Employee Records --------------------------------------------------
-const REQUIRED_DOCS = ['Resume', 'NBI Clearance', 'Medical Certificate', 'Psychological Evaluation', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract']
+const REQUIRED_DOCS = ['Resume', 'NBI Clearance', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract']
 const ALL_DOC_TYPES = ['Resume', 'CV', 'NBI Clearance', 'Medical Certificate', 'Psychological Evaluation', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract', 'Other']
 const DOC_ICON: Record<string, string> = { 'Resume': '📄', 'CV': '📋', 'Contract': '📝', 'NBI Clearance': '🔒', 'Medical Certificate': '🏥', 'Psychological Evaluation': '🧠', 'SSS': '🏛', 'PhilHealth': '💊', 'Pag-IBIG': '🏠', 'TIN': '🪪' }
 
