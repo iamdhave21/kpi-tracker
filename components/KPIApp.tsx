@@ -631,7 +631,7 @@ function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackD
 
 // -- Game of the Month -------------------------------------------------------
 function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
-  const GAME = { name: 'Subway Surfers', url: 'https://poki.com/en/g/subway-surfers', icon: '🏄', color: 'from-orange-400 to-pink-500' }
+  const GAME = { name: 'Temple Run 2', url: 'https://poki.com/en/g/temple-run-2', icon: '🏃', color: 'from-orange-400 to-pink-500' }
   const [uploading, setUploading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [todaySubmitted, setTodaySubmitted] = useState(false)
