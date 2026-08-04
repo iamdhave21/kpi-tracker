@@ -1515,8 +1515,28 @@ export default function KPIApp() {
           .eq('requires_acknowledgment', true)
           .eq('agent_acknowledged', false)
         setPendingCoachingCount((data || []).length)
+      } else if (userRole === 'Team Lead') {
+        // Team Leads: same team-scoping as the sessions list itself
+        // (teams.team_lead_id -> team_members -> employee emails), so the
+        // badge count matches what they'll actually see in the panel.
+        const myEmp = employees.find(e => e.email?.toLowerCase() === user!.toLowerCase())
+        if (!myEmp) { setPendingCoachingCount(0); return }
+        const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
+        const ledTeamIds = (teamsData || []).filter((t: any) => t.team_lead_id === myEmp.id).map((t: any) => t.id)
+        if (ledTeamIds.length === 0) { setPendingCoachingCount(0); return }
+        const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
+        const memberIds = new Set((memberData || []).map((m: any) => m.employee_id))
+        const teamEmails = employees.filter(e => memberIds.has(e.id) && e.email).map(e => e.email!.toLowerCase())
+        if (teamEmails.length === 0) { setPendingCoachingCount(0); return }
+        const { data } = await supabase.from('coaching_logs')
+          .select('id')
+          .in('employee_email', teamEmails)
+          .eq('requires_acknowledgment', true)
+          .eq('agent_acknowledged', false)
+        setPendingCoachingCount((data || []).length)
       } else {
-        // TLs/Admins: count sessions pending across all agents
+        // Admins/Super Admins: intentionally unscoped -- they see every
+        // team's sessions in the panel, so the badge should match.
         const { data } = await supabase.from('coaching_logs')
           .select('id')
           .eq('requires_acknowledgment', true)
@@ -1525,7 +1545,7 @@ export default function KPIApp() {
       }
     }
     loadPending()
-  }, [user, userRole])
+  }, [user, userRole, employees])
 
   // Load pending tasks count -- matches the same scoping TasksPanel itself
   // uses: Agent sees only their own, Team Lead/Admin see own + assigned by
@@ -1684,7 +1704,35 @@ export default function KPIApp() {
             {view === 'tickets' && <TicketsPanel currentUser={user || ''} userRole={userRole} showToast={showToast} />}
             {view === 'tasks' && <TasksPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} onTasksChanged={() => setTasksRefreshKey(k => k+1)} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
-            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => { const { data } = await supabase.from('coaching_logs').select('id').eq(userRole==='agent'?'employee_email':'agent_acknowledged', userRole==='agent'?user!.toLowerCase():false).eq('requires_acknowledgment', true).eq('agent_acknowledged', false); setPendingCoachingCount((data||[]).length) }} />}
+            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => {
+              // Mirrors the same scoping as the initial badge-count effect
+              // above: agent -> own sessions, Team Lead -> own team only,
+              // Admin/Super Admin -> unscoped.
+              if (userRole === 'agent') {
+                const { data } = await supabase.from('coaching_logs').select('id')
+                  .eq('employee_email', user!.toLowerCase())
+                  .eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
+                setPendingCoachingCount((data || []).length)
+              } else if (userRole === 'Team Lead') {
+                const myEmp = employees.find(e => e.email?.toLowerCase() === user!.toLowerCase())
+                if (!myEmp) { setPendingCoachingCount(0); return }
+                const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
+                const ledTeamIds = (teamsData || []).filter((t: any) => t.team_lead_id === myEmp.id).map((t: any) => t.id)
+                if (ledTeamIds.length === 0) { setPendingCoachingCount(0); return }
+                const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
+                const memberIds = new Set((memberData || []).map((m: any) => m.employee_id))
+                const teamEmails = employees.filter(e => memberIds.has(e.id) && e.email).map(e => e.email!.toLowerCase())
+                if (teamEmails.length === 0) { setPendingCoachingCount(0); return }
+                const { data } = await supabase.from('coaching_logs').select('id')
+                  .in('employee_email', teamEmails)
+                  .eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
+                setPendingCoachingCount((data || []).length)
+              } else {
+                const { data } = await supabase.from('coaching_logs').select('id')
+                  .eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
+                setPendingCoachingCount((data || []).length)
+              }
+            }} />}
             {view === 'tl-scorecard' && <TLScorecard currentUser={user} userRole={userRole} showToast={showToast} records={records} />}
             {view === 'hris-records' && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
             {view === 'hris-timetracker' && (userRole === 'super_admin' || userRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={user} showToast={showToast} onApplied={() => loadData()} />}
