@@ -630,8 +630,14 @@ function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackD
 
 
 // -- Game of the Month -------------------------------------------------------
+// Single source of truth for the current game -- change here only, and both
+// the play/submit screen and the leaderboard/approval flow stay in sync.
+// game_key is derived from the name so switching games automatically starts
+// a fresh leaderboard instead of mixing scores from the previous game.
+const GAME = { name: 'Temple Run 2', url: 'https://poki.com/en/g/temple-run-2', icon: '🏃', color: 'from-orange-400 to-pink-500' }
+const GAME_KEY = GAME.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+
 function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
-  const GAME = { name: 'Temple Run 2', url: 'https://poki.com/en/g/temple-run-2', icon: '🏃', color: 'from-orange-400 to-pink-500' }
   const [uploading, setUploading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [todaySubmitted, setTodaySubmitted] = useState(false)
@@ -660,7 +666,7 @@ function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string,
       const { error: insertError } = await supabase.from('game_score_submissions').insert({
         user_email: userEmail,
         user_name: userName,
-        game_key: 'game_of_month',
+        game_key: GAME_KEY,
         month_year: monthYear,
         screenshot_url: urlData.publicUrl,
         status: 'pending',
@@ -726,7 +732,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast, currentUser }: { ref
   async function loadScores() {
     const now = new Date()
     const monthYear = `${lbYear}-${String(lbMonth).padStart(2,'0')}`
-    const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url,played_at,approved_by').eq('game_key','game_of_month').eq('month_year',monthYear).order('score',{ascending:false})
+    const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url,played_at,approved_by').eq('game_key',GAME_KEY).eq('month_year',monthYear).order('score',{ascending:false})
     const best: Record<string,any> = {}
     data?.forEach((row:any) => { if (!best[row.user_email]||row.score>best[row.user_email].score) best[row.user_email]=row })
     setScores(Object.values(best).sort((a,b)=>b.score-a.score).slice(0,10))
@@ -743,7 +749,7 @@ function GameLeaderboard({ refreshKey, userRole, showToast, currentUser }: { ref
     setApproving(sub.id)
     const now = new Date()
     const monthYear = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
-    const { error: e1 } = await supabase.from('game_scores').insert({ user_email: sub.user_email, user_name: sub.user_name, game_key: 'game_of_month', score, month_year: monthYear, screenshot_url: sub.screenshot_url, verified: true, approved_by: currentUser })
+    const { error: e1 } = await supabase.from('game_scores').insert({ user_email: sub.user_email, user_name: sub.user_name, game_key: sub.game_key || GAME_KEY, score, month_year: monthYear, screenshot_url: sub.screenshot_url, verified: true, approved_by: currentUser })
     if (e1) { showToast('Failed to approve: ' + e1.message, 'error'); setApproving(null); return }
     const { error: e2 } = await supabase.from('game_score_submissions').update({ status: 'approved', approved_score: score, reviewed_by: currentUser }).eq('id', sub.id)
     if (e2) { showToast('Score added but failed to update submission status: ' + e2.message, 'error'); setApproving(null); return }
