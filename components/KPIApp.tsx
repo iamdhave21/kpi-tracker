@@ -636,6 +636,11 @@ function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackD
 // a fresh leaderboard instead of mixing scores from the previous game.
 const GAME = { name: 'Temple Run 2', url: 'https://poki.com/en/g/temple-run-2', icon: '🏃', color: 'from-orange-400 to-pink-500' }
 const GAME_KEY = GAME.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+// Historical game_key -> display name. 'game_of_month' is the old generic
+// key used before per-game separation existed (that was Subway Surfers at
+// the time). Add an entry here any time GAME.name changes, so past months
+// still show the right game name instead of a raw slug.
+const GAME_NAMES: Record<string, string> = { 'game_of_month': 'Subway Surfers', [GAME_KEY]: GAME.name }
 
 function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
   const [uploading, setUploading] = useState(false)
@@ -732,7 +737,14 @@ function GameLeaderboard({ refreshKey, userRole, showToast, currentUser }: { ref
   async function loadScores() {
     const now = new Date()
     const monthYear = `${lbYear}-${String(lbMonth).padStart(2,'0')}`
-    const { data } = await supabase.from('game_scores').select('user_name,user_email,score,screenshot_url,played_at,approved_by').eq('game_key',GAME_KEY).eq('month_year',monthYear).order('score',{ascending:false})
+    const isCurrentMonth = lbYear === now.getFullYear() && lbMonth === now.getMonth() + 1
+    let query = supabase.from('game_scores').select('user_name,user_email,score,screenshot_url,played_at,approved_by,game_key').eq('month_year',monthYear).order('score',{ascending:false})
+    // Only pin to the current game's key for the current month -- this is
+    // what actually prevents mixing old/new scores if the game changes
+    // mid-month. Past months show whatever game was genuinely played then,
+    // even though it's stored under a different (often the old generic) key.
+    if (isCurrentMonth) query = query.eq('game_key', GAME_KEY)
+    const { data } = await query
     const best: Record<string,any> = {}
     data?.forEach((row:any) => { if (!best[row.user_email]||row.score>best[row.user_email].score) best[row.user_email]=row })
     setScores(Object.values(best).sort((a,b)=>b.score-a.score).slice(0,10))
@@ -818,8 +830,8 @@ function GameLeaderboard({ refreshKey, userRole, showToast, currentUser }: { ref
 
       {/* Leaderboard */}
       <div className="space-y-2">
-        <h3 className="font-semibold text-gray-800 text-sm">🏆 {getMonthLabel()} Leaderboard</h3>
-        <p className="text-xs text-gray-400">Subway Surfers - Top scores this month</p>
+        <h3 className="font-semibold text-gray-800 text-sm">🏆 {MONTHS[lbMonth-1]} {lbYear} Leaderboard</h3>
+        <p className="text-xs text-gray-400">{scores[0]?.game_key ? GAME_NAMES[scores[0].game_key] || scores[0].game_key : GAME.name} - Top scores this month</p>
         {scores.length===0
           ? <p className="text-xs text-gray-400 text-center py-4">No scores yet. Be the first! 🎮</p>
           : scores.map((s,i)=>(
