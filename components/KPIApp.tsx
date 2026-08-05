@@ -242,7 +242,7 @@ function ThemeBgUploader({ userRole, showToast }: { userRole: string, showToast:
 
 
 // -- Announcements -----------------------------------------------------------
-function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+function AnnouncementsPanel({ userEmail, userRole, showToast, onBgChange }: { userEmail: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, onBgChange?: (url: string | null) => void }) {
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [acks, setAcks] = useState<Record<string, boolean>>({})
   const [ackDetails, setAckDetails] = useState<Record<string, any[]>>({})
@@ -376,6 +376,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
     const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
     await supabase.from('app_settings').upsert({ key: 'announcement_bg', value: urlData.publicUrl }, { onConflict: 'key' })
     setBgUrl(urlData.publicUrl)
+    onBgChange?.(urlData.publicUrl)
     setEditingBg(false)
     setBgUploading(false)
     showToast('Background updated!', 'success')
@@ -418,7 +419,7 @@ function AnnouncementsPanel({ userEmail, userRole, showToast }: { userEmail: str
           </button>
           <input ref={bgFileRef} type="file" accept="image/*" onChange={uploadBgFile} className="hidden" />
           {bgUrl && (
-            <button onClick={async () => { await supabase.from('app_settings').upsert({ key:'announcement_bg', value:'' }, { onConflict:'key' }); setBgUrl(null); setEditingBg(false); showToast('Background removed','success') }} className="text-xs text-red-500 hover:text-red-700 transition">
+            <button onClick={async () => { await supabase.from('app_settings').upsert({ key:'announcement_bg', value:'' }, { onConflict:'key' }); setBgUrl(null); onBgChange?.(null); setEditingBg(false); showToast('Background removed','success') }} className="text-xs text-red-500 hover:text-red-700 transition">
               Remove current background
             </button>
           )}
@@ -913,7 +914,7 @@ function MyProfileCard({ currentUser, userName, showToast }: { currentUser: stri
   )
 }
 
-export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string, bgUrl?: string | null }) {
+export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl, onBgChange }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string, bgUrl?: string | null, onBgChange?: (url: string | null) => void }) {
   const [leaderboardKey, setLeaderboardKey] = useState(0)
   const stored = typeof window !== 'undefined' ? localStorage.getItem('kpi_user') : null
   const storedName = stored ? JSON.parse(stored).display_name : null
@@ -947,7 +948,7 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl 
       ) : (
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="flex-1 overflow-hidden">
-            <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} />
+            <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} onBgChange={onBgChange} />
           </div>
         </div>
       )}
@@ -1662,7 +1663,7 @@ export default function KPIApp() {
         <div className="h-full animate-fadeIn relative z-10">
           {/* Announcements & Gaming Hub — full bleed, no padding wrapper */}
           {(view === 'announcements' || view === 'gaming-hub') ? (
-            <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} />
+            <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} onBgChange={setBgUrl} />
           ) : (
           <div className={`px-4 pt-4 pb-6 relative z-10 ${['org-chart','dashboard-month','dashboard-employee','dashboard-team'].includes(view) ? 'w-full max-w-[1600px] mx-auto' : 'max-w-6xl mx-auto'}`}>
           <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'dashboard-team' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
