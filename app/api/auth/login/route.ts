@@ -54,6 +54,13 @@ export async function POST(req: NextRequest) {
 
     if (!user) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
 
+    // Password login is now a fallback reserved for Admin/Super Admin only
+    // (see Google Sign-In rollout) -- everyone else must use Google, even
+    // if they happen to know a correct password for an old account.
+    if (user.role !== 'admin' && user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Please sign in with Google.' }, { status: 403 })
+    }
+
     // Support both bcrypt hashes and plain-text (legacy) during migration window
     const stored = user.password_hash as string
     let passwordValid = false
