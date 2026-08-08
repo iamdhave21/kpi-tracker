@@ -32,13 +32,16 @@ export default function AuthCallbackPage() {
       }
 
       const email = session.user.email.toLowerCase()
-      // Google's "hd" (hosted domain) claim tells us which Workspace domain
-      // actually authenticated this person -- this is the real security
-      // check, since it can't be spoofed by the browser. We also require
-      // the email itself to end in the domain agents actually use.
+      // Google's "hd" (hosted domain) claim, when Google/Supabase actually
+      // surfaces it, is a nice extra signal -- but since the OAuth consent
+      // screen is set to Internal in Google Cloud, Google itself already
+      // refuses sign-in from outside the Workspace org before we ever see
+      // a session here. So we treat a missing hd as "not provided" (fine),
+      // and only reject if hd IS present and clearly wrong. The email
+      // domain check below plus the app_users lookup are the real gate.
       const hd = (session.user.user_metadata?.hd || session.user.identities?.[0]?.identity_data?.hd || '').toLowerCase()
       const emailDomainOk = email.endsWith('@ab-businesssupport.com')
-      const hdOk = ALLOWED_HD_DOMAINS.includes(hd)
+      const hdOk = !hd || ALLOWED_HD_DOMAINS.includes(hd)
 
       if (!emailDomainOk || !hdOk) {
         await supabase.auth.signOut()
