@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const ALLOWED_DOMAIN = '@ab-businesssupport.com'
+const ALLOWED_DOMAINS = ['ab-businesssupport.com', 'ab-contactsolutions.com']
 
 function getSupabase() {
   return createClient(
@@ -23,17 +23,40 @@ export async function POST(req: NextRequest) {
     }
 
     const input = email.trim().toLowerCase()
-    if (!input.endsWith(ALLOWED_DOMAIN)) {
-      return NextResponse.json({ error: `Only ${ALLOWED_DOMAIN} emails are allowed` }, { status: 401 })
+    const domainOk = ALLOWED_DOMAINS.some(d => input.endsWith(`@${d}`))
+    if (!domainOk) {
+      return NextResponse.json({ error: 'Only AB Business Support work accounts are allowed' }, { status: 401 })
     }
 
     const supabase = getSupabase()
-    const { data: user } = await supabase
+
+    // Try an exact match first (covers the common case where app_users.email
+    // already matches whichever domain Google returned).
+    let { data: user } = await supabase
       .from('app_users')
       .select('*')
       .ilike('email', input)
       .eq('active', true)
       .single()
+
+    // ab-businesssupport.com is a secondary alias of ab-contactsolutions.com
+    // -- the same employee can authenticate under either one depending on
+    // what Google decides to hand back, but every app_users row was created
+    // using @ab-businesssupport.com. If the exact email didn't match, retry
+    // using the same local part (before the @) against the other domain.
+    if (!user) {
+      const localPart = input.split('@')[0]
+      const altDomain = ALLOWED_DOMAINS.find(d => !input.endsWith(`@${d}`))
+      if (altDomain) {
+        const { data: byAlt } = await supabase
+          .from('app_users')
+          .select('*')
+          .ilike('email', `${localPart}@${altDomain}`)
+          .eq('active', true)
+          .single()
+        if (byAlt) user = byAlt
+      }
+    }
 
     if (!user) {
       return NextResponse.json({ error: 'No active account found for this email. Contact your admin to get access.' }, { status: 403 })

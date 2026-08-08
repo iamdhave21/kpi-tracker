@@ -39,13 +39,18 @@ export default function AuthCallbackPage() {
       // a session here. So we treat a missing hd as "not provided" (fine),
       // and only reject if hd IS present and clearly wrong. The email
       // domain check below plus the app_users lookup are the real gate.
+      //
+      // ab-businesssupport.com is a secondary alias of the primary
+      // Workspace domain ab-contactsolutions.com -- the same person can
+      // show up under either one depending on what Google decides to
+      // return, so both are accepted here.
       const hd = (session.user.user_metadata?.hd || session.user.identities?.[0]?.identity_data?.hd || '').toLowerCase()
-      const emailDomainOk = email.endsWith('@ab-businesssupport.com')
+      const emailDomainOk = ALLOWED_HD_DOMAINS.some(d => email.endsWith(`@${d}`))
       const hdOk = !hd || ALLOWED_HD_DOMAINS.includes(hd)
 
       if (!emailDomainOk || !hdOk) {
         await supabase.auth.signOut()
-        setError('That Google account is not part of AB Business Support. Please sign in with your @ab-businesssupport.com account.')
+        setError('That Google account is not part of AB Business Support. Please sign in with your work Google account.')
         setTimeout(() => { window.location.href = '/' }, 3500)
         return
       }
