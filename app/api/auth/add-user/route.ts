@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import bcrypt from 'bcryptjs'
 
-const ALLOWED_DOMAIN = '@ab-businesssupport.com'
+
+
+const ALLOWED_DOMAINS = ['ab-businesssupport.com', 'ab-contactsolutions.com']
 
 function getSupabase() {
   return createClient(
@@ -18,12 +20,28 @@ export async function POST(req: NextRequest) {
     if (password.length < 6) return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
 
     const email = username.trim().toLowerCase()
-    if (!email.endsWith(ALLOWED_DOMAIN)) {
-      return NextResponse.json({ error: `Only ${ALLOWED_DOMAIN} emails are allowed` }, { status: 400 })
+    const domain = ALLOWED_DOMAINS.find(d => email.endsWith(`@${d}`))
+    if (!domain) {
+      return NextResponse.json({ error: 'Only AB Business Support work emails are allowed' }, { status: 400 })
     }
 
     const usernameOnly = email.split('@')[0]
     const supabase = getSupabase()
+
+    // ab-businesssupport.com and ab-contactsolutions.com are the same
+    // Workspace (alias domains) -- someone could unknowingly create a
+    // second account for a person who already has one under the other
+    // domain. Catch that before it becomes two rows for one employee.
+    const altDomain = ALLOWED_DOMAINS.find(d => d !== domain)
+    const { data: altMatch } = await supabase
+      .from('app_users')
+      .select('email')
+      .ilike('email', `${usernameOnly}@${altDomain}`)
+      .maybeSingle()
+    if (altMatch) {
+      return NextResponse.json({ error: `An account already exists for this person as ${altMatch.email} (same person, different domain alias). Edit that account instead of creating a new one.` }, { status: 400 })
+    }
+
     const hash = await bcrypt.hash(password, 12)
     const { error } = await supabase.from('app_users').insert({
       username: usernameOnly,

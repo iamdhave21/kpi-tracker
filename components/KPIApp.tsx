@@ -2764,24 +2764,23 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   }
 
   async function addEmployee() {
-    if (!newName.trim()) return
-    // Duplicate check: Employee ID first (most reliable unique identifier),
-    // then email, since both should be unique per person/role.
+    if (!newName.trim()) { showToast('Full name is required.', 'error'); return }
     const empIdTrimmed = newEmpId.trim()
     const emailTrimmed = newEmail.trim().toLowerCase()
-    if (empIdTrimmed) {
-      const idMatch = employees.find(e => e.employee_id && e.employee_id.trim().toLowerCase() === empIdTrimmed.toLowerCase())
-      if (idMatch) {
-        showToast(`Employee ID ${empIdTrimmed} already belongs to ${idMatch.name}. Edit that record instead of adding a new one.`, 'error')
-        return
-      }
+    if (!empIdTrimmed) { showToast('Employee ID is required.', 'error'); return }
+    if (!emailTrimmed) { showToast('Work email is required.', 'error'); return }
+    if (!newDepartments.length) { showToast('Select at least one Department (Operations, IT, etc.).', 'error'); return }
+    // Duplicate check: Employee ID first (most reliable unique identifier),
+    // then email, since both should be unique per person/role.
+    const idMatch = employees.find(e => e.employee_id && e.employee_id.trim().toLowerCase() === empIdTrimmed.toLowerCase())
+    if (idMatch) {
+      showToast(`Employee ID ${empIdTrimmed} already belongs to ${idMatch.name}. Edit that record instead of adding a new one.`, 'error')
+      return
     }
-    if (emailTrimmed) {
-      const emailMatch = employees.find(e => e.email && e.email.trim().toLowerCase() === emailTrimmed)
-      if (emailMatch) {
-        showToast(`${emailTrimmed} is already used by ${emailMatch.name}. Add a new role for them by editing that record, or use a different email.`, 'error')
-        return
-      }
+    const emailMatch = employees.find(e => e.email && e.email.trim().toLowerCase() === emailTrimmed)
+    if (emailMatch) {
+      showToast(`${emailTrimmed} is already used by ${emailMatch.name}. Add a new role for them by editing that record, or use a different email.`, 'error')
+      return
     }
     setAdding(true)
     const existingForPerson = employees.filter(e => e.name.trim().toLowerCase() === newName.trim().toLowerCase())
@@ -2958,15 +2957,15 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="font-semibold text-gray-700 text-sm mb-4 flex items-center gap-2"><UserPlus className="w-4 h-4 text-blue-500"/>Add Employee / Role</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <input value={newEmpId} onChange={e=>setNewEmpId(e.target.value)} placeholder="Employee ID (ABBSS-XXXXXX)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name (Last, First)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <input value={newEmpId} onChange={e=>setNewEmpId(e.target.value)} placeholder="Employee ID (ABBSS-XXXXXX) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name (Last, First) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <select value={newEmpType} onChange={e=>setNewEmpType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           <select value={newClient} onChange={e=>setNewClient(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
             {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           {userRole === 'super_admin' && (
             <select value={newPortalRole} onChange={e=>setNewPortalRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Portal Role -- creates their login immediately if a work email is set">
               <option value="agent">Portal: Agent</option>
@@ -2975,10 +2974,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
               <option value="super_admin">Portal: Super Admin</option>
             </select>
           )}
-          <button onClick={addEmployee} disabled={adding||!newName.trim()} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
         <div className="mt-3">
-          <p className="text-xs font-medium text-gray-500 mb-1.5">Department(s) — used for ticket routing and org mapping</p>
+          <p className="text-xs font-medium text-gray-500 mb-1.5">Department(s) * — used for ticket routing and org mapping</p>
           <div className="flex flex-wrap gap-2">
             {DEPARTMENTS.map(d => (
               <label key={d} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition ${newDepartments.includes(d) ? DEPT_BADGE_COLORS[d] : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
