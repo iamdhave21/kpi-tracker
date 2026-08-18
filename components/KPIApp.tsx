@@ -1527,11 +1527,57 @@ export default function KPIApp() {
       // browser, which could be a different company domain than their real
       // work account, with no connection to their actual employee record.)
       const stored = localStorage.getItem('kpi_user')
-      if (stored) { const u = JSON.parse(stored); setUser(u.username); setUserRole(u.role || 'agent'); setDisplayName(u.display_name || u.username?.split('@')[0] || u.username); setMustChangePassword(!!u.mustChangePassword); return }
+      if (stored) {
+        const u = JSON.parse(stored)
+        // A stored session alone doesn't mean this account is still allowed
+        // in -- someone could have been deactivated after they last logged
+        // in. Re-confirm with the server before trusting it.
+        try {
+          const res = await fetch('/api/auth/check-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: u.username }),
+          })
+          const check = await res.json()
+          if (!check.active) {
+            localStorage.removeItem('kpi_user')
+            setLoading(false)
+            return
+          }
+        } catch {
+          // Network hiccup -- don't lock someone out over a transient error,
+          // the periodic recheck below will catch it soon after.
+        }
+        setUser(u.username); setUserRole(u.role || 'agent'); setDisplayName(u.display_name || u.username?.split('@')[0] || u.username); setMustChangePassword(!!u.mustChangePassword); return
+      }
       setLoading(false)
     }
     initAuth()
   }, [])
+
+  // Re-check every 5 minutes while the app is open, so a deactivation takes
+  // effect during an already-open session, not just on next login.
+  useEffect(() => {
+    if (!user) return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/auth/check-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: user }),
+        })
+        const check = await res.json()
+        if (!check.active) {
+          localStorage.removeItem('kpi_user')
+          setUser(null)
+          showToast('Your account access has been removed. Please contact your admin.', 'error')
+        }
+      } catch {
+        // Skip this cycle on a network error rather than log someone out.
+      }
+    }, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [user])
 
   useEffect(() => { if (user) loadData() }, [user])
 
