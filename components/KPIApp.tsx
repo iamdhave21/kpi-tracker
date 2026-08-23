@@ -1470,7 +1470,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="people" label="People" hasActive={['employees','teams','org-chart'].includes(view)} />
       {!collapsed.people && (
         <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="employees" label="Employees" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>
+          {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="employees" label="Employees" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>}
           <NavItem id="teams" label="Teams" icon={<Award className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>
           <NavItem id="org-chart" label="Org Chart" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>
         </div>
@@ -1766,7 +1766,8 @@ export default function KPIApp() {
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={user} userRole={effectiveRole} onEditRecord={() => loadData()} />}
             {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
             {view === 'entry' && userRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
-            {view === 'employees' && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} userRole={userRole} />}
+            {view === 'employees' && (userRole === 'super_admin' || userRole === 'admin') && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} userRole={userRole} />}
+            {view === 'employees' && !(userRole === 'super_admin' || userRole === 'admin') && <NoAccessPage userRole={userRole} onBack={() => setView('announcements')} />}
             {view === 'teams' && <TeamManager employees={employees} showToast={showToast} userRole={userRole} />}
             {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <ObservationsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} />}
             {view === 'observations' && userRole === 'agent' && <MyObservations employees={employees} currentUser={user} />}
@@ -2722,7 +2723,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [newEmpId, setNewEmpId] = useState('')
   const [newDepartments, setNewDepartments] = useState<string[]>([])
   const [newEmpType, setNewEmpType] = useState('Agent')
-  const [newClient, setNewClient] = useState(CLIENTS[0])
+  const [newClients, setNewClients] = useState<string[]>([CLIENTS[0]])
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
   const [editName, setEditName] = useState('')
@@ -2730,7 +2731,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [editEmpId, setEditEmpId] = useState('')
   const [editDepartments, setEditDepartments] = useState<string[]>([])
   const [editEmpType, setEditEmpType] = useState('Agent')
-  const [editClient, setEditClient] = useState(CLIENTS[0])
+  const [editClients, setEditClients] = useState<string[]>([CLIENTS[0]])
   const [editPortalRole, setEditPortalRole] = useState<string>('agent')
   const [searchQ, setSearchQ] = useState('')
   const [filterClient, setFilterClient] = useState('All')
@@ -2816,6 +2817,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     if (!empIdTrimmed) { showToast('Employee ID is required.', 'error'); return }
     if (!emailTrimmed) { showToast('Work email is required.', 'error'); return }
     if (!newDepartments.length) { showToast('Select at least one Department (Operations, IT, etc.).', 'error'); return }
+    if (!newClients.length) { showToast('Select at least one Client Supported.', 'error'); return }
     // Duplicate check: Employee ID first (most reliable unique identifier),
     // then email, since both should be unique per person/role.
     const idMatch = employees.find(e => e.employee_id && e.employee_id.trim().toLowerCase() === empIdTrimmed.toLowerCase())
@@ -2830,14 +2832,16 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     }
     setAdding(true)
     const existingForPerson = employees.filter(e => e.name.trim().toLowerCase() === newName.trim().toLowerCase())
-    const generatedDesig = generateDesignation(newEmpType, newClient, existingForPerson)
+    const primaryClient = newClients[0] || CLIENTS[0]
+    const generatedDesig = generateDesignation(newEmpType, primaryClient, existingForPerson)
     const {error} = await supabase.from('employees').insert({
       name:newName.trim(), designation:generatedDesig,
       email:newEmail.trim()||null,
       employee_id: newEmpId.trim()||null,
       departments: newDepartments.length ? newDepartments : null,
       employment_type: newEmpType,
-      client: newClient,
+      client: primaryClient,
+      clients_supported: newClients.length ? newClients : null,
       active:true
     })
     if (error) showToast(error.message,'error')
@@ -2862,7 +2866,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           }
         }
       }
-      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClient(CLIENTS[0]); setNewPortalRole('agent'); onChanged()
+      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClients([CLIENTS[0]]); setNewPortalRole('agent'); onChanged()
     }
     setAdding(false)
   }
@@ -2870,8 +2874,9 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   async function saveEdit(id: string) {
     const emp = employees.find(e=>e.id===id)
     const existingForPerson = employees.filter(e => e.name.trim().toLowerCase() === editName.trim().toLowerCase())
-    const generatedDesig = generateDesignation(editEmpType, editClient, existingForPerson, id)
-    const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,client:editClient}).eq('id',id)
+    const editPrimaryClient = editClients[0] || CLIENTS[0]
+    const generatedDesig = generateDesignation(editEmpType, editPrimaryClient, existingForPerson, id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,client:editPrimaryClient,clients_supported:editClients.length?editClients:null}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
     // Sync to app_users if a work email is present. If the email actually
     // changed, look up their EXISTING login by the OLD email first and
@@ -2920,8 +2925,8 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     // Build a human-readable diff of what actually changed, then email
     // whoever's email is on the record (regardless of portal login).
     const fieldLabels: Record<string,string> = { name: 'Name', email: 'Work Email', employee_id: 'Employee ID', employment_type: 'Role', client: 'Client Supported', departments: 'Department(s)' }
-    const before: Record<string, any> = { name: emp?.name, email: emp?.email, employee_id: emp?.employee_id, employment_type: emp?.employment_type, client: emp?.client, departments: (emp?.departments||[]).join(', ') }
-    const after: Record<string, any> = { name: editName, email: editEmail||null, employee_id: editEmpId||null, employment_type: editEmpType, client: editClient, departments: editDepartments.join(', ') }
+    const before: Record<string, any> = { name: emp?.name, email: emp?.email, employee_id: emp?.employee_id, employment_type: emp?.employment_type, client: (emp?.clients_supported && emp.clients_supported.length ? emp.clients_supported : (emp?.client ? [emp.client] : [])).join(', '), departments: (emp?.departments||[]).join(', ') }
+    const after: Record<string, any> = { name: editName, email: editEmail||null, employee_id: editEmpId||null, employment_type: editEmpType, client: editClients.join(', '), departments: editDepartments.join(', ') }
     const changes = Object.keys(fieldLabels)
       .filter(k => String(before[k] ?? '') !== String(after[k] ?? ''))
       .map(k => ({ field: fieldLabels[k], from: before[k] ?? '', to: after[k] ?? '' }))
@@ -3008,9 +3013,6 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           <select value={newEmpType} onChange={e=>setNewEmpType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
-          <select value={newClient} onChange={e=>setNewClient(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-            {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
           <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           {userRole === 'super_admin' && (
             <select value={newPortalRole} onChange={e=>setNewPortalRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Portal Role -- creates their login immediately if a work email is set">
@@ -3020,7 +3022,18 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
               <option value="super_admin">Portal: Super Admin</option>
             </select>
           )}
-          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length||!newClients.length} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
+        </div>
+        <div className="mt-3">
+          <p className="text-xs font-medium text-gray-500 mb-1.5">Client(s) Supported * — controls which clients this person's records are visible under</p>
+          <div className="flex flex-wrap gap-2">
+            {CLIENTS.map(c => (
+              <label key={c} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition ${newClients.includes(c) ? (CLIENT_COLORS[c] || 'bg-blue-50 text-blue-700 border-blue-200') : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                <input type="checkbox" checked={newClients.includes(c)} onChange={()=>toggleDept(c, newClients, setNewClients)} className="w-3 h-3"/>
+                {c}
+              </label>
+            ))}
+          </div>
         </div>
         <div className="mt-3">
           <p className="text-xs font-medium text-gray-500 mb-1.5">Department(s) * — used for ticket routing and org mapping</p>
@@ -3103,7 +3116,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClient(emps[0].client||CLIENTS[0]);if(emps[0].email){const el=emps[0].email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClients(emps[0].clients_supported&&emps[0].clients_supported.length?emps[0].clients_supported:(emps[0].client?[emps[0].client]:[CLIENTS[0]]));if(emps[0].email){const el=emps[0].email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -3135,12 +3148,6 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Client Supported</label>
-                      <select value={editClient} onChange={e=>setEditClient(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                        {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
                       <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/>
                     </div>
@@ -3156,6 +3163,17 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     </div>
                     )}
 
+                  </div>
+                  <div className="mb-3">
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Client(s) Supported</label>
+                    <div className="flex flex-wrap gap-2">
+                      {CLIENTS.map(c => (
+                        <label key={c} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition ${editClients.includes(c) ? (CLIENT_COLORS[c] || 'bg-blue-50 text-blue-700 border-blue-200') : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                          <input type="checkbox" checked={editClients.includes(c)} onChange={()=>toggleDept(c, editClients, setEditClients)} className="w-3 h-3"/>
+                          {c}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                   <div className="mb-3">
                     <label className="block text-xs font-medium text-gray-500 mb-1.5">Department(s)</label>
@@ -3193,7 +3211,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClient(emp.client||CLIENTS[0]);if(emp.email){const el=emp.email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClients(emp.clients_supported&&emp.clients_supported.length?emp.clients_supported:(emp.client?[emp.client]:[CLIENTS[0]]));if(emp.email){const el=emp.email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -3211,10 +3229,6 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                           <select value={editEmpType} onChange={e=>setEditEmpType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select></div>
-                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Client Supported</label>
-                          <select value={editClient} onChange={e=>setEditClient(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                            {CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select></div>
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
                           <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/></div>
                         {userRole === 'super_admin' && (
@@ -3227,6 +3241,17 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                           </select></div>
                         )}
 
+                      </div>
+                      <div className="mb-3">
+                        <label className="block text-xs font-medium text-gray-500 mb-1.5">Client(s) Supported</label>
+                        <div className="flex flex-wrap gap-2">
+                          {CLIENTS.map(c => (
+                            <label key={c} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition ${editClients.includes(c) ? (CLIENT_COLORS[c] || 'bg-blue-50 text-blue-700 border-blue-200') : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                              <input type="checkbox" checked={editClients.includes(c)} onChange={()=>toggleDept(c, editClients, setEditClients)} className="w-3 h-3"/>
+                              {c}
+                            </label>
+                          ))}
+                        </div>
                       </div>
                       <div className="mb-3">
                         <label className="block text-xs font-medium text-gray-500 mb-1.5">Department(s)</label>
