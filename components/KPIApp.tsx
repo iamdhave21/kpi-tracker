@@ -1544,6 +1544,26 @@ export default function KPIApp() {
             setLoading(false)
             return
           }
+          // Everyone except Admin/Super Admin now signs in exclusively via
+          // Google -- but an old password-created localStorage session (from
+          // before that restriction existed) would still pass the "active"
+          // check above forever, since that only checks the app_users row,
+          // not HOW the person actually authenticated. Someone in that state
+          // has no real Supabase Auth session, so RLS policies that key off
+          // auth.jwt() ->> 'email' see them as nobody -- e.g. Coaching Log
+          // silently returning empty for a Team Lead who is otherwise set up
+          // correctly. Close that gap here: non-admin roles must have a live
+          // Google session matching their stored email, or they're signed
+          // out and sent back to log in with Google properly.
+          if (u.role !== 'admin' && u.role !== 'super_admin') {
+            const hasGoogleSession = await hasLiveGoogleSession(u.username)
+            if (!hasGoogleSession) {
+              localStorage.removeItem('kpi_user')
+              await supabase.auth.signOut()
+              setLoading(false)
+              return
+            }
+          }
         } catch {
           // Network hiccup -- don't lock someone out over a transient error,
           // the periodic recheck below will catch it soon after.
@@ -1554,6 +1574,22 @@ export default function KPIApp() {
     }
     initAuth()
   }, [])
+
+  // Confirms a currently-live Supabase Auth (Google) session belongs to the
+  // given email. Compares local part only (before the @) since
+  // ab-businesssupport.com and ab-contactsolutions.com are alias domains --
+  // the same rule already used in google-verify.
+  async function hasLiveGoogleSession(email: string): Promise<boolean> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user?.email) return false
+      const sessionLocal = session.user.email.toLowerCase().split('@')[0]
+      const storedLocal = email.toLowerCase().split('@')[0]
+      return sessionLocal === storedLocal
+    } catch {
+      return true // don't punish a transient client-side error
+    }
+  }
 
   // Re-check every 5 minutes while the app is open, so a deactivation takes
   // effect during an already-open session, not just on next login.
@@ -1571,6 +1607,16 @@ export default function KPIApp() {
           localStorage.removeItem('kpi_user')
           setUser(null)
           showToast('Your account access has been removed. Please contact your admin.', 'error')
+          return
+        }
+        if (userRole !== 'admin' && userRole !== 'super_admin') {
+          const hasGoogleSession = await hasLiveGoogleSession(user)
+          if (!hasGoogleSession) {
+            localStorage.removeItem('kpi_user')
+            await supabase.auth.signOut()
+            setUser(null)
+            showToast('Your session needs to be refreshed -- please sign in with Google again.', 'error')
+          }
         }
       } catch {
         // Skip this cycle on a network error rather than log someone out.
