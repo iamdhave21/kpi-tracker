@@ -930,7 +930,7 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl,
               <div className="absolute inset-0 bg-blue-950/25"/>
             </div>
           )}
-        <div className="max-w-6xl mx-auto space-y-6">
+        <div className="max-w-[1600px] mx-auto space-y-6">
         <div>
           <h1 className="text-xl font-bold text-white drop-shadow-lg">Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {userName}! 👋</h1>
           <p className="text-sm text-white/80 mt-0.5 drop-shadow">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
@@ -1850,7 +1850,7 @@ export default function KPIApp() {
           {(view === 'announcements' || view === 'gaming-hub') ? (
             <HomeScreen currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} onBgChange={setBgUrl} />
           ) : (
-          <div className={`px-4 pt-4 pb-6 relative z-10 ${['org-chart','dashboard-month','dashboard-employee'].includes(view) ? 'w-full max-w-[1600px] mx-auto' : 'max-w-6xl mx-auto'}`}>
+          <div className="px-4 pt-4 pb-6 relative z-10 w-full max-w-[1600px] mx-auto">
           <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
         {loading ? (
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
@@ -1866,7 +1866,7 @@ export default function KPIApp() {
             {view === 'observations' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <ObservationsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'observations' && effectiveRole === 'agent' && <MyObservations employees={employees} currentUser={effectiveUser} />}
             {view === 'matrix' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && (
-              <div className="max-w-4xl mx-auto space-y-6">
+              <div className="max-w-[1600px] mx-auto space-y-6">
                 <div><h2 className="text-xl font-bold text-blue-900">Matrix</h2><p className="text-sm text-gray-500">Track features shipped, issues to fix, and SQL still pending in Supabase</p></div>
                 <MatrixPanel currentUser={effectiveUser} showToast={showToast} />
               </div>
@@ -3496,7 +3496,7 @@ function TeamManager({ employees, showToast, userRole }:
   const selectedTeam = teams.find(t=>t.id===selTeam)
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-[1600px] mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">Team Management</h2><p className="text-sm text-gray-500">{teams.length} teams configured</p></div>
       {canEdit && (
       <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -4304,7 +4304,7 @@ function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: s
   ]
 
   return (
-    <div className="max-w-4xl mx-auto space-y-5">
+    <div className="max-w-[1600px] mx-auto space-y-5">
       <div>
         <h1 className="text-xl font-bold text-blue-900">Team Leader Operating Cadence</h1>
         <p className="text-sm text-gray-500 mt-0.5">Your daily, weekly, and monthly rhythm for effective team leadership</p>
@@ -4632,7 +4632,7 @@ function ResourcesPanel({ userRole, showToast }: { userRole: string, showToast: 
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="max-w-[1600px] mx-auto space-y-4">
       <div>
         <h1 className="text-xl font-bold text-blue-900">Resources</h1>
         <p className="text-sm text-gray-500 mt-0.5">Forms, documents, and templates for the team</p>
@@ -4747,7 +4747,7 @@ function DirectoryLinks({ userRole, currentUser, employees, showToast }: { userR
   ).filter(l => !searchQ.trim() || l.name.toLowerCase().includes(searchQ.toLowerCase()) || (l.description || '').toLowerCase().includes(searchQ.toLowerCase()))
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Links</h2>
@@ -6249,7 +6249,7 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-[1600px] mx-auto space-y-6">
       <div>
         <h2 className="text-xl font-bold text-blue-900">Observations</h2>
         <p className="text-sm text-gray-500">Record and track monthly observations per employee</p>
@@ -6635,7 +6635,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
   const actionColors: Record<string,string> = { EDIT_SCORE:'bg-blue-50 text-blue-700', STATUS_CHANGE:'bg-yellow-50 text-yellow-700', ADD_EMPLOYEE:'bg-emerald-50 text-emerald-700', DELETE_EMPLOYEE:'bg-red-50 text-red-700', CREATE_RECORD:'bg-purple-50 text-purple-700', UPDATE_RECORD:'bg-indigo-50 text-indigo-700', EDIT_EMPLOYEE:'bg-gray-100 text-gray-600' }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-[1600px] mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">Settings</h2><p className="text-sm text-gray-500">Manage app users, activity, and security</p></div>
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         {([['users','App Users'],['activity','Audit Log'],['access','Access Guide'],['manual','Manual'],['password','Change Password']] as [string,string][]).map(([t,l])=>(
@@ -8316,7 +8316,7 @@ function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplie
   }
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-6 max-w-[1600px] mx-auto">
       <div>
         <h2 className="text-xl font-bold text-blue-900 flex items-center gap-2"><Clock className="w-5 h-5"/>Time Tracker</h2>
         <p className="text-sm text-gray-500">Paste a period summary from the time tracking system, matched by Employee ID</p>
