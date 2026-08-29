@@ -1451,7 +1451,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
           <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} dotColor="bg-indigo-400"/>
           <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-          <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+          {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
         </div>
       )}
 
@@ -1908,7 +1908,8 @@ export default function KPIApp() {
                 setPendingCoachingCount((data || []).length)
               }
             }} />}
-            {view === 'tl-scorecard' && <TLScorecard currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} records={records} />}
+            {view === 'tl-scorecard' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <TLScorecard currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} records={records} />}
+            {view === 'tl-scorecard' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'hris-records' && <HRISRecords userRole={effectiveRole} currentUser={effectiveUser} showToast={showToast} />}
             {view === 'hris-timetracker' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={effectiveUser} showToast={showToast} onApplied={() => loadData()} />}
             {view === 'hris-timetracker' && (effectiveRole === 'agent' || effectiveRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Time Tracker requires Manager access or higher</p></div>}
@@ -2101,8 +2102,18 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
     onEditRecord()
   }
   const [showPerfect, setShowPerfect] = useState(false)
-  const CLIENTS_FILTER = ['All', 'EMMA', 'AB BSS', 'Harlan + Holden']
   const CLIENT_COLORS: Record<string,string> = { 'EMMA': '#3b82f6', 'AB BSS': '#10b981', 'Harlan + Holden': '#f59e0b' }
+
+  // Same client scoping as Directory Links: Admin/Super Admin see every
+  // client's tab, unrestricted. Team Leads and Agents only see tabs for the
+  // client(s) on their own employee record -- someone supporting only EMMA
+  // shouldn't see so much as a tab for AB BSS or Harlan + Holden here either.
+  const canSeeAllClients = ['super_admin','admin'].includes(userRole)
+  const myEmployeeForClient = employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
+  const myClients: string[] = canSeeAllClients
+    ? CLIENTS
+    : (myEmployeeForClient?.clients_supported && myEmployeeForClient.clients_supported.length ? myEmployeeForClient.clients_supported : (myEmployeeForClient?.client ? [myEmployeeForClient.client] : []))
+  const CLIENTS_FILTER = ['All', ...CLIENTS.filter(c => canSeeAllClients || myClients.includes(c))]
 
   const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
 
@@ -2132,8 +2143,11 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
     const teamEmpIds = selTeam === 'all' ? null : new Set(members.filter(m => m.team_id === selTeam).map(m => m.employee_id))
     // Viewers only see their own team members
     const viewerFilter = userRole === 'agent' && myTeamEmpIds ? myTeamEmpIds : null
-    // Client filter
-    const clientEmpIds = selClient === 'All' ? null : new Set(employees.filter(e => e.client === selClient).map(e => e.id))
+    // Client filter -- "All" for a scoped (non-admin) viewer means "all
+    // clients THEY support", not literally every client in the company.
+    const clientEmpIds = selClient !== 'All'
+      ? new Set(employees.filter(e => e.client === selClient).map(e => e.id))
+      : (canSeeAllClients ? null : new Set(employees.filter(e => e.client && myClients.includes(e.client)).map(e => e.id)))
     let base = records.filter(r => activeEmpIds.has(r.employee_id) && (teamEmpIds === null || teamEmpIds.has(r.employee_id)) && (viewerFilter === null || viewerFilter.has(r.employee_id)) && (clientEmpIds === null || clientEmpIds.has(r.employee_id)))
     if (perfView === 'monthly' || perfView === 'weekly') {
       base = base.filter(r => (r.month_label||'').toLowerCase().includes(selMonth.toLowerCase()) && (r.month_label||'').includes(selYear))
@@ -2532,6 +2546,15 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set())
   const canEditScores = ['super_admin','admin','Team Lead'].includes(userRole)
   const canDeleteScores = ['super_admin','admin'].includes(userRole)
+  // Agents only ever see their own trend -- no picker, no way to browse
+  // anyone else's KPI history. Matches the same "own data only" rule
+  // already applied elsewhere (Coaching Log, HRIS compliance) for agents.
+  const isAgent = userRole === 'agent'
+  const myEmployee = isAgent ? employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase()) : null
+
+  useEffect(() => {
+    if (isAgent && myEmployee) setSelEmployee(myEmployee.id)
+  }, [isAgent, myEmployee?.id])
 
   async function deleteRecord(r: KpiRecord) {
     if (!confirm(`Delete the ${r.month_label} KPI record for ${r.employee_name}? This cannot be undone.`)) return
@@ -2585,7 +2608,8 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
     <div className="space-y-6">
       {editRecord && <EditScoreModal record={editRecord} currentUser={currentUser} onSaved={onEditRecord} onClose={() => setEditRecord(null)} showToast={showToast} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div><h2 className="text-xl font-bold text-blue-900">Employee Performance</h2><p className="text-sm text-gray-500">{empRecords.length} months tracked</p></div>
+        <div><h2 className="text-xl font-bold text-blue-900">Employee Performance</h2><p className="text-sm text-gray-500">{isAgent ? 'Your KPI history' : `${empRecords.length} months tracked`}</p></div>
+        {!isAgent && (
         <div className="flex flex-wrap gap-2 items-center">
           <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs">
             {(['active','inactive'] as const).map(s => (
@@ -2597,7 +2621,15 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
             {eligibleEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
         </div>
+        )}
       </div>
+      {isAgent && !myEmployee && (
+        <div className="text-center py-16 text-gray-400">
+          <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/>
+          <p className="font-medium">No employee record found</p>
+          <p className="text-sm mt-1">We couldn't match your login to an employee record. Contact your admin.</p>
+        </div>
+      )}
       {emp && <>
         <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4 flex-wrap">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">{emp.name.split(',')[0]?.charAt(0)||'?'}</div>
