@@ -1284,7 +1284,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     'resources': { label: 'Resources', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
     'hris-records': { label: 'Employee Records', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
     'hris-timetracker': { label: 'Time Tracker', icon: <Clock className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
-    'opex': { label: 'Expenses', icon: <FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-teal-400' },
+    'opex': { label: 'Operational Expense', icon: <FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-teal-400' },
     'hris-invoice': { label: 'Invoice', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-teal-400' },
     'entry': { label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
     'observations': { label: 'Observations', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
@@ -1450,7 +1450,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           <SectionHeader sectionKey="finance" label="Finance" hasActive={['opex','hris-invoice'].includes(view)} />
           {!collapsed.finance && (
             <div className="px-2 pb-1 space-y-0.5">
-              <NavItem id="opex" label="Expenses" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
+              <NavItem id="opex" label="Operational Expense" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
               <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
             </div>
           )}
@@ -9178,17 +9178,24 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredEntries.map(e => editId === e.id ? (
-                  <tr key={e.id} className="bg-blue-50">
-                    <td className="px-4 py-2"><input type="date" value={editForm.expense_date} onChange={ev=>setEditForm({...editForm, expense_date: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs w-32"/></td>
-                    <td className="px-4 py-2"><select value={editForm.category} onChange={ev=>setEditForm({...editForm, category: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs">{OPEX_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
-                    <td className="px-4 py-2"><select value={editForm.client} onChange={ev=>setEditForm({...editForm, client: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs">{OPEX_CLIENTS.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
-                    <td className="px-4 py-2"><input value={editForm.description} onChange={ev=>setEditForm({...editForm, description: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs w-full"/></td>
-                    <td className="px-4 py-2"><input type="number" step="0.01" value={editForm.amount} onChange={ev=>setEditForm({...editForm, amount: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs w-24 text-right"/></td>
+                  <Fragment key={e.id}>
+                  <tr className="bg-blue-50/50">
+                    <td colSpan={6} className="px-4 pt-2 pb-1 text-xs text-gray-500">
+                      Editing this entry — currently: <span className="font-medium text-gray-700">{e.category}</span> · <span className="font-medium text-gray-700">{e.client || 'Unassigned'}</span> · <span className="font-medium text-gray-700">{e.description}</span> · <span className="font-medium text-gray-700">{formatPHP(Number(e.amount))}</span>
+                    </td>
+                  </tr>
+                  <tr className="bg-blue-50">
+                    <td className="px-4 py-2"><input type="date" value={editForm.expense_date} onChange={ev=>setEditForm({...editForm, expense_date: ev.target.value})} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 bg-white w-full min-w-[150px]"/></td>
+                    <td className="px-4 py-2"><select value={editForm.category} onChange={ev=>setEditForm({...editForm, category: ev.target.value})} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 bg-white w-full min-w-[190px]">{OPEX_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+                    <td className="px-4 py-2"><select value={editForm.client} onChange={ev=>setEditForm({...editForm, client: ev.target.value})} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 bg-white w-full min-w-[140px]">{OPEX_CLIENTS.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+                    <td className="px-4 py-2"><input value={editForm.description} onChange={ev=>setEditForm({...editForm, description: ev.target.value})} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 bg-white w-full min-w-[200px]"/></td>
+                    <td className="px-4 py-2"><input type="number" step="0.01" value={editForm.amount} onChange={ev=>setEditForm({...editForm, amount: ev.target.value})} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 bg-white w-full min-w-[110px] text-right"/></td>
                     <td className="px-4 py-2 text-right whitespace-nowrap">
                       <button onClick={saveEdit} disabled={saving} className="text-emerald-600 hover:text-emerald-800 text-xs font-medium mr-2">Save</button>
                       <button onClick={()=>setEditId(null)} className="text-gray-400 hover:text-gray-600 text-xs">Cancel</button>
                     </td>
                   </tr>
+                  </Fragment>
                 ) : (
                   <tr key={e.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{new Date(e.expense_date).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
