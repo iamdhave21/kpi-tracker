@@ -6693,6 +6693,11 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
             📌 <strong>Reference only, for now.</strong> This grid documents the intended access rules per role. Some rows are already enforced in the app (see ✅ below); most Add/Edit/Delete/Approve columns are not yet wired up to an actual permissions system -- that's a bigger project, still pending. Changing a cell here does nothing yet.
           </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-600 flex flex-wrap items-center gap-4">
+            <span className="font-semibold text-gray-700">Coaching & 1-on-1 badge:</span>
+            <span className="flex items-center gap-1.5"><span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">1</span> Agent's own pending acknowledgment (their action needed)</span>
+            <span className="flex items-center gap-1.5"><span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">1</span> Team Lead/Admin/Super Admin oversight count (someone else's pending item, not yours)</span>
+          </div>
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
