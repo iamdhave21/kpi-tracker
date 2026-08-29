@@ -2799,6 +2799,22 @@ function pulseIsAtRisk(row: any): boolean {
   return (avg !== null && avg <= 2.5) || (typeof row.retention === 'number' && row.retention <= 2)
 }
 
+function PulseRatingRow({ text, value, onChange, scaleLabels }: { text: string, value: number|undefined, onChange: (n: number) => void, scaleLabels: Record<number,string> }) {
+  return (
+    <div className="py-2">
+      <p className="text-sm text-gray-700 mb-1.5">{text}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {[1,2,3,4,5].map(n => (
+          <button key={n} type="button" onClick={() => onChange(n)}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${value===n ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+            {n} · {scaleLabels[n]}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPreviewing }:
   { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, isPreviewing?: boolean }) {
   const canSubmit = userRole !== 'super_admin'
@@ -2899,22 +2915,6 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
     setSavingNote(null)
   }
 
-  function RatingRow({ qKey, text, scaleLabels }: { qKey: string, text: string, scaleLabels: Record<number,string> }) {
-    return (
-      <div className="py-2">
-        <p className="text-sm text-gray-700 mb-1.5">{text}</p>
-        <div className="flex flex-wrap gap-1.5">
-          {[1,2,3,4,5].map(n => (
-            <button key={n} type="button" onClick={() => setForm(f => ({...f, [qKey]: n}))}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${form[qKey]===n ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
-              {n} · {scaleLabels[n]}
-            </button>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="max-w-[1600px] mx-auto space-y-6">
       <div className="flex items-center gap-3">
@@ -2933,38 +2933,50 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
         </div>
       )}
 
-      {activeTab === 'submit' && canSubmit && (
-        checkingMine ? <div className="text-center py-12 text-gray-400">Loading...</div> :
-        !myEmployee ? (
-          <div className="text-center py-16 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">No employee record found</p><p className="text-sm mt-1">We couldn't match your login to an employee record. Contact your admin.</p></div>
-        ) : mySubmission ? (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
-            <p className="text-emerald-800 font-medium">✓ You've already checked in for the week of {new Date(currentWeek).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})}.</p>
-            <p className="text-sm text-emerald-600 mt-1">Thanks for taking a moment for this. See you again next week!</p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
-            {PULSE_CATEGORIES.map(cat => (
-              <div key={cat.key}>
-                <h3 className="font-semibold text-blue-900 text-sm mb-1">{cat.label}</h3>
-                <div className="divide-y divide-gray-100">
-                  {cat.questions.map(q => <RatingRow key={q.key} qKey={q.key} text={q.text} scaleLabels={PULSE_SCALE_LABELS} />)}
+      {activeTab === 'submit' && canSubmit && (() => {
+        try {
+          if (checkingMine) return <div className="text-center py-12 text-gray-400">Loading...</div>
+          if (!myEmployee) return (
+            <div className="text-center py-16 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">No employee record found</p><p className="text-sm mt-1">We couldn't match your login ({currentUser || 'unknown email'}) to an employee record. Contact your admin.</p></div>
+          )
+          if (mySubmission) return (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
+              <p className="text-emerald-800 font-medium">✓ You've already checked in for the week of {new Date(currentWeek).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})}.</p>
+              <p className="text-sm text-emerald-600 mt-1">Thanks for taking a moment for this. See you again next week!</p>
+            </div>
+          )
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+              {PULSE_CATEGORIES.map(cat => (
+                <div key={cat.key}>
+                  <h3 className="font-semibold text-blue-900 text-sm mb-1">{cat.label}</h3>
+                  <div className="divide-y divide-gray-100">
+                    {cat.questions.map(q => <PulseRatingRow key={q.key} text={q.text} value={form[q.key]} onChange={(n) => setForm(f => ({...f, [q.key]: n}))} scaleLabels={PULSE_SCALE_LABELS} />)}
+                  </div>
                 </div>
+              ))}
+              <div>
+                <h3 className="font-semibold text-blue-900 text-sm mb-1">One More Thing</h3>
+                <PulseRatingRow text="How likely are you to still be working here in 6 months?" value={form.retention} onChange={(n) => setForm(f => ({...f, retention: n}))} scaleLabels={RETENTION_SCALE_LABELS} />
               </div>
-            ))}
-            <div>
-              <h3 className="font-semibold text-blue-900 text-sm mb-1">One More Thing</h3>
-              <RatingRow qKey="retention" text="How likely are you to still be working here in 6 months?" scaleLabels={RETENTION_SCALE_LABELS} />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Anything else you'd like to share? (optional)</label>
+                <textarea value={feedback} onChange={e=>setFeedback(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Only visible to your Team Lead and above."/>
+              </div>
+              <p className="text-xs text-gray-400">Your answers are visible to your Team Lead and above -- this isn't anonymous, but it also isn't shared beyond leadership.</p>
+              <button onClick={submitPulse} disabled={submitting} className="bg-blue-900 hover:bg-blue-950 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50">{submitting ? 'Submitting...' : 'Submit Check-in'}</button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Anything else you'd like to share? (optional)</label>
-              <textarea value={feedback} onChange={e=>setFeedback(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Only visible to your Team Lead and above."/>
+          )
+        } catch (err) {
+          console.error('Pulse Check submit render error:', err)
+          return (
+            <div className="text-center py-12 text-red-500 bg-red-50 border border-red-200 rounded-xl">
+              <p className="font-medium">Something went wrong loading this page.</p>
+              <p className="text-xs text-red-400 mt-2 font-mono break-all px-4">{String(err instanceof Error ? err.message : err)}</p>
             </div>
-            <p className="text-xs text-gray-400">Your answers are visible to your Team Lead and above -- this isn't anonymous, but it also isn't shared beyond leadership.</p>
-            <button onClick={submitPulse} disabled={submitting} className="bg-blue-900 hover:bg-blue-950 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50">{submitting ? 'Submitting...' : 'Submit Check-in'}</button>
-          </div>
-        )
-      )}
+          )
+        }
+      })()}
 
       {activeTab === 'manage' && canManage && (
         <div className="space-y-4">
@@ -8995,7 +9007,13 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
       const ledTeamIds = (teamsData || []).filter((t:any) => t.team_lead_id === empData.id).map((t:any) => t.id)
       if (ledTeamIds.length === 0) { if (!cancelled) setMyTeamEmpIds(new Set()); return }
       const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
-      if (!cancelled) setMyTeamEmpIds(new Set((memberData || []).map((m:any) => m.employee_id)))
+      // Include the Team Lead's own employee id too -- otherwise they never
+      // see their own row in this table at all, only their team members',
+      // meaning their own document/pulse compliance was invisible even to
+      // themselves.
+      const ids = new Set((memberData || []).map((m:any) => m.employee_id))
+      ids.add(empData.id)
+      if (!cancelled) setMyTeamEmpIds(ids)
     })()
     return () => { cancelled = true }
   }, [isTL, currentUser])
