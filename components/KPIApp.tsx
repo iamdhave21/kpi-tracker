@@ -2816,8 +2816,16 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 
   useEffect(() => {
     if (!canSubmit || !myEmployee) { setCheckingMine(false); return }
-    supabase.from('pulse_surveys').select('*').eq('employee_id', myEmployee.id).eq('week_start', currentWeek).maybeSingle()
-      .then(({data}) => { setMySubmission(data || null); setCheckingMine(false) })
+    (async () => {
+      try {
+        const { data } = await supabase.from('pulse_surveys').select('*').eq('employee_id', myEmployee.id).eq('week_start', currentWeek).maybeSingle()
+        setMySubmission(data || null)
+      } catch (err) {
+        console.error('Pulse check lookup failed:', err)
+      } finally {
+        setCheckingMine(false)
+      }
+    })()
   }, [myEmployee?.id, currentWeek])
 
   async function submitPulse() {
@@ -2865,11 +2873,18 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
     if (!canManage) return
     if (isTL && teamEmpIds === null) return
     setLoadingSubs(true)
-    supabase.from('pulse_surveys').select('*').eq('week_start', weekFilter).order('employee_name')
-      .then(({data}) => {
+    ;(async () => {
+      try {
+        const { data } = await supabase.from('pulse_surveys').select('*').eq('week_start', weekFilter).order('employee_name')
         const rows = isTL ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
-        setSubs(rows); setLoadingSubs(false)
-      })
+        setSubs(rows)
+      } catch (err) {
+        console.error('Pulse submissions load failed:', err)
+        setSubs([])
+      } finally {
+        setLoadingSubs(false)
+      }
+    })()
   }, [canManage, isTL, teamEmpIds, weekFilter])
 
   const scopedActiveEmployees = (isTL ? employees.filter(e => teamEmpIds?.has(e.id)) : employees).filter(e => e.active)
