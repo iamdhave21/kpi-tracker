@@ -9002,7 +9002,7 @@ const OPEX_CATEGORIES = [
   'Team Building/Events', 'Incentives & Prizes', 'Transportation/Meal Allowance',
   'Office Supplies', 'Uniform/Equipment Allowance', 'Other/Miscellaneous',
 ]
-const OPEX_CLIENTS = ['General', ...CLIENTS]
+const OPEX_CLIENTS = CLIENTS
 
 function formatPHP(n: number): string {
   return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -9016,7 +9016,7 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
   const [clientFilter, setClientFilter] = useState('All')
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
-  const emptyForm = { category: OPEX_CATEGORIES[0], client: 'General', description: '', amount: '', expense_date: new Date().toISOString().split('T')[0] }
+  const emptyForm = { category: OPEX_CATEGORIES[0], client: OPEX_CLIENTS[0], description: '', amount: '', expense_date: new Date().toISOString().split('T')[0] }
   const [form, setForm] = useState(emptyForm)
   const [editId, setEditId] = useState<string|null>(null)
   const [editForm, setEditForm] = useState(emptyForm)
@@ -9037,7 +9037,7 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
     }
     setSaving(true)
     const { error } = await supabase.from('opex_entries').insert({
-      category: form.category, client: form.client === 'General' ? null : form.client,
+      category: form.category, client: form.client,
       description: form.description.trim(), amount: Number(form.amount), expense_date: form.expense_date,
       added_by: currentUser,
     })
@@ -9048,7 +9048,7 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
 
   function startEdit(e: any) {
     setEditId(e.id)
-    setEditForm({ category: e.category, client: e.client || 'General', description: e.description || '', amount: String(e.amount), expense_date: e.expense_date })
+    setEditForm({ category: e.category, client: e.client || OPEX_CLIENTS[0], description: e.description || '', amount: String(e.amount), expense_date: e.expense_date })
   }
 
   async function saveEdit() {
@@ -9058,7 +9058,7 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
     }
     setSaving(true)
     const { error } = await supabase.from('opex_entries').update({
-      category: editForm.category, client: editForm.client === 'General' ? null : editForm.client,
+      category: editForm.category, client: editForm.client,
       description: editForm.description.trim(), amount: Number(editForm.amount), expense_date: editForm.expense_date,
     }).eq('id', editId)
     if (error) showToast(error.message, 'error')
@@ -9073,7 +9073,7 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
   }
 
   const monthEntries = entries.filter(e => e.expense_date?.startsWith(monthFilter))
-  const filteredEntries = monthEntries.filter(e => clientFilter === 'All' || (clientFilter === 'General' ? !e.client : e.client === clientFilter))
+  const filteredEntries = monthEntries.filter(e => clientFilter === 'All' || e.client === clientFilter)
   const totalThisMonth = monthEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0)
   const totalFiltered = filteredEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0)
 
@@ -9082,7 +9082,7 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
   const categoryBreakdown = Object.entries(byCategory).sort((a,b) => b[1] - a[1])
 
   const byClient: Record<string, number> = {}
-  monthEntries.forEach(e => { const c = e.client || 'General'; byClient[c] = (byClient[c] || 0) + Number(e.amount || 0) })
+  monthEntries.forEach(e => { const c = e.client || 'Unassigned'; byClient[c] = (byClient[c] || 0) + Number(e.amount || 0) })
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-6">
@@ -9193,7 +9193,7 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
                   <tr key={e.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{new Date(e.expense_date).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
                     <td className="px-4 py-2.5 text-gray-700">{e.category}</td>
-                    <td className="px-4 py-2.5">{e.client ? <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${CLIENT_COLORS[e.client] || 'bg-gray-100 text-gray-600'}`}>{e.client}</span> : <span className="text-xs text-gray-400">General</span>}</td>
+                    <td className="px-4 py-2.5">{e.client ? <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${CLIENT_COLORS[e.client] || 'bg-gray-100 text-gray-600'}`}>{e.client}</span> : <span className="text-xs text-gray-400">Unassigned</span>}</td>
                     <td className="px-4 py-2.5 text-gray-600">{e.description}</td>
                     <td className="px-4 py-2.5 text-right font-medium text-gray-800 whitespace-nowrap">{formatPHP(Number(e.amount))}</td>
                     <td className="px-4 py-2.5 text-right whitespace-nowrap">
