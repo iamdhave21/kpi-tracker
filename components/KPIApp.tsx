@@ -6923,6 +6923,79 @@ function HandoverDoc({ items }: { items: MatrixItem[] }) {
   )
 }
 
+// -- Access Guide table (shared by the Access Guide tab and the Manual tab,
+// so it's only ever maintained in one place) ---------------------------------
+const ACCESS_GUIDE_ROWS: ({ section: string, row?: undefined, note?: undefined } | { section?: undefined, row: string[], note?: string })[] = [
+  { section: 'Home' },
+  { row: ['Announcements', 'ADD / ACKNOWLEDGE','YES','ADD / ACKNOWLEDGE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+  { row: ['Gaming Hub', 'ADD / EDIT','YES','ADD / EDIT','YES','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'], note: '✅ Approve flow is real (game_score_submissions)' },
+  { section: 'Operations' },
+  { row: ['Tickets', 'YES - Can Add','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
+  { row: ['Task', 'Yes - Can Update','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
+  { row: ['BCP', 'Yes - can view','YES','ADD','YES','ADD / EDIT','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
+  { section: 'Directory' },
+  { row: ['Links', 'ADD','YES (own client)','ADD / EDIT','YES (own client)','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'], note: '✅ Client-scoped for Agent/TL' },
+  { row: ['Resources', 'ADD','YES','ADD / EDIT','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'] },
+  { section: 'HRIS' },
+  { row: ['Hiring Pipeline', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent/TL (separate app -- link visibility only)' },
+  { row: ['Employee Records', 'ADD / EDIT','YES (own)','ADD / EDIT','YES (own + team)','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'], note: '✅ Weekly Pulse compliance column added; TL now sees own row too' },
+  { row: ['Time Tracker', 'NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
+  { section: 'Finance' },
+  { row: ['Operational Expense', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ New -- Admin/Super Admin only, real RLS from day one' },
+  { row: ['Invoice', 'NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'], note: '✅ Moved from HRIS, now gated Admin/Super Admin only. Still a placeholder ("Coming Soon") -- no data yet' },
+  { section: 'Team Lead Tools' },
+  { row: ['KPI Entry', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+  { row: ['Observations', 'YES','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+  { row: ['Coaching 1 on 1', 'YES','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ View As is now write-blocked (no fake acknowledgments/sessions)' },
+  { row: ['Operating Cadence', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent' },
+  { row: ['TL Scorecard', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent' },
+  { section: 'Performance' },
+  { row: ['Dashboard', 'YES','YES (own client)','ADD / EDIT / DELETE','YES (own client)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Client tabs scoped for Agent/TL' },
+  { row: ['Employee Trends', 'YES','YES (own only)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Agent locked to own record' },
+  { row: ['Weekly Pulse Check', 'ADD (own)','YES (own)','ADD (own) + notes (team)','YES (own + team)','EDIT notes / DELETE','YES (all)','EDIT notes / DELETE','YES (all)'], note: '✅ New -- resignation-risk check-in, real RLS from day one, View As write-blocked, tied into Employee Records compliance. Super Admin does not submit, only reviews' },
+  { section: 'People' },
+  { row: ['Teams', 'NA','NO','NA','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Client-scoping pending -- teams have no client field yet' },
+  { row: ['Org Chart', 'NA','NO','NA','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+  { section: 'System' },
+  { row: ['Matrix', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+  { row: ['Settings', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Currently Super Admin only in the app -- Admin row here is aspirational' },
+]
+
+function AccessGuideTable() {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            <th className="text-left px-3 py-2 font-semibold text-gray-500 sticky left-0 bg-gray-50">Screen</th>
+            <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Agent</th>
+            <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Team Lead</th>
+            <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Admin</th>
+            <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Super Admin</th>
+          </tr>
+          <tr className="bg-gray-50 border-b border-gray-200 text-gray-400">
+            <th className="px-3 py-1 sticky left-0 bg-gray-50"></th>
+            <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
+            <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
+            <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
+            <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ACCESS_GUIDE_ROWS.map((r, i) => r.section ? (
+            <tr key={i}><td colSpan={9} className="px-3 py-1.5 bg-blue-50 text-blue-800 font-semibold">{r.section}</td></tr>
+          ) : (
+            <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 align-top">
+              <td className="px-3 py-2 font-medium text-gray-700 sticky left-0 bg-white">{r.row![0]}{r.note && <div className="text-[10px] font-normal text-gray-400 mt-0.5 max-w-[220px]">{r.note}</div>}</td>
+              {r.row!.slice(1).map((v, j) => <td key={j} className="px-3 py-2 text-gray-600 whitespace-nowrap">{v}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'|'manual'|'access'>(userRole === 'agent' ? 'password' : 'users')
   const [oldPassword, setOldPassword] = useState('')
@@ -7020,70 +7093,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
             <span className="flex items-center gap-1.5"><span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">1</span> Agent's own pending acknowledgment (their action needed)</span>
             <span className="flex items-center gap-1.5"><span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">1</span> Team Lead/Admin/Super Admin oversight count (someone else's pending item, not yours)</span>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left px-3 py-2 font-semibold text-gray-500 sticky left-0 bg-gray-50">Screen</th>
-                  <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Agent</th>
-                  <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Team Lead</th>
-                  <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Admin</th>
-                  <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Super Admin</th>
-                </tr>
-                <tr className="bg-gray-50 border-b border-gray-200 text-gray-400">
-                  <th className="px-3 py-1 sticky left-0 bg-gray-50"></th>
-                  <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
-                  <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
-                  <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
-                  <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  { section: 'Home' },
-                  { row: ['Announcements', 'ADD / ACKNOWLEDGE','YES','ADD / ACKNOWLEDGE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
-                  { row: ['Gaming Hub', 'ADD / EDIT','YES','ADD / EDIT','YES','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'], note: '✅ Approve flow is real (game_score_submissions)' },
-                  { section: 'Operations' },
-                  { row: ['Tickets', 'YES - Can Add','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
-                  { row: ['Task', 'Yes - Can Update','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
-                  { row: ['BCP', 'Yes - can view','YES','ADD','YES','ADD / EDIT','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
-                  { section: 'Directory' },
-                  { row: ['Links', 'ADD','YES (own client)','ADD / EDIT','YES (own client)','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'], note: '✅ Client-scoped for Agent/TL' },
-                  { row: ['Resources', 'ADD','YES','ADD / EDIT','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'] },
-                  { section: 'HRIS' },
-                  { row: ['Hiring Pipeline', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent/TL (separate app -- link visibility only)' },
-                  { row: ['Employee Records', 'ADD / EDIT','YES (own)','ADD / EDIT','YES (own + team)','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'], note: '✅ Weekly Pulse compliance column added; TL now sees own row too' },
-                  { row: ['Time Tracker', 'NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
-                  { section: 'Finance' },
-                  { row: ['Operational Expense', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ New -- Admin/Super Admin only, real RLS from day one' },
-                  { row: ['Invoice', 'NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'], note: '✅ Moved from HRIS, now gated Admin/Super Admin only. Still a placeholder ("Coming Soon") -- no data yet' },
-                  { section: 'Team Lead Tools' },
-                  { row: ['KPI Entry', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
-                  { row: ['Observations', 'YES','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
-                  { row: ['Coaching 1 on 1', 'YES','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ View As is now write-blocked (no fake acknowledgments/sessions)' },
-                  { row: ['Operating Cadence', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent' },
-                  { row: ['TL Scorecard', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent' },
-                  { section: 'Performance' },
-                  { row: ['Dashboard', 'YES','YES (own client)','ADD / EDIT / DELETE','YES (own client)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Client tabs scoped for Agent/TL' },
-                  { row: ['Employee Trends', 'YES','YES (own only)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Agent locked to own record' },
-                  { row: ['Weekly Pulse Check', 'ADD (own)','YES (own)','ADD (own) + notes (team)','YES (own + team)','EDIT notes / DELETE','YES (all)','EDIT notes / DELETE','YES (all)'], note: '✅ New -- resignation-risk check-in, real RLS from day one, View As write-blocked, tied into Employee Records compliance. Super Admin does not submit, only reviews' },
-                  { section: 'People' },
-                  { row: ['Teams', 'NA','NO','NA','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Client-scoping pending -- teams have no client field yet' },
-                  { row: ['Org Chart', 'NA','NO','NA','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
-                  { section: 'System' },
-                  { row: ['Matrix', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
-                  { row: ['Settings', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Currently Super Admin only in the app -- Admin row here is aspirational' },
-                ].map((r, i) => r.section ? (
-                  <tr key={i}><td colSpan={9} className="px-3 py-1.5 bg-blue-50 text-blue-800 font-semibold">{r.section}</td></tr>
-                ) : (
-                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 align-top">
-                    <td className="px-3 py-2 font-medium text-gray-700 sticky left-0 bg-white">{r.row![0]}{r.note && <div className="text-[10px] font-normal text-gray-400 mt-0.5 max-w-[220px]">{r.note}</div>}</td>
-                    {r.row!.slice(1).map((v, j) => <td key={j} className="px-3 py-2 text-gray-600 whitespace-nowrap">{v}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AccessGuideTable />
           <p className="text-xs text-gray-400">Client-scoping rows ("own client") apply once an employee's Client(s) Supported is set on their Employee record. Admin/Super Admin remain unrestricted unless noted.</p>
         </div>
       )}
@@ -7128,46 +7138,8 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
 
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-700 text-sm mb-1 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>Who Can Do What</h3>
-            <p className="text-xs text-gray-400 mb-4">General access pattern by role. Some features have finer-grained rules than shown here -- ask if you need the exact behavior for something specific.</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left px-3 py-2 font-medium text-gray-600">Feature</th>
-                  <th className="text-center px-3 py-2 font-medium text-gray-600">Agent</th>
-                  <th className="text-center px-3 py-2 font-medium text-gray-600">Team Lead</th>
-                  <th className="text-center px-3 py-2 font-medium text-gray-600">Admin</th>
-                  <th className="text-center px-3 py-2 font-medium text-gray-600">Super Admin</th>
-                </tr></thead>
-                <tbody>
-                  {[
-                    ['KPI scores -- view', 'View only', 'View', 'View', 'View'],
-                    ['KPI scores -- edit/delete', '—', '✓', '✓', '✓'],
-                    ['Compliance auto-calc', 'View only', 'View', 'View', 'View'],
-                    ['Tasks -- assign to others', '—', '✓', '✓', '✓'],
-                    ['Tasks -- visibility', 'Own only', 'Own + assigned by them', 'Own + assigned by them', 'Everyone'],
-                    ['Tickets -- manage/close', 'Own only', '✓', '✓', '✓'],
-                    ['Announcements -- post', '—', '✓', '✓', '✓'],
-                    ['Employee Records', '—', '—', '✓', '✓'],
-                    ['Employee Records -- own compliance % only', '✓', '✓', '(full access above)', '(full access above)'],
-                    ['Time Tracker', '—', '—', '✓', '✓'],
-                    ['Employees / Teams -- manage', '—', '—', '✓', '✓'],
-                    ['Directory Links -- manage', '—', '—', '✓', '✓'],
-                    ['TL Scorecard -- view', '—', 'Own only', 'Everyone', 'Everyone'],
-                    ['Team Compliance (acks) -- view', '—', 'Own team only', 'Everyone', 'Everyone'],
-                    ['Matrix (dev log)', '—', '—', '✓', '✓'],
-                    ['App Users -- create/edit roles', '—', '—', 'View', '✓'],
-                    ['Settings access', '—', '—', '—', '✓'],
-                  ].map(row => (
-                    <tr key={row[0]} className="border-b border-gray-50">
-                      <td className="px-3 py-2 font-medium text-gray-800">{row[0]}</td>
-                      {row.slice(1).map((cell, i) => (
-                        <td key={i} className={`px-3 py-2 text-center ${cell === '✓' ? 'text-emerald-600 font-semibold' : cell === '—' ? 'text-gray-300' : 'text-gray-500'}`}>{cell}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <p className="text-xs text-gray-400 mb-4">Full per-screen access rules by role. This is the same table as Settings → Access Guide -- kept in sync automatically.</p>
+            <AccessGuideTable />
             <p className="text-xs text-gray-400 mt-4">To change what a specific person can access, go to the <button onClick={()=>setActiveTab('users')} className="text-blue-700 hover:underline font-medium">App Users</button> tab and update their role. Per-user access grants beyond the 4 standard roles aren't supported yet -- let your admin know if you need something more granular.</p>
           </div>
         </div>
