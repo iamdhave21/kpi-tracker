@@ -1650,23 +1650,29 @@ export default function KPIApp() {
 
   useEffect(() => { if (user) loadData() }, [user])
 
-  // Load pending coaching acknowledgments count for viewers
+  // Load pending coaching acknowledgments count for viewers. Uses the
+  // EFFECTIVE (previewed) identity, not just the real one -- when Super
+  // Admin is previewing as someone else, this badge should reflect what
+  // THAT person would see, matching the rest of the previewed screens,
+  // rather than confusingly showing the real Super Admin's own unrelated
+  // pending count while everything else on screen shows the previewed
+  // person's empty state.
   useEffect(() => {
-    if (!user || (userRole !== 'agent' && userRole !== 'Team Lead' && userRole !== 'admin' && userRole !== 'super_admin')) return
+    if (!effectiveUser || (effectiveRole !== 'agent' && effectiveRole !== 'Team Lead' && effectiveRole !== 'admin' && effectiveRole !== 'super_admin')) return
     async function loadPending() {
-      if (userRole === 'agent') {
+      if (effectiveRole === 'agent') {
         // Agents: count sessions assigned to them requiring acknowledgment
         const { data } = await supabase.from('coaching_logs')
           .select('id')
-          .eq('employee_email', user!.toLowerCase())
+          .eq('employee_email', effectiveUser!.toLowerCase())
           .eq('requires_acknowledgment', true)
           .eq('agent_acknowledged', false)
         setPendingCoachingCount((data || []).length)
-      } else if (userRole === 'Team Lead') {
+      } else if (effectiveRole === 'Team Lead') {
         // Team Leads: same team-scoping as the sessions list itself
         // (teams.team_lead_id -> team_members -> employee emails), so the
         // badge count matches what they'll actually see in the panel.
-        const myEmp = employees.find(e => e.email?.toLowerCase() === user!.toLowerCase())
+        const myEmp = employees.find(e => e.email?.toLowerCase() === effectiveUser!.toLowerCase())
         if (!myEmp) { setPendingCoachingCount(0); return }
         const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
         const ledTeamIds = (teamsData || []).filter((t: any) => t.team_lead_id === myEmp.id).map((t: any) => t.id)
@@ -1692,7 +1698,7 @@ export default function KPIApp() {
       }
     }
     loadPending()
-  }, [user, userRole, employees])
+  }, [effectiveUser, effectiveRole, employees])
 
   // Load pending tasks count -- matches the same scoping TasksPanel itself
   // uses: Agent sees only their own, Team Lead/Admin see own + assigned by
@@ -1874,16 +1880,16 @@ export default function KPIApp() {
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} onAckChange={async () => {
               // Mirrors the same scoping as the initial badge-count effect
               // above: agent -> own sessions, Team Lead -> own team only,
-              // Admin/Super Admin -> unscoped. Uses the REAL user/role, not
-              // the previewed one -- the badge reflects your own actual
-              // pending items regardless of who you're previewing as.
-              if (userRole === 'agent') {
+              // Admin/Super Admin -> unscoped. Uses the EFFECTIVE (previewed)
+              // identity, matching the badge-count effect, so the badge
+              // stays consistent with whatever's actually on screen.
+              if (effectiveRole === 'agent') {
                 const { data } = await supabase.from('coaching_logs').select('id')
-                  .eq('employee_email', user!.toLowerCase())
+                  .eq('employee_email', effectiveUser!.toLowerCase())
                   .eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
                 setPendingCoachingCount((data || []).length)
-              } else if (userRole === 'Team Lead') {
-                const myEmp = employees.find(e => e.email?.toLowerCase() === user!.toLowerCase())
+              } else if (effectiveRole === 'Team Lead') {
+                const myEmp = employees.find(e => e.email?.toLowerCase() === effectiveUser!.toLowerCase())
                 if (!myEmp) { setPendingCoachingCount(0); return }
                 const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
                 const ledTeamIds = (teamsData || []).filter((t: any) => t.team_lead_id === myEmp.id).map((t: any) => t.id)
