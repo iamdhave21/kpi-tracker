@@ -20,7 +20,7 @@ const CLIENT_COLORS: Record<string, string> = { EMMA: 'bg-fuchsia-100 text-fuchs
 
 // User access roles — shown throughout the app (sidebar, Settings, banners).
 // Underlying role keys (super_admin/admin/team_lead/viewer) are unchanged in the DB.
-const ROLE_LABELS: Record<string, string> = { super_admin: 'Super Admin', admin: 'Manager', team_lead: 'Team Lead', viewer: 'Agent' }
+const ROLE_LABELS: Record<string, string> = { super_admin: 'Super Admin', admin: 'Manager', 'Team Lead': 'Team Lead', agent: 'Agent' }
 
 // -- Centralized permission helpers --------------------------------------
 // Single source of truth for "who can do what" across the app.
