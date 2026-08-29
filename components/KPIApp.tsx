@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1290,7 +1290,6 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     'cadence': { label: 'Operating Cadence', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
     'dashboard-month': { label: 'Dashboard', icon: <BarChart2 className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-emerald-400' },
     'dashboard-employee': { label: 'Employee Trends', icon: <TrendingUp className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-emerald-400' },
-    'dashboard-team': { label: 'Team View', icon: <Users className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-emerald-400' },
     'employees': { label: 'Employees', icon: <UserPlus className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-amber-400' },
     'teams': { label: 'Teams', icon: <Award className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-amber-400' },
     'org-chart': { label: 'Org Chart', icon: <Users className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-amber-400' },
@@ -1437,7 +1436,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-invoice','hris-timetracker'].includes(view)} />
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
-          <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>
+          {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>}
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
@@ -1457,12 +1456,11 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* PERFORMANCE */}
-      <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee','dashboard-team'].includes(view)} />
+      <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee'].includes(view)} />
       {!collapsed.perf && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
           <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
-          <NavItem id="dashboard-team" label="Team View" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
         </div>
       )}
 
@@ -1756,7 +1754,6 @@ export default function KPIApp() {
   const navItems = [
     { id: 'dashboard-month' as View, label: 'Performance', icon: <BarChart2 className="w-4 h-4" /> },
     { id: 'dashboard-employee' as View, label: 'Employee', icon: <TrendingUp className="w-4 h-4" /> },
-    { id: 'dashboard-team' as View, label: 'Team View', icon: <Users className="w-4 h-4" /> },
     { id: 'entry' as View, label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4" /> },
     { id: 'employees' as View, label: 'Employees', icon: <UserPlus className="w-4 h-4" /> },
     { id: 'teams' as View, label: 'Teams', icon: <Award className="w-4 h-4" /> },
@@ -1836,7 +1833,7 @@ export default function KPIApp() {
             </div>
           )}
           {/* Global background for non-performance views */}
-          {!(['dashboard-month','dashboard-employee','dashboard-team','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
+          {!(['dashboard-month','dashboard-employee','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
             <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
               <img src={bgUrl} alt="" className="w-full h-full object-cover" style={{filter:'blur(0px) brightness(0.60)'}} />
               <div className="absolute inset-0 bg-blue-950/25" />
@@ -1847,15 +1844,14 @@ export default function KPIApp() {
           {(view === 'announcements' || view === 'gaming-hub') ? (
             <HomeScreen currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} onBgChange={setBgUrl} />
           ) : (
-          <div className={`px-4 pt-4 pb-6 relative z-10 ${['org-chart','dashboard-month','dashboard-employee','dashboard-team'].includes(view) ? 'w-full max-w-[1600px] mx-auto' : 'max-w-6xl mx-auto'}`}>
-          <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'dashboard-team' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
+          <div className={`px-4 pt-4 pb-6 relative z-10 ${['org-chart','dashboard-month','dashboard-employee'].includes(view) ? 'w-full max-w-[1600px] mx-auto' : 'max-w-6xl mx-auto'}`}>
+          <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
         {loading ? (
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
         ) : (
           <>
             {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
-            {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} />}
             {view === 'entry' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={effectiveUser} />}
             {view === 'entry' && effectiveRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
             {view === 'employees' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
