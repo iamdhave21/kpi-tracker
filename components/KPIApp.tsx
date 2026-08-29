@@ -1504,8 +1504,33 @@ export default function KPIApp() {
     supabase.from('app_settings').select('value').eq('key','announcement_bg').single()
       .then(({data}) => { if (data?.value) setBgUrl(data.value) })
   }, [])
-  const [previewAs, setPreviewAs] = useState<'self'|'agent'>('self')
-  const effectiveRole = previewAs === 'agent' ? 'agent' : userRole
+  const [previewEmployeeEmail, setPreviewEmployeeEmail] = useState<string>('') // '' = not previewing, viewing as self
+  const [previewableUsers, setPreviewableUsers] = useState<{email: string, name: string, role: string}[]>([])
+  const previewTarget = previewEmployeeEmail ? previewableUsers.find(p => p.email === previewEmployeeEmail) : null
+  // "View As" is a client-side/navigation simulation only -- it changes what
+  // the UI shows and how it filters, but every actual Supabase query still
+  // runs under YOUR real, authenticated Google identity. Any table with
+  // tightened RLS (e.g. coaching_logs) will still return data based on who
+  // you really are, not who you're previewing -- see the pending RLS
+  // hardening project for the rest of the tables this doesn't yet cover.
+  const effectiveRole = previewTarget ? previewTarget.role : userRole
+  const effectiveUser = previewTarget ? previewTarget.email : (user || '')
+  useEffect(() => {
+    if (userRole !== 'super_admin') return
+    async function loadPreviewableUsers() {
+      const [{ data: users }, { data: emps }] = await Promise.all([
+        supabase.from('app_users').select('email, role').eq('active', true),
+        supabase.from('employees').select('email, name').eq('active', true),
+      ])
+      const empByEmail = new Map((emps || []).filter(e => e.email).map(e => [e.email!.toLowerCase(), e.name]))
+      const list = (users || [])
+        .filter(u => u.email)
+        .map(u => ({ email: u.email as string, role: u.role as string, name: empByEmail.get((u.email as string).toLowerCase()) || (u.email as string) }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      setPreviewableUsers(list)
+    }
+    loadPreviewableUsers()
+  }, [userRole])
   const [view, setView] = useState<View>('announcements')
   const [perfView, setPerfView] = useState<PerfView>('monthly')
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -1767,7 +1792,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-64 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={userRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={effectiveRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
 
         </aside>
 
@@ -1776,6 +1801,40 @@ export default function KPIApp() {
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto relative">
+          {/* Preview mode banner -- Super Admin only, since this exposes every
+              active user's name/role for selection. Placed above the view
+              switch so it's reachable from every screen, including
+              Announcements/Gaming Hub. */}
+          {userRole === 'super_admin' && (
+            <div className={`m-3 flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl text-sm font-medium relative z-20 ${previewTarget ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {previewTarget ? <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0"/> : <Shield className="w-4 h-4 text-blue-500 flex-shrink-0"/>}
+                {previewTarget ? (
+                  <span className="truncate">Previewing as <strong>{previewTarget.name}</strong> ({ROLE_LABELS[previewTarget.role] || previewTarget.role}) — real database access still uses your own account</span>
+                ) : (
+                  <>
+                    <span>View As:</span>
+                    <select
+                      value={previewEmployeeEmail}
+                      onChange={e => setPreviewEmployeeEmail(e.target.value)}
+                      className="border border-blue-200 rounded-lg px-2 py-1 text-sm text-blue-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 max-w-[260px]"
+                    >
+                      <option value="">Myself (Super Admin — full access)</option>
+                      {previewableUsers.filter(p => p.email.toLowerCase() !== (user||'').toLowerCase()).map(p => (
+                        <option key={p.email} value={p.email}>{p.name} — {ROLE_LABELS[p.role] || p.role}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </div>
+              {previewTarget && (
+                <button onClick={() => setPreviewEmployeeEmail('')}
+                  className="px-3 py-1 rounded-lg text-xs font-bold transition bg-amber-200 hover:bg-amber-300 text-amber-900 flex-shrink-0">
+                  ← Back to Super Admin View
+                </button>
+              )}
+            </div>
+          )}
           {/* Global background for non-performance views */}
           {!(['dashboard-month','dashboard-employee','dashboard-team','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
             <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
@@ -1786,53 +1845,42 @@ export default function KPIApp() {
         <div className="h-full animate-fadeIn relative z-10">
           {/* Announcements & Gaming Hub — full bleed, no padding wrapper */}
           {(view === 'announcements' || view === 'gaming-hub') ? (
-            <HomeScreen currentUser={user || ''} userRole={userRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} onBgChange={setBgUrl} />
+            <HomeScreen currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} onBgChange={setBgUrl} />
           ) : (
           <div className={`px-4 pt-4 pb-6 relative z-10 ${['org-chart','dashboard-month','dashboard-employee','dashboard-team'].includes(view) ? 'w-full max-w-[1600px] mx-auto' : 'max-w-6xl mx-auto'}`}>
           <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'dashboard-team' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
-          {/* Preview mode banner */}
-          {(userRole === 'super_admin' || userRole === 'admin') && (
-            <div className={`mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium ${previewAs === 'agent' ? 'bg-amber-50 border border-amber-300 text-amber-800' : 'bg-blue-50 border border-blue-200 text-blue-700'}`}>
-              <div className="flex items-center gap-2">
-                {previewAs === 'agent' ? <AlertCircle className="w-4 h-4 text-amber-500"/> : <Shield className="w-4 h-4 text-blue-500"/>}
-                {previewAs === 'agent' ? 'Previewing as Agent — notes and edits are hidden' : `Viewing as ${ROLE_LABELS[userRole] || 'Admin'} — full access`}
-              </div>
-              <button onClick={() => setPreviewAs(previewAs === 'agent' ? 'self' : 'agent')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${previewAs === 'agent' ? 'bg-amber-200 hover:bg-amber-300 text-amber-900' : 'bg-blue-200 hover:bg-blue-300 text-blue-900'}`}>
-                {previewAs === 'agent' ? `← Back to ${ROLE_LABELS[userRole] || 'Admin'} View` : '👁 Preview as Agent'}
-              </button>
-            </div>
-          )}
         {loading ? (
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
         ) : (
           <>
-            {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={user} userRole={effectiveRole} />}
-            {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={user} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
-            {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={user} userRole={effectiveRole} onEditRecord={() => loadData()} />}
-            {view === 'entry' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={user} />}
-            {view === 'entry' && userRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
-            {view === 'employees' && (userRole === 'super_admin' || userRole === 'admin') && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={user} userRole={userRole} />}
-            {view === 'employees' && !(userRole === 'super_admin' || userRole === 'admin') && <NoAccessPage userRole={userRole} onBack={() => setView('announcements')} />}
-            {view === 'teams' && <TeamManager employees={employees} showToast={showToast} userRole={userRole} />}
-            {view === 'observations' && (userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <ObservationsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} />}
-            {view === 'observations' && userRole === 'agent' && <MyObservations employees={employees} currentUser={user} />}
-            {view === 'matrix' && (userRole === 'super_admin' || userRole === 'admin') && (
+            {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
+            {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
+            {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} />}
+            {view === 'entry' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={effectiveUser} />}
+            {view === 'entry' && effectiveRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
+            {view === 'employees' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
+            {view === 'employees' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'teams' && <TeamManager employees={employees} showToast={showToast} userRole={effectiveRole} />}
+            {view === 'observations' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <ObservationsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'observations' && effectiveRole === 'agent' && <MyObservations employees={employees} currentUser={effectiveUser} />}
+            {view === 'matrix' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && (
               <div className="max-w-4xl mx-auto space-y-6">
                 <div><h2 className="text-xl font-bold text-blue-900">Matrix</h2><p className="text-sm text-gray-500">Track features shipped, issues to fix, and SQL still pending in Supabase</p></div>
-                <MatrixPanel currentUser={user} showToast={showToast} />
+                <MatrixPanel currentUser={effectiveUser} showToast={showToast} />
               </div>
             )}
-            {view === 'matrix' && userRole !== 'super_admin' && userRole !== 'admin' && <NoAccessPage userRole={userRole} onBack={() => setView('announcements')} />}
-            {view === 'settings' && (userRole === 'super_admin' ? <SettingsPanel currentUser={user} userRole={userRole} showToast={showToast} /> : <NoAccessPage userRole={userRole} onBack={() => setView('announcements')} />)}
+            {view === 'matrix' && effectiveRole !== 'super_admin' && effectiveRole !== 'admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'settings' && (effectiveRole === 'super_admin' ? <SettingsPanel currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} /> : <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />)}
             {view === 'org-chart' && <OrgChart employees={employees} showToast={showToast} />}
-            {view === 'tickets' && <TicketsPanel currentUser={user || ''} userRole={userRole} showToast={showToast} />}
-            {view === 'tasks' && <TasksPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} onTasksChanged={() => setTasksRefreshKey(k => k+1)} />}
-            {view === 'bcp' && <BCPPanel employees={employees} currentUser={user || ''} userRole={userRole} showToast={showToast} />}
-            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={user} userRole={userRole} showToast={showToast} onAckChange={async () => {
+            {view === 'tickets' && <TicketsPanel currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'tasks' && <TasksPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} onTasksChanged={() => setTasksRefreshKey(k => k+1)} />}
+            {view === 'bcp' && <BCPPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} onAckChange={async () => {
               // Mirrors the same scoping as the initial badge-count effect
               // above: agent -> own sessions, Team Lead -> own team only,
-              // Admin/Super Admin -> unscoped.
+              // Admin/Super Admin -> unscoped. Uses the REAL user/role, not
+              // the previewed one -- the badge reflects your own actual
+              // pending items regardless of who you're previewing as.
               if (userRole === 'agent') {
                 const { data } = await supabase.from('coaching_logs').select('id')
                   .eq('employee_email', user!.toLowerCase())
@@ -1858,10 +1906,10 @@ export default function KPIApp() {
                 setPendingCoachingCount((data || []).length)
               }
             }} />}
-            {view === 'tl-scorecard' && <TLScorecard currentUser={user} userRole={userRole} showToast={showToast} records={records} />}
-            {view === 'hris-records' && <HRISRecords userRole={userRole} currentUser={user} showToast={showToast} />}
-            {view === 'hris-timetracker' && (userRole === 'super_admin' || userRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={user} showToast={showToast} onApplied={() => loadData()} />}
-            {view === 'hris-timetracker' && (userRole === 'agent' || userRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Time Tracker requires Manager access or higher</p></div>}
+            {view === 'tl-scorecard' && <TLScorecard currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} records={records} />}
+            {view === 'hris-records' && <HRISRecords userRole={effectiveRole} currentUser={effectiveUser} showToast={showToast} />}
+            {view === 'hris-timetracker' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={effectiveUser} showToast={showToast} onApplied={() => loadData()} />}
+            {view === 'hris-timetracker' && (effectiveRole === 'agent' || effectiveRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Time Tracker requires Manager access or higher</p></div>}
             {view === 'hris-invoice' && (
               <div className="max-w-lg mx-auto text-center py-20 space-y-4">
                 <div className="w-20 h-20 bg-pink-50 rounded-2xl flex items-center justify-center mx-auto">
@@ -1872,9 +1920,9 @@ export default function KPIApp() {
                 <span className="inline-block bg-pink-100 text-pink-700 text-xs font-semibold px-3 py-1.5 rounded-full">🚧 Coming Soon</span>
               </div>
             )}
-            {view === 'links' && <DirectoryLinks userRole={userRole} showToast={showToast} />}
-            {view === 'cadence' && <OperatingCadence currentUser={user} userRole={userRole} showToast={showToast} />}
-            {view === 'resources' && <ResourcesPanel userRole={userRole} showToast={showToast} />}
+            {view === 'links' && <DirectoryLinks userRole={effectiveRole} showToast={showToast} />}
+            {view === 'cadence' && <OperatingCadence currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'resources' && <ResourcesPanel userRole={effectiveRole} showToast={showToast} />}
           </>
         )}
           </div>
