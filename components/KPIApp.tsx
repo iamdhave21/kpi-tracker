@@ -1243,7 +1243,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     </button>
   )
 
-  const NavItem = ({ id, label, icon, badge, dotColor }: { id: string, label: string, icon: React.ReactNode, badge?: number, dotColor?: string }) => {
+  const NavItem = ({ id, label, icon, badge, badgeColor, dotColor }: { id: string, label: string, icon: React.ReactNode, badge?: number, badgeColor?: string, dotColor?: string }) => {
     const isFavorited = favoriteViews.includes(id)
     return (
       <button onClick={() => { setView(id); setMobileMenuOpen(false) }} className={`group ${itemStyle(id)}`}>
@@ -1259,7 +1259,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
             <Star className="w-3.5 h-3.5" fill={isFavorited ? 'currentColor' : 'none'} />
           </span>
         )}
-        {badge && badge > 0 ? <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center">{badge}</span> : view === id && !onToggleFavorite ? <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/> : null}
+        {badge && badge > 0 ? <span className={`${badgeColor || 'bg-red-500'} text-white text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center`}>{badge}</span> : view === id && !onToggleFavorite ? <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"/> : null}
       </button>
     )
   }
@@ -1449,7 +1449,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
           <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} dotColor="bg-indigo-400"/>
+          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor={userRole === 'agent' ? 'bg-red-500' : 'bg-amber-500'} dotColor="bg-indigo-400"/>
           {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
           {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
         </div>
