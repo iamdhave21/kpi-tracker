@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1456,11 +1456,12 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* PERFORMANCE */}
-      <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee'].includes(view)} />
+      <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee','pulse-check'].includes(view)} />
       {!collapsed.perf && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
           <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+          <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
         </div>
       )}
 
@@ -1858,6 +1859,7 @@ export default function KPIApp() {
           <>
             {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
+            {view === 'pulse-check' && <PulseCheckPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} isPreviewing={!!previewTarget} />}
             {view === 'entry' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={effectiveUser} />}
             {view === 'entry' && effectiveRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
             {view === 'employees' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
@@ -2745,6 +2747,282 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
           </div>
         </div>
       </>}
+    </div>
+  )
+}
+
+// -- Weekly Pulse Check (resignation-risk barometer) -------------------------
+const PULSE_CATEGORIES: { key: string, label: string, questions: { key: string, text: string }[] }[] = [
+  { key: 'work_env', label: 'Work Environment', questions: [
+    { key: 'work_env_1', text: 'I feel respected by my Team Lead/manager this week.' },
+    { key: 'work_env_2', text: 'I feel comfortable raising concerns or asking for help when I need it.' },
+    { key: 'work_env_3', text: 'I feel like part of a supportive team.' },
+  ]},
+  { key: 'wlb', label: 'Work-Life Balance', questions: [
+    { key: 'wlb_1', text: 'My workload this week was manageable.' },
+    { key: 'wlb_2', text: 'I was able to take breaks/log off on time this week.' },
+    { key: 'wlb_3', text: 'I do not feel overwhelmed by my current volume of work.' },
+  ]},
+  { key: 'reward', label: 'Recognition & Reward', questions: [
+    { key: 'reward_1', text: 'I feel my contributions are recognized and valued.' },
+    { key: 'reward_2', text: 'I feel fairly rewarded for the effort I put in.' },
+    { key: 'reward_3', text: 'I feel motivated by the growth opportunities available to me here.' },
+  ]},
+  { key: 'client', label: 'Client Interaction', questions: [
+    { key: 'client_1', text: 'The client I support treats me with respect.' },
+    { key: 'client_2', text: 'I feel supported by my TL/manager when a client issue comes up.' },
+    { key: 'client_3', text: 'My interactions with the client this week were generally positive.' },
+  ]},
+]
+const PULSE_RATED_KEYS = [...PULSE_CATEGORIES.flatMap(c => c.questions.map(q => q.key)), 'retention']
+const PULSE_SCALE_LABELS: Record<number,string> = { 1: 'Strongly Disagree', 2: 'Disagree', 3: 'Neutral', 4: 'Agree', 5: 'Strongly Agree' }
+const RETENTION_SCALE_LABELS: Record<number,string> = { 1: 'Very Unlikely', 2: 'Unlikely', 3: 'Not Sure', 4: 'Likely', 5: 'Very Likely' }
+
+function getWeekStart(d: Date = new Date()): string {
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day // Monday as start of week
+  const monday = new Date(d)
+  monday.setDate(d.getDate() + diff)
+  monday.setHours(0,0,0,0)
+  return monday.toISOString().split('T')[0]
+}
+function pulseAverage(row: any): number | null {
+  const vals = PULSE_RATED_KEYS.map(k => row[k]).filter((v: any) => typeof v === 'number')
+  if (!vals.length) return null
+  return vals.reduce((a: number,b: number) => a+b, 0) / vals.length
+}
+// "At risk" is intentionally a simple, transparent rule -- either the overall
+// average is low, OR the direct retention question alone is low (someone can
+// answer everything else fine and still say "unlikely to still be here").
+function pulseIsAtRisk(row: any): boolean {
+  const avg = pulseAverage(row)
+  return (avg !== null && avg <= 2.5) || (typeof row.retention === 'number' && row.retention <= 2)
+}
+
+function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPreviewing }:
+  { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, isPreviewing?: boolean }) {
+  const canSubmit = userRole !== 'super_admin'
+  const canManage = ['super_admin','admin','Team Lead'].includes(userRole)
+  const isTL = userRole === 'Team Lead'
+  const [activeTab, setActiveTab] = useState<'submit'|'manage'>(canSubmit ? 'submit' : 'manage')
+  const currentWeek = getWeekStart()
+
+  const myEmployee = employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
+  const [mySubmission, setMySubmission] = useState<any>(null)
+  const [checkingMine, setCheckingMine] = useState(true)
+  const [form, setForm] = useState<Record<string, number>>({})
+  const [feedback, setFeedback] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!canSubmit || !myEmployee) { setCheckingMine(false); return }
+    supabase.from('pulse_surveys').select('*').eq('employee_id', myEmployee.id).eq('week_start', currentWeek).maybeSingle()
+      .then(({data}) => { setMySubmission(data || null); setCheckingMine(false) })
+  }, [myEmployee?.id, currentWeek])
+
+  async function submitPulse() {
+    if (isPreviewing) { showToast('Preview mode is view-only -- exit preview to submit a real check-in.', 'error'); return }
+    if (!myEmployee) { showToast('No employee record found for your account. Contact your admin.', 'error'); return }
+    if (PULSE_RATED_KEYS.some(k => !form[k])) { showToast('Please answer every question before submitting.', 'error'); return }
+    setSubmitting(true)
+    const payload: any = {
+      employee_id: myEmployee.id, employee_name: myEmployee.name, employee_email: myEmployee.email,
+      week_start: currentWeek, feedback: feedback.trim() || null,
+    }
+    PULSE_RATED_KEYS.forEach(k => { payload[k] = form[k] })
+    const { error } = await supabase.from('pulse_surveys').insert(payload)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Thanks for checking in! ✓'); setMySubmission(payload) }
+    setSubmitting(false)
+  }
+
+  // Management scope: Team Lead -> own team, Admin/Super Admin -> everyone.
+  const [teamEmpIds, setTeamEmpIds] = useState<Set<string> | null>(null)
+  useEffect(() => {
+    if (!isTL || !currentUser) { setTeamEmpIds(null); return }
+    let cancelled = false
+    ;(async () => {
+      const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
+      if (!myEmp) { if (!cancelled) setTeamEmpIds(new Set()); return }
+      const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
+      const ledTeamIds = (teamsData || []).filter((t:any) => t.team_lead_id === myEmp.id).map((t:any) => t.id)
+      if (ledTeamIds.length === 0) { if (!cancelled) setTeamEmpIds(new Set()); return }
+      const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
+      const ids = new Set((memberData||[]).map((m:any) => m.employee_id))
+      if (!cancelled) setTeamEmpIds(ids)
+    })()
+    return () => { cancelled = true }
+  }, [isTL, currentUser, employees])
+
+  const [weekFilter, setWeekFilter] = useState(currentWeek)
+  const [subs, setSubs] = useState<any[]>([])
+  const [loadingSubs, setLoadingSubs] = useState(false)
+  const [expandedId, setExpandedId] = useState<string|null>(null)
+  const [noteDrafts, setNoteDrafts] = useState<Record<string,string>>({})
+  const [savingNote, setSavingNote] = useState<string|null>(null)
+
+  useEffect(() => {
+    if (!canManage) return
+    if (isTL && teamEmpIds === null) return
+    setLoadingSubs(true)
+    supabase.from('pulse_surveys').select('*').eq('week_start', weekFilter).order('employee_name')
+      .then(({data}) => {
+        const rows = isTL ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
+        setSubs(rows); setLoadingSubs(false)
+      })
+  }, [canManage, isTL, teamEmpIds, weekFilter])
+
+  const scopedActiveEmployees = (isTL ? employees.filter(e => teamEmpIds?.has(e.id)) : employees).filter(e => e.active)
+  const notYetSubmitted = scopedActiveEmployees.filter(e => !subs.some(s => s.employee_id === e.id))
+
+  async function saveNote(id: string) {
+    if (isPreviewing) { showToast('Preview mode is view-only.', 'error'); return }
+    setSavingNote(id)
+    const { error } = await supabase.from('pulse_surveys').update({ tl_note: noteDrafts[id] ?? '' }).eq('id', id)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Note saved'); setSubs(prev => prev.map(s => s.id === id ? { ...s, tl_note: noteDrafts[id] ?? '' } : s)) }
+    setSavingNote(null)
+  }
+
+  function RatingRow({ qKey, text, scaleLabels }: { qKey: string, text: string, scaleLabels: Record<number,string> }) {
+    return (
+      <div className="py-2">
+        <p className="text-sm text-gray-700 mb-1.5">{text}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {[1,2,3,4,5].map(n => (
+            <button key={n} type="button" onClick={() => setForm(f => ({...f, [qKey]: n}))}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${form[qKey]===n ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+              {n} · {scaleLabels[n]}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-[1600px] mx-auto space-y-6">
+      <div className="flex items-center gap-3">
+        <AlertCircle className="w-6 h-6 text-blue-800" />
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Weekly Pulse Check</h2>
+          <p className="text-sm text-gray-500">A quick, private weekly check-in -- helps management spot burnout or flight risk early.</p>
+        </div>
+      </div>
+
+      {(canSubmit && canManage) && (
+        <div className="flex gap-2 border-b border-gray-200">
+          {[['submit','My Check-in'],['manage', isTL ? 'My Team' : 'Everyone']].map(([t,l]) => (
+            <button key={t} onClick={() => setActiveTab(t as any)} className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${activeTab===t ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{l}</button>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'submit' && canSubmit && (
+        checkingMine ? <div className="text-center py-12 text-gray-400">Loading...</div> :
+        !myEmployee ? (
+          <div className="text-center py-16 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">No employee record found</p><p className="text-sm mt-1">We couldn't match your login to an employee record. Contact your admin.</p></div>
+        ) : mySubmission ? (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
+            <p className="text-emerald-800 font-medium">✓ You've already checked in for the week of {new Date(currentWeek).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})}.</p>
+            <p className="text-sm text-emerald-600 mt-1">Thanks for taking a moment for this. See you again next week!</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+            {PULSE_CATEGORIES.map(cat => (
+              <div key={cat.key}>
+                <h3 className="font-semibold text-blue-900 text-sm mb-1">{cat.label}</h3>
+                <div className="divide-y divide-gray-100">
+                  {cat.questions.map(q => <RatingRow key={q.key} qKey={q.key} text={q.text} scaleLabels={PULSE_SCALE_LABELS} />)}
+                </div>
+              </div>
+            ))}
+            <div>
+              <h3 className="font-semibold text-blue-900 text-sm mb-1">One More Thing</h3>
+              <RatingRow qKey="retention" text="How likely are you to still be working here in 6 months?" scaleLabels={RETENTION_SCALE_LABELS} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Anything else you'd like to share? (optional)</label>
+              <textarea value={feedback} onChange={e=>setFeedback(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Only visible to your Team Lead and above."/>
+            </div>
+            <p className="text-xs text-gray-400">Your answers are visible to your Team Lead and above -- this isn't anonymous, but it also isn't shared beyond leadership.</p>
+            <button onClick={submitPulse} disabled={submitting} className="bg-blue-900 hover:bg-blue-950 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50">{submitting ? 'Submitting...' : 'Submit Check-in'}</button>
+          </div>
+        )
+      )}
+
+      {activeTab === 'manage' && canManage && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-gray-600">Week of</label>
+            <input type="date" value={weekFilter} onChange={e => setWeekFilter(getWeekStart(new Date(e.target.value)))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900"/>
+            {weekFilter !== currentWeek && <button onClick={() => setWeekFilter(currentWeek)} className="text-xs text-blue-600 hover:underline">Back to current week</button>}
+          </div>
+
+          {loadingSubs ? <div className="text-center py-12 text-gray-400">Loading...</div> : (
+            <>
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left px-4 py-2.5 font-medium text-gray-500">Employee</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-gray-500">Overall Avg</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-gray-500">Retention Likelihood</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-gray-500">Flag</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-gray-500"></th>
+                  </tr></thead>
+                  <tbody>
+                    {subs.map(s => {
+                      const avg = pulseAverage(s)
+                      const atRisk = pulseIsAtRisk(s)
+                      return (
+                        <Fragment key={s.id}>
+                          <tr className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="px-4 py-2.5 font-medium text-gray-800">{s.employee_name}</td>
+                            <td className="px-4 py-2.5 text-gray-600">{avg?.toFixed(1) ?? '—'} / 5</td>
+                            <td className="px-4 py-2.5 text-gray-600">{s.retention ? `${s.retention} · ${RETENTION_SCALE_LABELS[s.retention]}` : '—'}</td>
+                            <td className="px-4 py-2.5">{atRisk ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">🚩 At Risk</span> : <span className="text-gray-300 text-xs">—</span>}</td>
+                            <td className="px-4 py-2.5 text-right"><button onClick={() => setExpandedId(expandedId===s.id?null:s.id)} className="text-xs text-blue-600 hover:underline">{expandedId===s.id?'Hide':'View'} details</button></td>
+                          </tr>
+                          {expandedId === s.id && (
+                            <tr className="bg-gray-50">
+                              <td colSpan={5} className="px-4 py-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                                  {PULSE_CATEGORIES.map(cat => (
+                                    <div key={cat.key} className="bg-white border border-gray-200 rounded-lg p-3">
+                                      <p className="text-xs font-semibold text-gray-500 mb-1.5">{cat.label}</p>
+                                      {cat.questions.map(q => <p key={q.key} className="text-xs text-gray-600 flex justify-between py-0.5"><span className="truncate pr-2">{q.text}</span><span className="font-medium text-gray-800 flex-shrink-0">{s[q.key] ?? '—'}</span></p>)}
+                                    </div>
+                                  ))}
+                                </div>
+                                {s.feedback && <div className="bg-white border border-gray-200 rounded-lg p-3 mb-3"><p className="text-xs font-semibold text-gray-500 mb-1">Open Feedback</p><p className="text-sm text-gray-700">{s.feedback}</p></div>}
+                                <div className="bg-white border border-gray-200 rounded-lg p-3">
+                                  <p className="text-xs font-semibold text-gray-500 mb-1.5">Private Management Note</p>
+                                  <textarea value={noteDrafts[s.id] ?? s.tl_note ?? ''} onChange={e => setNoteDrafts(d => ({...d, [s.id]: e.target.value}))} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="Only visible to Team Lead and above..."/>
+                                  <button onClick={() => saveNote(s.id)} disabled={savingNote===s.id} className="mt-2 bg-blue-900 hover:bg-blue-950 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50">{savingNote===s.id?'Saving...':'Save Note'}</button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                    {subs.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-gray-400">No check-ins submitted for this week yet.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+
+              {notYetSubmitted.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-sm font-medium text-amber-800 mb-2">⏳ Haven't checked in this week ({notYetSubmitted.length})</p>
+                  <div className="flex flex-wrap gap-2">
+                    {notYetSubmitted.map(e => <span key={e.id} className="text-xs bg-white border border-amber-200 text-amber-700 px-2 py-1 rounded-full">{e.name}</span>)}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -8707,14 +8985,21 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
     return () => { cancelled = true }
   }, [isTL, currentUser])
 
+  const [pulseSubmittedIds, setPulseSubmittedIds] = useState<Set<string>>(new Set())
   async function loadData() {
     setLoading(true)
-    const [{ data: docs }, { data: emps }] = await Promise.all([
+    const currentWeek = getWeekStart()
+    const [{ data: docs }, { data: emps }, { data: pulses }] = await Promise.all([
       supabase.from('hris_documents').select('*').order('employee_name'),
-      supabase.from('employees').select('id, name, employee_id, email, active').order('name')
+      supabase.from('employees').select('id, name, employee_id, email, active').order('name'),
+      // Weekly Pulse Check compliance -- RLS on pulse_surveys already scopes
+      // this correctly per viewer (self / own team / everyone), so no extra
+      // client-side filtering is needed here the way it is for hris_documents.
+      supabase.from('pulse_surveys').select('employee_id').eq('week_start', currentWeek),
     ])
     setAllDocs(docs || [])
     setEmployees(emps || [])
+    setPulseSubmittedIds(new Set((pulses||[]).map((p:any) => p.employee_id)))
     setLoading(false)
   }
 
@@ -8839,6 +9124,10 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                 })}
               </div>
               <p className="text-xs text-gray-400 mt-4">You can download your own documents above. If anything's missing, submit it to your Admin/HR to have it added.</p>
+              <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2 text-sm">
+                {myEmp && pulseSubmittedIds.has(myEmp.id) ? <span className="text-emerald-500">✓</span> : <span className="text-amber-400">⏳</span>}
+                <span className={myEmp && pulseSubmittedIds.has(myEmp.id) ? 'text-gray-700' : 'text-amber-600 font-medium'}>Weekly Pulse Check {myEmp && pulseSubmittedIds.has(myEmp.id) ? '— submitted this week' : '— not yet submitted this week'}</span>
+              </div>
             </div>
           )
         })()
@@ -8946,6 +9235,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                     {REQUIRED_DOCS.map(d => (
                       <th key={d} className="text-center px-2 py-3 font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{DOC_ICON[d] || '📄'}<br/>{d}</th>
                     ))}
+                    <th className="text-center px-2 py-3 font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">🩺<br/>Weekly Pulse</th>
                     <th className="text-center px-3 py-3 font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                   </tr>
                 </thead>
@@ -8969,6 +9259,9 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                             </td>
                           )
                         })}
+                        <td className="px-2 py-2.5 text-center">
+                          {pulseSubmittedIds.has(emp.id) ? <span title="Submitted this week" className="text-green-500 text-base">✓</span> : <span title="Not yet submitted this week" className="text-amber-400 text-base">⏳</span>}
+                        </td>
                         <td className="px-3 py-2.5 text-center">
                           <span className={`inline-flex px-2 py-0.5 rounded-full font-medium ${complete ? 'bg-emerald-100 text-emerald-700' : count === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>
                             {count}/{REQUIRED_DOCS.length}
