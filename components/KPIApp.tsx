@@ -7108,25 +7108,27 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
                 ['Tickets', 'Issue/request tracking with comments, screenshot attachments, and auto-resetting 24hr SLA.'],
                 ['Tasks', 'Assign to-dos to one or more people. Board view groups by status; feeds into Compliance scoring.'],
                 ['BCP', 'Business continuity plan and contingency procedures reference.'],
-                ['Links', 'Quick-access company tools, grouped by client, with search.'],
+                ['Links', 'Quick-access company tools, grouped by client, with search. Agent/Team Lead only see tabs for their own supported client(s).'],
                 ['Resources', 'Shared reference documents and guides.'],
                 ['Time Tracker', 'Paste time-tracking period exports to compute Attendance % and apply it to KPI records.'],
-                ['Employee Records', 'Full HR profile data. Manager access and above.'],
-                ['Hiring Pipeline', 'External recruiting/hiring tool -- opens in a new tab.'],
+                ['Employee Records', 'Full HR profile data, including document and Weekly Pulse Check compliance status. Manager access and above; Agent/Team Lead see their own (and their team\'s, for TL) compliance status only.'],
+                ['Hiring Pipeline', 'External recruiting/hiring tool -- opens in a new tab. Admin/Super Admin only.'],
+                ['Operational Expense', 'Log program/client operating costs by category (salaries, equipment, recruitment, facilities, client fees, engagement, etc.), tagged to a client. Month/client filters, totals, and a category breakdown. Admin/Super Admin only.'],
+                ['Invoice', 'Invoice management -- coming soon. Admin/Super Admin only.'],
                 ['KPI Entry', 'Enter or edit an employee\'s monthly Attendance/Accuracy/Efficiency/Feedback/Compliance scores.'],
                 ['Observations', 'Log coaching observations and 1-on-1 notes for an employee.'],
                 ['Coaching & 1-on-1', 'Structured coaching session records, with optional acknowledgment.'],
                 ['Team Compliance', 'Who has and hasn\'t acknowledged coaching sessions/announcements or completed tasks, per employee, per month -- with a drill-down to the exact missing items.'],
-                ['Operating Cadence', 'Recurring team rituals (huddles, reviews) and completion tracking.'],
-                ['TL Scorecard', 'A Team Lead\'s own composite score: Compliance + Team Performance + Attendance.'],
-                ['Dashboard', 'Team-wide KPI overview -- filterable by client, team, and time period, with charts.'],
-                ['Employee Trends', 'One employee\'s performance history over time, with a focus-month selector.'],
-                ['Team View', 'KPI scores for one team at a time, editable inline by Team Lead+.'],
-                ['Employees', 'Manage employee profiles, roles, and status.'],
+                ['Operating Cadence', 'Recurring team rituals (huddles, reviews) and completion tracking. Team Lead+ only.'],
+                ['TL Scorecard', 'A Team Lead\'s own composite score: Compliance + Team Performance + Attendance. Team Lead+ only.'],
+                ['Dashboard', 'Team-wide KPI overview -- filterable by client, team, and time period, with charts. Agent/Team Lead only see their own supported client(s).'],
+                ['Employee Trends', 'One employee\'s performance history over time. Agents are locked to their own record; Team Lead+ can view anyone.'],
+                ['Weekly Pulse Check', 'A short weekly check-in (work environment, work-life balance, recognition & reward, client interaction, plus a direct retention question) so leadership can spot burnout or flight risk early. Everyone except Super Admin submits their own; Team Lead sees their team\'s answers and can leave a private note, Admin/Super Admin see everyone\'s.'],
+                ['Employees', 'Manage employee profiles, roles, and status. Admin/Super Admin only.'],
                 ['Teams', 'Group employees into teams and assign a Team Lead.'],
                 ['Org Chart', 'Visual reporting structure by client and team.'],
-                ['Matrix', 'Internal dev log of features shipped, issues, and pending SQL migrations.'],
-                ['Settings', 'App users, audit log, this manual, and your own password.'],
+                ['Matrix', 'Internal dev log of features shipped, issues, and pending SQL migrations. Admin/Super Admin only.'],
+                ['Settings', 'App users, audit log, this manual, the Access Guide, and your own password. Super Admin only.'],
               ].map(([title, desc]) => (
                 <div key={title} className="border border-gray-100 rounded-lg p-3">
                   <p className="font-semibold text-sm text-gray-900">{title}</p>
@@ -7134,13 +7136,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
                 </div>
               ))}
             </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 className="font-semibold text-gray-700 text-sm mb-1 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>Who Can Do What</h3>
-            <p className="text-xs text-gray-400 mb-4">Full per-screen access rules by role. This is the same table as Settings → Access Guide -- kept in sync automatically.</p>
-            <AccessGuideTable />
-            <p className="text-xs text-gray-400 mt-4">To change what a specific person can access, go to the <button onClick={()=>setActiveTab('users')} className="text-blue-700 hover:underline font-medium">App Users</button> tab and update their role. Per-user access grants beyond the 4 standard roles aren't supported yet -- let your admin know if you need something more granular.</p>
+            <p className="text-xs text-gray-400 mt-4">Looking for exactly who can Add/Edit/Delete/Approve on each screen? See <button onClick={()=>setActiveTab('access')} className="text-blue-700 hover:underline font-medium">Settings → Access Guide</button>.</p>
           </div>
         </div>
       )}
