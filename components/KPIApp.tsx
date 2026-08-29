@@ -1450,7 +1450,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
           <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
           <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} dotColor="bg-indigo-400"/>
-          <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+          {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
           {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
         </div>
       )}
@@ -1877,7 +1877,7 @@ export default function KPIApp() {
             {view === 'tickets' && <TicketsPanel currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
             {view === 'tasks' && <TasksPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} onTasksChanged={() => setTasksRefreshKey(k => k+1)} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
-            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} onAckChange={async () => {
+            {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} isPreviewing={!!previewTarget} onAckChange={async () => {
               // Mirrors the same scoping as the initial badge-count effect
               // above: agent -> own sessions, Team Lead -> own team only,
               // Admin/Super Admin -> unscoped. Uses the EFFECTIVE (previewed)
@@ -1924,7 +1924,8 @@ export default function KPIApp() {
               </div>
             )}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
-            {view === 'cadence' && <OperatingCadence currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'cadence' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <OperatingCadence currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'cadence' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'resources' && <ResourcesPanel userRole={effectiveRole} showToast={showToast} />}
           </>
         )}
@@ -6601,7 +6602,7 @@ function HandoverDoc({ items }: { items: MatrixItem[] }) {
 }
 
 function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: string|null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'|'manual'>(userRole === 'agent' ? 'password' : 'users')
+  const [activeTab, setActiveTab] = useState<'users'|'activity'|'password'|'manual'|'access'>(userRole === 'agent' ? 'password' : 'users')
   const [oldPassword, setOldPassword] = useState('')
   const [newPass, setNewPass] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
@@ -6637,7 +6638,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
     <div className="max-w-4xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">Settings</h2><p className="text-sm text-gray-500">Manage app users, activity, and security</p></div>
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['users','App Users'],['activity','Audit Log'],['manual','Manual'],['password','Change Password']] as [string,string][]).map(([t,l])=>(
+        {([['users','App Users'],['activity','Audit Log'],['access','Access Guide'],['manual','Manual'],['password','Change Password']] as [string,string][]).map(([t,l])=>(
           <button key={t} onClick={()=>setActiveTab(t as any)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab===t?'bg-white shadow text-blue-900':'text-gray-600 hover:text-gray-900'}`}>{l}</button>
         ))}
       </div>
@@ -6685,6 +6686,75 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
               </table>
             </div>
           )}
+        </div>
+      )}
+      {activeTab==='access' && (
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            📌 <strong>Reference only, for now.</strong> This grid documents the intended access rules per role. Some rows are already enforced in the app (see ✅ below); most Add/Edit/Delete/Approve columns are not yet wired up to an actual permissions system -- that's a bigger project, still pending. Changing a cell here does nothing yet.
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500 sticky left-0 bg-gray-50">Screen</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Agent</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Team Lead</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Admin</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500" colSpan={2}>Super Admin</th>
+                </tr>
+                <tr className="bg-gray-50 border-b border-gray-200 text-gray-400">
+                  <th className="px-3 py-1 sticky left-0 bg-gray-50"></th>
+                  <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
+                  <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
+                  <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
+                  <th className="px-3 py-1 text-left">Access</th><th className="px-3 py-1 text-left">View</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { section: 'Home' },
+                  { row: ['Announcements', 'ADD / ACKNOWLEDGE','YES','ADD / ACKNOWLEDGE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+                  { row: ['Gaming Hub', 'ADD / EDIT','YES','ADD / EDIT','YES','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'], note: '✅ Approve flow is real (game_score_submissions)' },
+                  { section: 'Operations' },
+                  { row: ['Tickets', 'YES - Can Add','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
+                  { row: ['Task', 'Yes - Can Update','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
+                  { row: ['BCP', 'Yes - can view','YES','ADD','YES','ADD / EDIT','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
+                  { section: 'Directory' },
+                  { row: ['Links', 'ADD','YES (own client)','ADD / EDIT','YES (own client)','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'], note: '✅ Client-scoped for Agent/TL' },
+                  { row: ['Resources', 'ADD','YES','ADD / EDIT','YES','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'] },
+                  { section: 'HRIS' },
+                  { row: ['Hiring Pipeline', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent/TL (separate app -- link visibility only)' },
+                  { row: ['Employee Records', 'ADD / EDIT','YES (own)','ADD / EDIT','YES (own)','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'] },
+                  { row: ['Time Tracker', 'NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
+                  { row: ['Invoice', 'NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'], note: 'Screen is a placeholder ("Coming Soon") -- no data yet' },
+                  { section: 'Team Lead Tools' },
+                  { row: ['KPI Entry', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+                  { row: ['Observations', 'YES','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+                  { row: ['Coaching 1 on 1', 'YES','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ View As is now write-blocked (no fake acknowledgments/sessions)' },
+                  { row: ['Operating Cadence', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent' },
+                  { row: ['TL Scorecard', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent' },
+                  { section: 'Performance' },
+                  { row: ['Dashboard', 'YES','YES (own client)','ADD / EDIT / DELETE','YES (own client)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Client tabs scoped for Agent/TL' },
+                  { row: ['Employee Trends', 'YES','YES (own only)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Agent locked to own record' },
+                  { section: 'People' },
+                  { row: ['Teams', 'NA','NO','NA','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Client-scoping pending -- teams have no client field yet' },
+                  { row: ['Org Chart', 'NA','NO','NA','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+                  { section: 'System' },
+                  { row: ['Matrix', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+                  { row: ['Settings', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Currently Super Admin only in the app -- Admin row here is aspirational' },
+                ].map((r, i) => r.section ? (
+                  <tr key={i}><td colSpan={9} className="px-3 py-1.5 bg-blue-50 text-blue-800 font-semibold">{r.section}</td></tr>
+                ) : (
+                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 align-top">
+                    <td className="px-3 py-2 font-medium text-gray-700 sticky left-0 bg-white">{r.row![0]}{r.note && <div className="text-[10px] font-normal text-gray-400 mt-0.5 max-w-[220px]">{r.note}</div>}</td>
+                    {r.row!.slice(1).map((v, j) => <td key={j} className="px-3 py-2 text-gray-600 whitespace-nowrap">{v}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-400">Client-scoping rows ("own client") apply once an employee's Client(s) Supported is set on their Employee record. Admin/Super Admin remain unrestricted unless noted.</p>
         </div>
       )}
       {activeTab==='manual' && (
@@ -7431,8 +7501,8 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
 }
 
 
-function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange }:
-  { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, onAckChange?: () => void }) {
+function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange, isPreviewing }:
+  { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, onAckChange?: () => void, isPreviewing?: boolean }) {
 
   const [activeTab, setActiveTab] = useState<'coaching'|'compliance'|'ackCompliance'>('coaching')
   const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
@@ -7460,7 +7530,7 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange
       </div>
 
       {activeTab === 'coaching' && (
-        <CoachingLog employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} onAckChange={onAckChange} />
+        <CoachingLog employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} onAckChange={onAckChange} isPreviewing={isPreviewing} />
       )}
       {activeTab === 'compliance' && canManage && (
         <TLComplianceReport employees={employees} currentUser={currentUser} userRole={userRole} />
@@ -7480,8 +7550,8 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange
 }
 
 // -- Coaching Log ------------------------------------------------------------
-function CoachingLog({ employees, currentUser, userRole, canManage, showToast, onAckChange }:
-  { employees: Employee[], currentUser: string | null, userRole: string, canManage: boolean, showToast: (m: string, t?: 'success'|'error') => void, onAckChange?: () => void }) {
+function CoachingLog({ employees, currentUser, userRole, canManage, showToast, onAckChange, isPreviewing }:
+  { employees: Employee[], currentUser: string | null, userRole: string, canManage: boolean, showToast: (m: string, t?: 'success'|'error') => void, onAckChange?: () => void, isPreviewing?: boolean }) {
 
   const [logs, setLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -7536,6 +7606,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   useEffect(() => { loadLogs() }, [tlTeamEmails, userRole])
 
   async function acknowledgeCoaching(logId: string) {
+    if (isPreviewing) { showToast('Preview mode is view-only -- acknowledgments must be done by signing in as that person.', 'error'); return }
     setAckLoading(logId)
     const { error } = await supabase.from('coaching_logs').update({
       agent_acknowledged: true,
@@ -7549,6 +7620,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   }
 
   async function handleSave(asDraft: boolean = false) {
+    if (isPreviewing) { showToast('Preview mode is view-only -- exit preview to log or edit a real session.', 'error'); return }
     if (!asDraft && (!form.employee_id || !form.date || !form.discussion.trim())) {
       showToast('Please fill in employee, date, and discussion points.', 'error'); return
     }
@@ -7600,6 +7672,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   }
 
   async function handleDelete(id: string) {
+    if (isPreviewing) { showToast('Preview mode is view-only -- exit preview to delete a real session.', 'error'); return }
     setDeleting(id)
     await supabase.from('coaching_logs').delete().eq('id', id)
     showToast('Entry deleted.')
@@ -7666,11 +7739,14 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
             <button onClick={() => { setFilterEmp(''); setFilterMonth('') }} className="text-sm text-blue-600 hover:underline">Clear</button>
           )}
         </div>
-        {canManage && (
+        {canManage && !isPreviewing && (
           <button onClick={() => setShowForm(!showForm)}
             className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
             <PlusCircle className="w-4 h-4" /> Log Session
           </button>
+        )}
+        {canManage && isPreviewing && (
+          <span className="text-xs text-gray-400 italic px-2">Preview mode -- view only</span>
         )}
       </div>
 
@@ -7831,10 +7907,14 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                             {log.agent_acknowledged_at && <p className="text-xs text-gray-400 mt-0.5">{new Date(log.agent_acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</p>}
                           </div>
                         ) : userRole === 'agent' ? (
+                          isPreviewing ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400" title="Preview mode is view-only">👁 Pending (view-only)</span>
+                          ) : (
                           <button onClick={() => acknowledgeCoaching(log.id)} disabled={ackLoading === log.id}
                             className="flex items-center gap-1 bg-blue-700 hover:bg-blue-900 text-white px-3 py-1 rounded-lg text-xs font-medium transition disabled:opacity-50">
                             {ackLoading === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"/> : '✍️'} Sign & Acknowledge
                           </button>
+                          )
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">⏳ Pending</span>
                         )}
