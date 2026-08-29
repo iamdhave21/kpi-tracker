@@ -1916,7 +1916,7 @@ export default function KPIApp() {
                 <span className="inline-block bg-pink-100 text-pink-700 text-xs font-semibold px-3 py-1.5 rounded-full">🚧 Coming Soon</span>
               </div>
             )}
-            {view === 'links' && <DirectoryLinks userRole={effectiveRole} showToast={showToast} />}
+            {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
             {view === 'cadence' && <OperatingCadence currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'resources' && <ResourcesPanel userRole={effectiveRole} showToast={showToast} />}
           </>
@@ -4631,18 +4631,30 @@ function ResourcesPanel({ userRole, showToast }: { userRole: string, showToast: 
 }
 
 
-function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: (m: string, t: 'success'|'error') => void }) {
+function DirectoryLinks({ userRole, currentUser, employees, showToast }: { userRole: string, currentUser?: string, employees?: Employee[], showToast: (m: string, t: 'success'|'error') => void }) {
   const [links, setLinks] = useState<any[]>([])
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', url: '', description: '', client: '' })
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<string>('All')
   const [searchQ, setSearchQ] = useState('')
   const [editId, setEditId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ name: '', url: '', description: '', client: '' })
   const canManage = ['super_admin','admin'].includes(userRole)
+
+  // Client scoping: Admin/Super Admin see every client's links, unrestricted
+  // (matches how Employees/Teams already work for them). Team Leads and
+  // Agents only see tabs/links for the client(s) on their own employee
+  // record -- someone supporting only EMMA shouldn't see so much as a tab
+  // for AB BSS or Harlan + Holden. "General" (not tied to any client) stays
+  // visible to everyone regardless of client, by design.
+  const myEmployee = employees?.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
+  const myClients: string[] = canManage
+    ? CLIENTS
+    : (myEmployee?.clients_supported && myEmployee.clients_supported.length ? myEmployee.clients_supported : (myEmployee?.client ? [myEmployee.client] : []))
+  const visibleClientTabs = CLIENTS.filter(c => myClients.includes(c))
+  const tabs = ['All', ...visibleClientTabs, 'General']
+  const [activeTab, setActiveTab] = useState<string>('All')
   const colors = ['border-blue-400','border-green-400','border-purple-400','border-orange-400','border-pink-400','border-cyan-400']
-  const tabs = ['All', ...CLIENTS, 'General']
 
   useEffect(() => { loadLinks() }, [])
 
@@ -4685,9 +4697,14 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
     showToast('Removed', 'success')
   }
 
-  const filteredLinks = (activeTab === 'All' ? links
-    : activeTab === 'General' ? links.filter(l => !l.client)
-    : links.filter(l => l.client === activeTab)
+  // Same client scoping applied to the actual link list, not just the tabs
+  // -- "All" for a scoped viewer means "all clients THEY support", not
+  // literally every link in the company.
+  const visibleLinks = canManage ? links : links.filter(l => !l.client || myClients.includes(l.client))
+
+  const filteredLinks = (activeTab === 'All' ? visibleLinks
+    : activeTab === 'General' ? visibleLinks.filter(l => !l.client)
+    : visibleLinks.filter(l => l.client === activeTab)
   ).filter(l => !searchQ.trim() || l.name.toLowerCase().includes(searchQ.toLowerCase()) || (l.description || '').toLowerCase().includes(searchQ.toLowerCase()))
 
   return (
@@ -4716,7 +4733,7 @@ function DirectoryLinks({ userRole, showToast }: { userRole: string, showToast: 
       <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto">
         {tabs.map(t => (
           <button key={t} onClick={() => setActiveTab(t)} className={`px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition ${activeTab === t ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {t}{t !== 'All' && <span className="ml-1.5 text-xs text-gray-400">({t === 'General' ? links.filter(l=>!l.client).length : links.filter(l=>l.client===t).length})</span>}
+            {t}{t !== 'All' && <span className="ml-1.5 text-xs text-gray-400">({t === 'General' ? visibleLinks.filter(l=>!l.client).length : visibleLinks.filter(l=>l.client===t).length})</span>}
           </button>
         ))}
       </div>
