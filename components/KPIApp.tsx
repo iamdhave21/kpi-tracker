@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1284,6 +1284,8 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     'resources': { label: 'Resources', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
     'hris-records': { label: 'Employee Records', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
     'hris-timetracker': { label: 'Time Tracker', icon: <Clock className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-pink-400' },
+    'opex': { label: 'Expenses', icon: <FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-teal-400' },
+    'hris-invoice': { label: 'Invoice', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-teal-400' },
     'entry': { label: 'KPI Entry', icon: <PlusCircle className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
     'observations': { label: 'Observations', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
     'tl-tools': { label: 'Coaching & 1-on-1', icon: <Shield className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-indigo-400' },
@@ -1433,14 +1435,26 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* HRIS */}
-      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-invoice','hris-timetracker'].includes(view)} />
+      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-timetracker'].includes(view)} />
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
           {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>}
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
-          <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
         </div>
+      )}
+
+      {/* FINANCE -- Admin/Super Admin only, financial data */}
+      {(userRole === 'super_admin' || userRole === 'admin') && (
+        <>
+          <SectionHeader sectionKey="finance" label="Finance" hasActive={['opex','hris-invoice'].includes(view)} />
+          {!collapsed.finance && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <NavItem id="opex" label="Expenses" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
+              <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
+            </div>
+          )}
+        </>
       )}
 
       {/* TEAM LEAD TOOLS */}
@@ -1915,7 +1929,7 @@ export default function KPIApp() {
             {view === 'hris-records' && <HRISRecords userRole={effectiveRole} currentUser={effectiveUser} showToast={showToast} />}
             {view === 'hris-timetracker' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={effectiveUser} showToast={showToast} onApplied={() => loadData()} />}
             {view === 'hris-timetracker' && (effectiveRole === 'agent' || effectiveRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Time Tracker requires Manager access or higher</p></div>}
-            {view === 'hris-invoice' && (
+            {view === 'hris-invoice' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && (
               <div className="max-w-lg mx-auto text-center py-20 space-y-4">
                 <div className="w-20 h-20 bg-pink-50 rounded-2xl flex items-center justify-center mx-auto">
                   <FileText className="w-10 h-10 text-pink-400" />
@@ -1925,6 +1939,9 @@ export default function KPIApp() {
                 <span className="inline-block bg-pink-100 text-pink-700 text-xs font-semibold px-3 py-1.5 rounded-full">🚧 Coming Soon</span>
               </div>
             )}
+            {view === 'hris-invoice' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'opex' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <OpexPanel currentUser={effectiveUser} showToast={showToast} />}
+            {view === 'opex' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
             {view === 'cadence' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <OperatingCadence currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'cadence' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
@@ -8974,6 +8991,226 @@ function HRISReferral({ userRole, currentUser, showToast }: { userRole: string, 
 const REQUIRED_DOCS = ['NBI Clearance', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract']
 const ALL_DOC_TYPES = ['Resume', 'CV', 'NBI Clearance', 'Medical Certificate', 'Psychological Evaluation', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN', 'Contract', 'Other']
 const DOC_ICON: Record<string, string> = { 'Resume': '📄', 'CV': '📋', 'Contract': '📝', 'NBI Clearance': '🔒', 'Medical Certificate': '🏥', 'Psychological Evaluation': '🧠', 'SSS': '🏛', 'PhilHealth': '💊', 'Pag-IBIG': '🏠', 'TIN': '🪪' }
+
+// -- Operational Expenses (Finance) -------------------------------------------
+const OPEX_CATEGORIES = [
+  'Salaries & Wages', 'Statutory Contributions', '13th Month Pay / Bonuses', 'HMO / Health Insurance', 'Overtime Pay',
+  'Recruitment/Hiring Costs', 'Training & Onboarding', 'Certifications/Licensing',
+  'Laptops/Hardware', 'Headsets/Peripherals', 'Software Licenses/Seats', 'IT Support/Maintenance',
+  'Office Rent/Co-working', 'Utilities', 'Internet Allowance',
+  'Client Platform/Tool Fees', 'Compliance/Audit Costs',
+  'Team Building/Events', 'Incentives & Prizes', 'Transportation/Meal Allowance',
+  'Office Supplies', 'Uniform/Equipment Allowance', 'Other/Miscellaneous',
+]
+const OPEX_CLIENTS = ['General', ...CLIENTS]
+
+function formatPHP(n: number): string {
+  return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function OpexPanel({ currentUser, showToast }: { currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const now = new Date()
+  const [entries, setEntries] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [monthFilter, setMonthFilter] = useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`)
+  const [clientFilter, setClientFilter] = useState('All')
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const emptyForm = { category: OPEX_CATEGORIES[0], client: 'General', description: '', amount: '', expense_date: new Date().toISOString().split('T')[0] }
+  const [form, setForm] = useState(emptyForm)
+  const [editId, setEditId] = useState<string|null>(null)
+  const [editForm, setEditForm] = useState(emptyForm)
+
+  useEffect(() => { loadEntries() }, [])
+
+  async function loadEntries() {
+    setLoading(true)
+    const { data, error } = await supabase.from('opex_entries').select('*').order('expense_date', { ascending: false })
+    if (error) console.error('Load opex failed:', error)
+    setEntries(data || [])
+    setLoading(false)
+  }
+
+  async function addEntry() {
+    if (!form.description.trim() || !form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
+      showToast('Please fill in a description and a valid amount.', 'error'); return
+    }
+    setSaving(true)
+    const { error } = await supabase.from('opex_entries').insert({
+      category: form.category, client: form.client === 'General' ? null : form.client,
+      description: form.description.trim(), amount: Number(form.amount), expense_date: form.expense_date,
+      added_by: currentUser,
+    })
+    if (error) showToast(error.message, 'error')
+    else { showToast('Expense logged!'); setForm(emptyForm); setShowForm(false); loadEntries() }
+    setSaving(false)
+  }
+
+  function startEdit(e: any) {
+    setEditId(e.id)
+    setEditForm({ category: e.category, client: e.client || 'General', description: e.description || '', amount: String(e.amount), expense_date: e.expense_date })
+  }
+
+  async function saveEdit() {
+    if (!editId) return
+    if (!editForm.description.trim() || !editForm.amount || isNaN(Number(editForm.amount)) || Number(editForm.amount) <= 0) {
+      showToast('Please fill in a description and a valid amount.', 'error'); return
+    }
+    setSaving(true)
+    const { error } = await supabase.from('opex_entries').update({
+      category: editForm.category, client: editForm.client === 'General' ? null : editForm.client,
+      description: editForm.description.trim(), amount: Number(editForm.amount), expense_date: editForm.expense_date,
+    }).eq('id', editId)
+    if (error) showToast(error.message, 'error')
+    else { showToast('Expense updated!'); setEditId(null); loadEntries() }
+    setSaving(false)
+  }
+
+  async function deleteEntry(id: string) {
+    await supabase.from('opex_entries').delete().eq('id', id)
+    setEntries(prev => prev.filter(e => e.id !== id))
+    showToast('Removed')
+  }
+
+  const monthEntries = entries.filter(e => e.expense_date?.startsWith(monthFilter))
+  const filteredEntries = monthEntries.filter(e => clientFilter === 'All' || (clientFilter === 'General' ? !e.client : e.client === clientFilter))
+  const totalThisMonth = monthEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0)
+  const totalFiltered = filteredEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0)
+
+  const byCategory: Record<string, number> = {}
+  filteredEntries.forEach(e => { byCategory[e.category] = (byCategory[e.category] || 0) + Number(e.amount || 0) })
+  const categoryBreakdown = Object.entries(byCategory).sort((a,b) => b[1] - a[1])
+
+  const byClient: Record<string, number> = {}
+  monthEntries.forEach(e => { const c = e.client || 'General'; byClient[c] = (byClient[c] || 0) + Number(e.amount || 0) })
+
+  return (
+    <div className="max-w-[1600px] mx-auto space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Operational Expenses</h2>
+          <p className="text-sm text-gray-500">Program/client operating costs, logged by category</p>
+        </div>
+        <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-950 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+          <PlusCircle className="w-4 h-4" /> Log Expense
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <select value={form.category} onChange={e=>setForm({...form, category: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+              {OPEX_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={form.client} onChange={e=>setForm({...form, client: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+              {OPEX_CLIENTS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <input type="number" step="0.01" min="0" value={form.amount} onChange={e=>setForm({...form, amount: e.target.value})} placeholder="Amount (PHP)" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+            <input type="date" value={form.expense_date} onChange={e=>setForm({...form, expense_date: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          </div>
+          <input value={form.description} onChange={e=>setForm({...form, description: e.target.value})} placeholder="Description (e.g. 'Q3 laptop batch for EMMA agents')" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          <div className="flex gap-2">
+            <button onClick={addEntry} disabled={saving} className="bg-blue-900 hover:bg-blue-950 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{saving ? 'Saving...' : 'Save Expense'}</button>
+            <button onClick={() => { setShowForm(false); setForm(emptyForm) }} className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"/>
+        <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs">
+          {['All', ...OPEX_CLIENTS].map(c => (
+            <button key={c} onClick={() => setClientFilter(c)} className={`px-3 py-2 font-medium transition ${clientFilter === c ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{c}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs text-gray-400 font-medium uppercase">Total This Month</p>
+          <p className="text-2xl font-bold text-blue-900 mt-1">{formatPHP(totalThisMonth)}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs text-gray-400 font-medium uppercase">Total ({clientFilter})</p>
+          <p className="text-2xl font-bold text-blue-900 mt-1">{formatPHP(totalFiltered)}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs text-gray-400 font-medium uppercase">By Client, This Month</p>
+          <div className="mt-1 space-y-0.5">
+            {Object.entries(byClient).length === 0 ? <p className="text-sm text-gray-400">No entries yet</p> :
+              Object.entries(byClient).sort((a,b)=>b[1]-a[1]).map(([c,amt]) => (
+                <p key={c} className="text-xs text-gray-600 flex justify-between"><span>{c}</span><span className="font-medium">{formatPHP(amt)}</span></p>
+              ))}
+          </div>
+        </div>
+      </div>
+
+      {categoryBreakdown.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Breakdown by Category ({clientFilter})</p>
+          <div className="space-y-1.5">
+            {categoryBreakdown.map(([cat, amt]) => (
+              <div key={cat} className="flex items-center gap-2">
+                <div className="w-40 text-xs text-gray-600 truncate flex-shrink-0">{cat}</div>
+                <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden"><div className="bg-teal-500 h-full rounded-full" style={{ width: `${totalFiltered ? (amt/totalFiltered*100) : 0}%` }}/></div>
+                <div className="w-24 text-xs text-gray-700 font-medium text-right flex-shrink-0">{formatPHP(amt)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600"/></div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Category</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Client</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Description</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Amount</th>
+                  <th className="px-4 py-3 w-16"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredEntries.map(e => editId === e.id ? (
+                  <tr key={e.id} className="bg-blue-50">
+                    <td className="px-4 py-2"><input type="date" value={editForm.expense_date} onChange={ev=>setEditForm({...editForm, expense_date: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs w-32"/></td>
+                    <td className="px-4 py-2"><select value={editForm.category} onChange={ev=>setEditForm({...editForm, category: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs">{OPEX_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+                    <td className="px-4 py-2"><select value={editForm.client} onChange={ev=>setEditForm({...editForm, client: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs">{OPEX_CLIENTS.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+                    <td className="px-4 py-2"><input value={editForm.description} onChange={ev=>setEditForm({...editForm, description: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs w-full"/></td>
+                    <td className="px-4 py-2"><input type="number" step="0.01" value={editForm.amount} onChange={ev=>setEditForm({...editForm, amount: ev.target.value})} className="border border-gray-300 rounded px-2 py-1 text-xs w-24 text-right"/></td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      <button onClick={saveEdit} disabled={saving} className="text-emerald-600 hover:text-emerald-800 text-xs font-medium mr-2">Save</button>
+                      <button onClick={()=>setEditId(null)} className="text-gray-400 hover:text-gray-600 text-xs">Cancel</button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={e.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{new Date(e.expense_date).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{e.category}</td>
+                    <td className="px-4 py-2.5">{e.client ? <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${CLIENT_COLORS[e.client] || 'bg-gray-100 text-gray-600'}`}>{e.client}</span> : <span className="text-xs text-gray-400">General</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{e.description}</td>
+                    <td className="px-4 py-2.5 text-right font-medium text-gray-800 whitespace-nowrap">{formatPHP(Number(e.amount))}</td>
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <button onClick={()=>startEdit(e)} className="text-gray-400 hover:text-blue-600 mr-2"><Edit2 className="w-3.5 h-3.5 inline"/></button>
+                      <button onClick={()=>deleteEntry(e.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5 inline"/></button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredEntries.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-gray-400">No expenses logged for this period.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
