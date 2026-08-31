@@ -103,16 +103,36 @@ type ComplianceBreakdown = {
   annAcked: number
   taskTotal: number
   taskDone: number
+  pulseTotal: number
+  pulseSubmitted: number
   totalRequired: number
   totalAcked: number
 }
 
-// Auto-calculates compliance = (coaching acks + announcement acks + tasks completed) / (total required)
-// for a given employee + month. Returns rate: null when there's simply nothing to
-// acknowledge/complete yet that month (e.g. rollout hasn't started) so callers can fall back
-// to a manual value instead of showing a misleading 0%.
+// How many ISO weeks (Mondays) fall within [start, end) -- i.e. how many
+// Weekly Pulse Check submissions were actually expected of someone that
+// calendar month, matching the same Monday-based week_start used by the
+// Pulse Check feature itself.
+function countMondaysInRange(start: Date, end: Date): number {
+  let count = 0
+  const d = new Date(start)
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diff) // snap to the Monday on/before start
+  if (d < start) d.setDate(d.getDate() + 7) // move to first Monday >= start
+  while (d < end) { count++; d.setDate(d.getDate() + 7) }
+  return count
+}
+
+// Auto-calculates compliance = (coaching acks + announcement acks + tasks
+// completed + Weekly Pulse Check submissions) / (total required) for a
+// given employee + month. Returns rate: null when there's simply nothing
+// to acknowledge/complete/submit yet that month (e.g. rollout hasn't
+// started) so callers can fall back to a manual value instead of showing
+// a misleading 0%. This is the ONLY place Weekly Pulse Check factors into
+// scoring -- it never affects the separate HRIS document compliance %.
 async function getComplianceBreakdown(employeeEmail: string | null | undefined, monthLabel: string): Promise<ComplianceBreakdown> {
-  const empty: ComplianceBreakdown = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, totalRequired: 0, totalAcked: 0 }
+  const empty: ComplianceBreakdown = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, pulseTotal: 0, pulseSubmitted: 0, totalRequired: 0, totalAcked: 0 }
   if (!employeeEmail) return empty
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   if (mIdx < 0 || !yr) return empty
@@ -143,15 +163,22 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
     .eq('assigned_to', employeeEmail.toLowerCase())
     .gte('created_at', start).lt('created_at', end)
 
+  const { data: pulseData } = await supabase.from('pulse_surveys')
+    .select('week_start')
+    .eq('employee_email', employeeEmail)
+    .gte('week_start', start).lt('week_start', end)
+
   const coachTotal = (coaching || []).length
   const coachAcked = (coaching || []).filter(c => c.agent_acknowledged).length
   const taskTotal = (taskData || []).length
   const taskDone = (taskData || []).filter(t => t.is_done).length
-  const totalRequired = coachTotal + annIds.length + taskTotal
-  const totalAcked = coachAcked + annAcked + taskDone
+  const pulseTotal = countMondaysInRange(new Date(start), new Date(end))
+  const pulseSubmitted = Math.min((pulseData || []).length, pulseTotal)
+  const totalRequired = coachTotal + annIds.length + taskTotal + pulseTotal
+  const totalAcked = coachAcked + annAcked + taskDone + pulseSubmitted
   return {
     rate: totalRequired > 0 ? totalAcked / totalRequired : null,
-    coachTotal, coachAcked, annTotal: annIds.length, annAcked, taskTotal, taskDone, totalRequired, totalAcked
+    coachTotal, coachAcked, annTotal: annIds.length, annAcked, taskTotal, taskDone, pulseTotal, pulseSubmitted, totalRequired, totalAcked
   }
 }
 
@@ -1462,7 +1489,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {!collapsed.tltools && (
         <div className="px-2 pb-1 space-y-0.5">
           <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-          <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+          {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
           <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor={userRole === 'agent' ? 'bg-red-500' : 'bg-amber-500'} dotColor="bg-indigo-400"/>
           {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
           {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
@@ -1881,7 +1908,7 @@ export default function KPIApp() {
             {view === 'teams' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <TeamManager employees={employees} showToast={showToast} userRole={effectiveRole} />}
             {view === 'teams' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'observations' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <ObservationsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
-            {view === 'observations' && effectiveRole === 'agent' && <MyObservations employees={employees} currentUser={effectiveUser} />}
+            {view === 'observations' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'matrix' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && (
               <div className="max-w-[1600px] mx-auto space-y-6">
                 <div><h2 className="text-xl font-bold text-blue-900">Matrix</h2><p className="text-sm text-gray-500">Track features shipped, issues to fix, and SQL still pending in Supabase</p></div>
@@ -2085,7 +2112,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
           </div>
           <p className="text-xs text-gray-400 mt-1">
             {compLoading ? 'Checking coaching + announcement acknowledgments...' :
-             compAuto && compAuto.totalRequired > 0 ? `Auto-calculated: ${(compAuto.rate!*100).toFixed(0)}% (${compAuto.totalAcked}/${compAuto.totalRequired} acknowledged — ${compAuto.coachAcked}/${compAuto.coachTotal} coaching, ${compAuto.annAcked}/${compAuto.annTotal} announcements, ${compAuto.taskDone}/${compAuto.taskTotal} tasks). Edit above to override.` :
+             compAuto && compAuto.totalRequired > 0 ? `Auto-calculated: ${(compAuto.rate!*100).toFixed(0)}% (${compAuto.totalAcked}/${compAuto.totalRequired} acknowledged — ${compAuto.coachAcked}/${compAuto.coachTotal} coaching, ${compAuto.annAcked}/${compAuto.annTotal} announcements, ${compAuto.taskDone}/${compAuto.taskTotal} tasks, ${compAuto.pulseSubmitted}/${compAuto.pulseTotal} weekly pulse check-ins). Edit above to override.` :
              'No coaching or announcements requiring acknowledgment found this month — set manually.'}
           </p>
         </div>
@@ -3153,7 +3180,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
           <div className="relative"><input type="number" min="0" max="100" step="0.01" value={compliance} onChange={e=>setCompliance(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. 100"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span></div>
           <p className="text-xs text-gray-400 mt-1">
             {complianceLoading ? 'Checking coaching + announcement acknowledgments...' :
-             complianceAuto && complianceAuto.totalRequired > 0 ? `Auto-calculated: ${(complianceAuto.rate!*100).toFixed(0)}% (${complianceAuto.totalAcked}/${complianceAuto.totalRequired} acknowledged — ${complianceAuto.coachAcked}/${complianceAuto.coachTotal} coaching, ${complianceAuto.annAcked}/${complianceAuto.annTotal} announcements, ${complianceAuto.taskDone}/${complianceAuto.taskTotal} tasks). Edit above to override.` :
+             complianceAuto && complianceAuto.totalRequired > 0 ? `Auto-calculated: ${(complianceAuto.rate!*100).toFixed(0)}% (${complianceAuto.totalAcked}/${complianceAuto.totalRequired} acknowledged — ${complianceAuto.coachAcked}/${complianceAuto.coachTotal} coaching, ${complianceAuto.annAcked}/${complianceAuto.annTotal} announcements, ${complianceAuto.taskDone}/${complianceAuto.taskTotal} tasks, ${complianceAuto.pulseSubmitted}/${complianceAuto.pulseTotal} weekly pulse check-ins). Edit above to override.` :
              'No coaching or announcements requiring acknowledgment found this month — set manually.'}
           </p>
         </div>
@@ -7617,13 +7644,14 @@ type ComplianceDetail = ComplianceBreakdown & {
   missingCoaching: { title: string, date: string }[]
   missingAnnouncements: { title: string }[]
   missingTasks: { title: string }[]
+  missingPulseWeeks: { title: string }[]
 }
 
 // Like getComplianceBreakdown, but also returns the specific items still
 // needing acknowledgment so a Team Lead can see exactly who's missing what,
 // not just a percentage.
 async function getComplianceDetail(employeeEmail: string | null | undefined, monthLabel: string): Promise<ComplianceDetail> {
-  const empty: ComplianceDetail = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, totalRequired: 0, totalAcked: 0, missingCoaching: [], missingAnnouncements: [], missingTasks: [] }
+  const empty: ComplianceDetail = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, pulseTotal: 0, pulseSubmitted: 0, totalRequired: 0, totalAcked: 0, missingCoaching: [], missingAnnouncements: [], missingTasks: [], missingPulseWeeks: [] }
   if (!employeeEmail) return empty
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   if (mIdx < 0 || !yr) return empty
@@ -7654,19 +7682,38 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
     .eq('assigned_to', employeeEmail.toLowerCase())
     .gte('created_at', start).lt('created_at', end)
 
+  const { data: pulseData } = await supabase.from('pulse_surveys')
+    .select('week_start')
+    .eq('employee_email', employeeEmail)
+    .gte('week_start', start).lt('week_start', end)
+
   const coachTotal = (coaching || []).length
   const coachAcked = (coaching || []).filter((c:any) => c.agent_acknowledged).length
   const taskTotal = (taskData || []).length
   const taskDone = (taskData || []).filter((t:any) => t.is_done).length
-  const totalRequired = coachTotal + annIds.length + taskTotal
-  const totalAcked = coachAcked + (annIds.length - (annIds.length - ackedIds.length)) + taskDone
+
+  // Build the list of Mondays expected this month, then diff against what
+  // was actually submitted to find which specific weeks are missing.
+  const expectedWeeks: string[] = []
+  const d = new Date(start); const startDate = new Date(start); const endDate = new Date(end)
+  const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diff)
+  if (d < startDate) d.setDate(d.getDate() + 7)
+  while (d < endDate) { expectedWeeks.push(d.toISOString().slice(0,10)); d.setDate(d.getDate() + 7) }
+  const submittedWeeks = new Set((pulseData || []).map((p:any) => p.week_start))
+  const pulseTotal = expectedWeeks.length
+  const pulseSubmitted = expectedWeeks.filter(w => submittedWeeks.has(w)).length
+
+  const totalRequired = coachTotal + annIds.length + taskTotal + pulseTotal
+  const totalAcked = coachAcked + (annIds.length - (annIds.length - ackedIds.length)) + taskDone + pulseSubmitted
 
   return {
     rate: totalRequired > 0 ? totalAcked / totalRequired : null,
-    coachTotal, coachAcked, annTotal: annIds.length, annAcked: ackedIds.length, taskTotal, taskDone, totalRequired, totalAcked,
+    coachTotal, coachAcked, annTotal: annIds.length, annAcked: ackedIds.length, taskTotal, taskDone, pulseTotal, pulseSubmitted, totalRequired, totalAcked,
     missingCoaching: (coaching || []).filter((c:any) => !c.agent_acknowledged).map((c:any) => ({ title: c.type || 'Coaching session', date: c.date })),
     missingAnnouncements: (anns || []).filter((a:any) => !ackedIds.includes(a.id)).map((a:any) => ({ title: a.title })),
     missingTasks: (taskData || []).filter((t:any) => !t.is_done).map((t:any) => ({ title: t.title })),
+    missingPulseWeeks: expectedWeeks.filter(w => !submittedWeeks.has(w)).map(w => ({ title: `Week of ${new Date(w).toLocaleDateString('en-PH',{month:'short',day:'numeric'})}` })),
   }
 }
 
@@ -7767,7 +7814,7 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
             const d = details[e.id]
             const isExpanded = expanded.has(e.id)
             const pct = d?.rate !== null && d?.rate !== undefined ? Math.round(d.rate * 100) : null
-            const missingCount = d ? d.missingCoaching.length + d.missingAnnouncements.length + d.missingTasks.length : 0
+            const missingCount = d ? d.missingCoaching.length + d.missingAnnouncements.length + d.missingTasks.length + d.missingPulseWeeks.length : 0
             return (
               <div key={e.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <button onClick={() => toggleExpand(e.id)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition text-left">
@@ -7797,6 +7844,7 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
                         {d.missingCoaching.map((c,i) => <p key={`c${i}`} className="text-xs text-gray-600">📋 Not acknowledged: <span className="font-medium">{c.title}</span> ({new Date(c.date).toLocaleDateString('en-US',{month:'short',day:'numeric'})})</p>)}
                         {d.missingAnnouncements.map((a,i) => <p key={`a${i}`} className="text-xs text-gray-600">📢 Not acknowledged: <span className="font-medium">{a.title}</span></p>)}
                         {d.missingTasks.map((t,i) => <p key={`t${i}`} className="text-xs text-gray-600">✅ Not completed: <span className="font-medium">{t.title}</span></p>)}
+                        {d.missingPulseWeeks.map((p,i) => <p key={`p${i}`} className="text-xs text-gray-600">💙 Not submitted: <span className="font-medium">Weekly Pulse Check -- {p.title}</span></p>)}
                       </div>
                     )}
                   </div>
