@@ -1445,7 +1445,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* FINANCE -- Admin/Super Admin only, financial data */}
-      {(userRole === 'super_admin' || userRole === 'admin') && (
+      {userRole === 'super_admin' && (
         <>
           <SectionHeader sectionKey="finance" label="Finance" hasActive={['opex','hris-invoice'].includes(view)} />
           {!collapsed.finance && (
@@ -1929,7 +1929,7 @@ export default function KPIApp() {
             {view === 'hris-records' && <HRISRecords userRole={effectiveRole} currentUser={effectiveUser} showToast={showToast} />}
             {view === 'hris-timetracker' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={effectiveUser} showToast={showToast} onApplied={() => loadData()} />}
             {view === 'hris-timetracker' && (effectiveRole === 'agent' || effectiveRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Time Tracker requires Manager access or higher</p></div>}
-            {view === 'hris-invoice' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && (
+            {view === 'hris-invoice' && effectiveRole === 'super_admin' && (
               <div className="max-w-lg mx-auto text-center py-20 space-y-4">
                 <div className="w-20 h-20 bg-pink-50 rounded-2xl flex items-center justify-center mx-auto">
                   <FileText className="w-10 h-10 text-pink-400" />
@@ -1939,9 +1939,9 @@ export default function KPIApp() {
                 <span className="inline-block bg-pink-100 text-pink-700 text-xs font-semibold px-3 py-1.5 rounded-full">🚧 Coming Soon</span>
               </div>
             )}
-            {view === 'hris-invoice' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
-            {view === 'opex' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <OpexPanel currentUser={effectiveUser} showToast={showToast} />}
-            {view === 'opex' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'hris-invoice' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'opex' && effectiveRole === 'super_admin' && <OpexPanel currentUser={effectiveUser} showToast={showToast} />}
+            {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
             {view === 'cadence' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <OperatingCadence currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'cadence' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
@@ -6941,8 +6941,8 @@ const ACCESS_GUIDE_ROWS: ({ section: string, row?: undefined, note?: undefined }
   { row: ['Employee Records', 'ADD / EDIT','YES (own)','ADD / EDIT','YES (own + team)','ADD / EDIT','YES','ADD / EDIT / DELETE','YES'], note: '✅ Weekly Pulse compliance column added; TL now sees own row too' },
   { row: ['Time Tracker', 'NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'] },
   { section: 'Finance' },
-  { row: ['Operational Expense', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ New -- Admin/Super Admin only, real RLS from day one' },
-  { row: ['Invoice', 'NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES','ADD / EDIT / DELETE / APPROVE','YES'], note: '✅ Moved from HRIS, now gated Admin/Super Admin only. Still a placeholder ("Coming Soon") -- no data yet' },
+  { row: ['Operational Expense', 'NA','NO','NA','NO','NA','NO','ADD / EDIT / DELETE','YES'], note: '✅ Super Admin only (tightened from Admin+Super Admin), real RLS from day one' },
+  { row: ['Invoice', 'NA','NO','NA','NO','NA','NO','ADD / EDIT / DELETE / APPROVE','YES'], note: '✅ Super Admin only (tightened from Admin+Super Admin). Still a placeholder ("Coming Soon") -- no data yet' },
   { section: 'Team Lead Tools' },
   { row: ['KPI Entry', 'NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
   { row: ['Observations', 'YES','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
@@ -7113,8 +7113,8 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
                 ['Time Tracker', 'Paste time-tracking period exports to compute Attendance % and apply it to KPI records.'],
                 ['Employee Records', 'Full HR profile data, including document and Weekly Pulse Check compliance status. Manager access and above; Agent/Team Lead see their own (and their team\'s, for TL) compliance status only.'],
                 ['Hiring Pipeline', 'External recruiting/hiring tool -- opens in a new tab. Admin/Super Admin only.'],
-                ['Operational Expense', 'Log program/client operating costs by category (salaries, equipment, recruitment, facilities, client fees, engagement, etc.), tagged to a client. Month/client filters, totals, and a category breakdown. Admin/Super Admin only.'],
-                ['Invoice', 'Invoice management -- coming soon. Admin/Super Admin only.'],
+                ['Operational Expense', 'Log program/client operating costs by category (salaries, equipment, recruitment, facilities, client fees, engagement, etc.), tagged to a client. Month/client filters, totals, and a category breakdown. Super Admin only.'],
+                ['Invoice', 'Invoice management -- coming soon. Super Admin only.'],
                 ['KPI Entry', 'Enter or edit an employee\'s monthly Attendance/Accuracy/Efficiency/Feedback/Compliance scores.'],
                 ['Observations', 'Log coaching observations and 1-on-1 notes for an employee.'],
                 ['Coaching & 1-on-1', 'Structured coaching session records, with optional acknowledgment.'],
