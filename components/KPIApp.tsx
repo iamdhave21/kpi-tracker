@@ -1889,7 +1889,7 @@ export default function KPIApp() {
             )}
             {view === 'matrix' && effectiveRole !== 'super_admin' && effectiveRole !== 'admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'settings' && (effectiveRole === 'super_admin' ? <SettingsPanel currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} /> : <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />)}
-            {view === 'org-chart' && <OrgChart employees={employees} showToast={showToast} />}
+            {view === 'org-chart' && <OrgChart employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'tickets' && <TicketsPanel currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
             {view === 'tasks' && <TasksPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} onTasksChanged={() => setTasksRefreshKey(k => k+1)} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
@@ -5155,7 +5155,7 @@ function DirectoryLinks({ userRole, currentUser, employees, showToast }: { userR
 
 // -- Coming Soon -------------------------------------------------------------
 // -- Org Chart ------------------------------------------------------------
-function OrgChart({ employees, showToast }: { employees: Employee[], showToast: (m: string, t?: 'success'|'error') => void }) {
+function OrgChart({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser?: string, userRole?: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [teams, setTeams] = useState<any[]>([])
   const [members, setMembers] = useState<any[]>([])
   const [avatarMap, setAvatarMap] = useState<Record<string, string>>({})
@@ -5182,10 +5182,20 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
 
   const initial = (name: string) => name.trim().charAt(0).toUpperCase()
 
+  // Client scoping: Admin/Super Admin see every client's teams, unrestricted
+  // (same pattern as Directory Links and Dashboard). Team Leads and Agents
+  // only see teams grouped under the client(s) on their own employee record.
+  const canSeeAllClients = userRole === 'super_admin' || userRole === 'admin'
+  const myEmployee = employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
+  const myClients: string[] = canSeeAllClients
+    ? []
+    : (myEmployee?.clients_supported && myEmployee.clients_supported.length ? myEmployee.clients_supported : (myEmployee?.client ? [myEmployee.client] : []))
+
   // Group teams by the client their team lead supports (falls back to 'Unassigned')
   const clientMap = new Map<string, any[]>()
   teams.forEach(t => {
     const client = t.team_lead?.client || 'Unassigned'
+    if (!canSeeAllClients && !myClients.includes(client)) return
     if (!clientMap.has(client)) clientMap.set(client, [])
     clientMap.get(client)!.push(t)
   })
@@ -5209,8 +5219,9 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
     </div>
   )
 
-  const totalTeams = teams.length
-  const totalMembers = members.length
+  const scopedTeams = clientEntries.flatMap(([, ts]) => ts)
+  const totalTeams = scopedTeams.length
+  const totalMembers = members.filter(m => scopedTeams.some(t => t.id === m.team_id)).length
 
   return (
     <div className="space-y-5">
@@ -5227,11 +5238,11 @@ function OrgChart({ employees, showToast }: { employees: Employee[], showToast: 
 
       {loading ? (
         <div className="text-center py-12 text-gray-400 text-sm">Loading org chart...</div>
-      ) : teams.length === 0 ? (
+      ) : scopedTeams.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <div className="text-4xl mb-3">🏢</div>
-          <p className="font-medium">No teams set up yet</p>
-          <p className="text-sm mt-1">Create teams under People → Teams to populate the org chart.</p>
+          <p className="font-medium">{teams.length === 0 ? 'No teams set up yet' : 'No teams found for your supported client(s)'}</p>
+          <p className="text-sm mt-1">{teams.length === 0 ? 'Create teams under People → Teams to populate the org chart.' : 'Contact your admin if this looks wrong.'}</p>
         </div>
       ) : (
         <div className="space-y-8">
@@ -6955,7 +6966,7 @@ const ACCESS_GUIDE_ROWS: ({ section: string, row?: undefined, note?: undefined }
   { row: ['Weekly Pulse Check', 'ADD (own)','YES (own)','ADD (own) + notes (team)','YES (own + team)','EDIT notes / DELETE','YES (all)','EDIT notes / DELETE','YES (all)'], note: '✅ New -- resignation-risk check-in, real RLS from day one, View As write-blocked, tied into Employee Records compliance. Super Admin does not submit, only reviews' },
   { section: 'People' },
   { row: ['Teams', 'NA','NO','NA','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Client-scoping pending -- teams have no client field yet' },
-  { row: ['Org Chart', 'NA','NO','NA','YES','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
+  { row: ['Org Chart', 'NA','YES (own client)','NA','YES (own client)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Client-scoped for Agent/TL' },
   { section: 'System' },
   { row: ['Matrix', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
   { row: ['Settings', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Currently Super Admin only in the app -- Admin row here is aspirational' },
@@ -7126,7 +7137,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
                 ['Weekly Pulse Check', 'A short weekly check-in (work environment, work-life balance, recognition & reward, client interaction, plus a direct retention question) so leadership can spot burnout or flight risk early. Everyone except Super Admin submits their own; Team Lead sees their team\'s answers and can leave a private note, Admin/Super Admin see everyone\'s.'],
                 ['Employees', 'Manage employee profiles, roles, and status. Admin/Super Admin only.'],
                 ['Teams', 'Group employees into teams and assign a Team Lead.'],
-                ['Org Chart', 'Visual reporting structure by client and team.'],
+                ['Org Chart', 'Visual reporting structure by client and team. Agent/Team Lead only see teams under their own supported client(s).'],
                 ['Matrix', 'Internal dev log of features shipped, issues, and pending SQL migrations. Admin/Super Admin only.'],
                 ['Settings', 'App users, audit log, this manual, the Access Guide, and your own password. Super Admin only.'],
               ].map(([title, desc]) => (
