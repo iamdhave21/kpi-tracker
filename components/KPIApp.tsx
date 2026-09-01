@@ -8035,6 +8035,44 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
     setLoadingDrill(false)
   }
 
+  // Coaching / Observations / Huddle drill-downs: show the actual list of
+  // items logged (and, for coaching, whether they counted toward target)
+  // so a TL/Manager can see exactly what's behind the percentage, not
+  // just a count.
+  type ListDrillItem = { title: string, date: string, subtitle?: string }
+  const [showListDrill, setShowListDrill] = useState<{kind:string, title:string} | null>(null)
+  const [listDrillItems, setListDrillItems] = useState<ListDrillItem[] | null>(null)
+
+  async function openCoachingDrilldown() {
+    if (!score?.tlEmail) return
+    setShowListDrill({ kind: 'coach', title: 'Coaching Sessions' })
+    setListDrillItems(null)
+    const { start, end } = getPeriodBounds()
+    const { data } = await supabase.from('coaching_logs').select('employee_name,date,type')
+      .eq('coached_by', score.tlEmail).gte('date', start.slice(0,10)).lte('date', end.slice(0,10)).order('date', { ascending: false })
+    setListDrillItems((data||[]).map((r:any) => ({ title: r.employee_name, date: r.date, subtitle: r.type })))
+  }
+
+  async function openObsDrilldown() {
+    if (!score?.tlEmail) return
+    setShowListDrill({ kind: 'obs', title: 'Observations Logged' })
+    setListDrillItems(null)
+    const { start, end } = getPeriodBounds()
+    const { data } = await supabase.from('observations').select('employee_id,created_at,observation,employees(name)')
+      .eq('observed_by', score.tlEmail).gte('created_at', start).lte('created_at', end).order('created_at', { ascending: false })
+    setListDrillItems((data||[]).map((r:any) => ({ title: r.employees?.name || 'Unknown', date: r.created_at, subtitle: (r.observation||'').slice(0,80) })))
+  }
+
+  async function openHuddleDrilldown() {
+    if (!score?.tlEmail) return
+    setShowListDrill({ kind: 'huddle', title: 'Huddle Notes Posted' })
+    setListDrillItems(null)
+    const { start, end } = getPeriodBounds()
+    const { data } = await supabase.from('huddle_notes').select('title,huddle_date,participants')
+      .eq('created_by', score.tlEmail).gte('huddle_date', start).lte('huddle_date', end).order('huddle_date', { ascending: false })
+    setListDrillItems((data||[]).map((r:any) => ({ title: r.title, date: r.huddle_date, subtitle: `${(r.participants||[]).length} participants` })))
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       {/* Header */}
@@ -8131,9 +8169,9 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
             <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">30% weight</span>
           </div>
           <SubItem label="Cadence Compliance" score={score.cadenceScore} extra="Avg across daily, weekly, monthly" onClick={openCadenceDrilldown} />
-          <SubItem label="Coaching Sessions" score={score.coachScore} count={score.coachCount} target={score.coachTarget} extra="sessions" />
-          <SubItem label="Observations Logged" score={score.obsScore} count={score.obsCount} target={score.obsTarget} extra="observations" />
-          <SubItem label="Huddle Notes Posted" score={score.huddleScore} count={score.huddleCount} target={score.huddleTarget} extra="huddles" />
+          <SubItem label="Coaching Sessions" score={score.coachScore} count={score.coachCount} target={score.coachTarget} extra="sessions" onClick={openCoachingDrilldown} />
+          <SubItem label="Observations Logged" score={score.obsScore} count={score.obsCount} target={score.obsTarget} extra="observations" onClick={openObsDrilldown} />
+          <SubItem label="Huddle Notes Posted" score={score.huddleScore} count={score.huddleCount} target={score.huddleTarget} extra="huddles" onClick={openHuddleDrilldown} />
           <SubItem label="KPI Entry Compliance" score={score.kpiScore} extra={score.kpiCount > 0 ? 'Entry submitted this month' : 'No entry submitted yet'} />
         </div>
 
@@ -8209,6 +8247,40 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Coaching / Observations / Huddle list drill-down modal */}
+      {showListDrill && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowListDrill(null)}>
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white">
+              <div>
+                <h3 className="font-bold text-blue-900">{showListDrill.title}</h3>
+                <p className="text-xs text-gray-500">{score?.tlName} — {getPeriodBounds().label}</p>
+              </div>
+              <button onClick={() => setShowListDrill(null)} className="text-gray-400 hover:text-gray-700 p-1"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5">
+              {listDrillItems === null ? (
+                <div className="text-center py-10 text-gray-400">Loading...</div>
+              ) : listDrillItems.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">None logged for this period yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {listDrillItems.map((item, i) => (
+                    <div key={i} className="border border-gray-100 rounded-lg px-3 py-2 bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-800">{item.title}</span>
+                        <span className="text-xs text-gray-400">{new Date(item.date).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</span>
+                      </div>
+                      {item.subtitle && <p className="text-xs text-gray-500 mt-0.5">{item.subtitle}</p>}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
