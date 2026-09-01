@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
-import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload } from 'lucide-react'
+import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye } from 'lucide-react'
 
 type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex'
 
@@ -8010,6 +8010,9 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   const [filterMonth, setFilterMonth] = useState('')
   const [deleting, setDeleting] = useState<string|null>(null)
   const [tlTeamEmails, setTlTeamEmails] = useState<Set<string> | null>(null)
+  const [viewLog, setViewLog] = useState<any|null>(null)
+  const [empObs, setEmpObs] = useState<any[]>([])
+  const [loadingEmpObs, setLoadingEmpObs] = useState(false)
 
   // Team Leads: resolve which employee emails belong to teams they lead, so
   // the coaching log list below can be scoped to just their own team instead
@@ -8053,6 +8056,20 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   }
 
   useEffect(() => { loadLogs() }, [tlTeamEmails, userRole])
+
+  // Pull up the selected agent's observation log the moment they're picked
+  // in the New Coaching Session form, so a TL can reference prior notes
+  // (documented behaviors/incidents) while writing the coaching entry.
+  useEffect(() => {
+    if (!form.employee_id) { setEmpObs([]); return }
+    let cancelled = false
+    ;(async () => {
+      setLoadingEmpObs(true)
+      const { data } = await supabase.from('observations').select('*').eq('employee_id', form.employee_id).order('created_at', { ascending: false }).limit(10)
+      if (!cancelled) { setEmpObs(data || []); setLoadingEmpObs(false) }
+    })()
+    return () => { cancelled = true }
+  }, [form.employee_id])
 
   async function acknowledgeCoaching(logId: string) {
     if (isPreviewing) { showToast('Preview mode is view-only -- acknowledgments must be done by signing in as that person.', 'error'); return }
@@ -8174,18 +8191,27 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
 
       {/* Controls */}
       <div className="flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           {canManage && (
-            <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
-              <option value="">All Employees</option>
-              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-0.5">Employee</label>
+              <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                <option value="">All Employees</option>
+                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
           )}
-          <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          <div>
+            <label className="block text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-0.5">Month</label>
+            <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+          </div>
           {(filterEmp || filterMonth) && (
-            <button onClick={() => { setFilterEmp(''); setFilterMonth('') }} className="text-sm text-blue-600 hover:underline">Clear</button>
+            <button onClick={() => { setFilterEmp(''); setFilterMonth('') }} className="text-sm text-blue-600 hover:underline self-end pb-2">Clear</button>
+          )}
+          {(filterEmp || filterMonth) && (
+            <span className="text-xs text-gray-400 self-end pb-2.5">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
           )}
         </div>
         {canManage && !isPreviewing && (
@@ -8250,6 +8276,28 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
               </select>
             </div>
           </div>
+          {form.employee_id && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+              <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wide mb-2">📌 Observation Log — {employees.find(e => e.id === form.employee_id)?.name}</p>
+              {loadingEmpObs ? (
+                <p className="text-xs text-indigo-400">Loading…</p>
+              ) : empObs.length === 0 ? (
+                <p className="text-xs text-indigo-400">No observations recorded for this employee yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {empObs.map(o => (
+                    <div key={o.id} className="bg-white rounded-lg border border-indigo-100 px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-indigo-700">{o.month_label}</span>
+                        <span className="text-xs text-gray-400">by {o.observed_by?.split('@')[0]} · {o.created_at ? new Date(o.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
+                      </div>
+                      <p className="text-gray-700 whitespace-pre-wrap">{o.observation}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Key Discussion Points *</label>
             <textarea value={form.discussion} onChange={e => setForm({...form, discussion: e.target.value})} rows={3}
@@ -8338,8 +8386,12 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                           log.initiated_by === 'HR' ? 'bg-pink-100 text-pink-700' :
                           'bg-gray-100 text-gray-700'}`}>{log.initiated_by || 'Team Lead'}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-700 max-w-xs"><div className="line-clamp-2">{log.discussion}</div></td>
-                      <td className="px-4 py-3 text-gray-600 max-w-xs"><div className="line-clamp-2">{log.action_items || '—'}</div></td>
+                      <td className="px-4 py-3 text-gray-700 max-w-xs cursor-pointer" onClick={() => setViewLog(log)}>
+                        <div className="line-clamp-2 hover:text-blue-700">{log.discussion}</div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 max-w-xs cursor-pointer" onClick={() => setViewLog(log)}>
+                        <div className="line-clamp-2 hover:text-blue-700">{log.action_items || '—'}</div>
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {nextDue ? (
                           <span className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
@@ -8370,10 +8422,15 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                       </td>
                       {canManage && (
                         <td className="px-4 py-3">
-                          <button onClick={() => handleDelete(log.id)} disabled={deleting === log.id}
-                            className="text-gray-400 hover:text-red-500 transition p-1 rounded">
-                            {deleting === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400"/> : <Trash2 className="w-3.5 h-3.5"/>}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setViewLog(log)} className="text-gray-400 hover:text-blue-600 transition p-1 rounded" title="View full session">
+                              <Eye className="w-3.5 h-3.5"/>
+                            </button>
+                            <button onClick={() => handleDelete(log.id)} disabled={deleting === log.id}
+                              className="text-gray-400 hover:text-red-500 transition p-1 rounded">
+                              {deleting === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400"/> : <Trash2 className="w-3.5 h-3.5"/>}
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -8381,6 +8438,52 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Full session detail modal */}
+      {viewLog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setViewLog(null)}>
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white">
+              <div>
+                <h3 className="font-bold text-blue-900">{viewLog.employee_name}</h3>
+                <p className="text-xs text-gray-500">{new Date(viewLog.date).toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric'})}</p>
+              </div>
+              <button onClick={() => setViewLog(null)} className="text-gray-400 hover:text-gray-700 p-1"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4 text-sm">
+              <div className="flex flex-wrap gap-2">
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">{viewLog.type}</span>
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">Initiated by: {viewLog.initiated_by || 'Team Lead'}</span>
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">Coached by: {viewLog.coached_by?.split('@')[0]}</span>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Key Discussion Points</p>
+                <p className="text-gray-800 whitespace-pre-wrap">{viewLog.discussion || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Action Items</p>
+                <p className="text-gray-800 whitespace-pre-wrap">{viewLog.action_items || '—'}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Next Session</p>
+                  <p className="text-gray-800">{viewLog.next_session_date ? new Date(viewLog.next_session_date).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Agent Sign-off</p>
+                  {!viewLog.requires_acknowledgment ? (
+                    <p className="text-gray-400">Not required</p>
+                  ) : viewLog.agent_acknowledged ? (
+                    <p className="text-emerald-700">✓ Acknowledged {viewLog.agent_acknowledged_at ? `on ${new Date(viewLog.agent_acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}` : ''}</p>
+                  ) : (
+                    <p className="text-amber-700">⏳ Pending</p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
