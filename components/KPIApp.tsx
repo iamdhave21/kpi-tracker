@@ -8292,6 +8292,13 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                         <span className="text-xs text-gray-400">by {o.observed_by?.split('@')[0]} · {o.created_at ? new Date(o.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
                       </div>
                       <p className="text-gray-700 whitespace-pre-wrap">{o.observation}</p>
+                      <button
+                        type="button"
+                        onClick={() => setForm((f: any) => ({ ...f, discussion: f.discussion ? `${f.discussion}\n\n[Observation, ${o.month_label}]: ${o.observation}` : `[Observation, ${o.month_label}]: ${o.observation}` }))}
+                        className="mt-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+                      >
+                        + Insert into Discussion
+                      </button>
                     </div>
                   ))}
                 </div>
