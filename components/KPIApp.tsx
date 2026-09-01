@@ -3363,7 +3363,15 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
   function calcOverall(compliancePct=0) { const a=parseFloat(attendance)/100,b=parseFloat(accuracy)/100,c=parseFloat(efficiency)/100,d=parseFloat(feedback)/100; if([a,b,c,d].some(isNaN))return null; return a*0.2+b*0.3+c*0.3+d*0.15+(compliancePct*0.05) }
   const compN = compliance !== '' ? parseFloat(compliance)/100 : 0
   const overall = calcOverall(compN)
-  const allMonths = ['2024','2025','2026','2027','2028','2029','2030'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
+  // Same convention as Observations: 3 months back through 6 months
+  // forward, so it's a short list instead of scrolling through 2024-2030,
+  // while still allowing backdating during this testing period. Editing
+  // records further in the past is handled via the pencil-edit modal on
+  // the Dashboard/Team Dashboard tables, not this form.
+  const allMonths = Array.from({length: 10}, (_, i) => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 3 + i)
+    return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+  })
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
