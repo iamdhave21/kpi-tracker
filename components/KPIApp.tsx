@@ -2005,7 +2005,7 @@ export default function KPIApp() {
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} />}
             {view === 'pulse-check' && <PulseCheckPanel key={effectiveUser || 'self'} employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} isPreviewing={!!previewTarget} />}
-            {view === 'entry' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={effectiveUser} />}
+            {view === 'entry' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
             {view === 'entry' && effectiveRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
             {view === 'employees' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
             {view === 'employees' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
@@ -3317,9 +3317,9 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 }
 
 // -- KPI Entry ---------------------------------------------------------------
-function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
-  { employees: Employee[], records: KpiRecord[], onSaved: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string }) {
-  const [empId, setEmpId] = useState(employees.find(e=>e.active)?.id||'')
+function KPIEntry({ employees, records, onSaved, showToast, currentUser, userRole }:
+  { employees: Employee[], records: KpiRecord[], onSaved: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string }) {
+  const [empId, setEmpId] = useState('')
   const [monthLabel, setMonthLabel] = useState(`${MONTHS[new Date().getMonth()]} ${new Date().getFullYear()}`)
   const [designation, setDesignation] = useState('')
   const [attendance, setAttendance] = useState('')
@@ -3333,6 +3333,34 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
   const [coached, setCoached] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
+
+  // KPI Entry previously had no team scoping at all -- a Team Lead's
+  // Employee dropdown listed every active employee company-wide, meaning
+  // they could enter scores for anyone, not just their own team. Admin/
+  // Super Admin remain unrestricted; a Team Lead now only sees their own
+  // team's active members here.
+  const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
+  const isTL = userRole === 'Team Lead'
+  useEffect(() => {
+    if (!isTL || !currentUser) { setMyTeamEmpIds(null); return }
+    let cancelled = false
+    ;(async () => {
+      const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
+      if (!myEmp) { if (!cancelled) setMyTeamEmpIds(new Set()); return }
+      const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
+      const ledTeamIds = (teamsData || []).filter((t: any) => t.team_lead_id === myEmp.id).map((t: any) => t.id)
+      const { data: memberData } = await supabase.from('team_members').select('employee_id, team_id').in('team_id', ledTeamIds)
+      if (!cancelled) setMyTeamEmpIds(new Set((memberData || []).map((m: any) => m.employee_id)))
+    })()
+    return () => { cancelled = true }
+  }, [isTL, currentUser, employees.length])
+
+  const eligibleEmployees = employees.filter(e => e.active && (!isTL || myTeamEmpIds === null || myTeamEmpIds.has(e.id)))
+
+  useEffect(() => {
+    if (eligibleEmployees.length > 0 && (!empId || !eligibleEmployees.some(e => e.id === empId))) setEmpId(eligibleEmployees[0].id)
+  }, [eligibleEmployees.map(e=>e.id).join(',')])
+
   const selEmp = employees.find(e=>e.id===empId)
 
   useEffect(() => { if (selEmp) setDesignation(selEmp.designation) }, [empId])
@@ -3391,7 +3419,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
       {editId && <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><Edit2 className="w-4 h-4"/>Editing existing record for {selEmp?.name}</div>}
       <form onSubmit={handleSave} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Employee</label><select value={empId} onChange={e=>setEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{employees.filter(e=>e.active).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Employee</label><select value={empId} onChange={e=>setEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{eligibleEmployees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>{isTL && myTeamEmpIds && myTeamEmpIds.size === 0 && <p className="text-xs text-amber-600 mt-1">No team members found under your account.</p>}</div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Month</label><select value={monthLabel} onChange={e=>setMonthLabel(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{allMonths.map(m=><option key={m}>{m}</option>)}</select></div>
         </div>
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Designation</label><input value={designation} onChange={e=>setDesignation(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. FSCM, AR B2B"/></div>
