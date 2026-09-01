@@ -2261,7 +2261,14 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
   // client's tab, unrestricted. Team Leads and Agents only see tabs for the
   // client(s) on their own employee record -- someone supporting only EMMA
   // shouldn't see so much as a tab for AB BSS or Harlan + Holden here either.
-  const canSeeAllClients = ['super_admin','admin'].includes(userRole)
+  // Prep for a future second Admin-tier "Manager": Super Admin stays fully
+  // unrestricted (has no employee record / client of their own, per
+  // long-standing design), but a plain Admin is now scoped to the
+  // client(s) on their own employee record, same convention used
+  // everywhere else. There's only one Admin/Super Admin today so this has
+  // no visible effect yet, but it's now correct for when a second one
+  // with a specific client assignment is added.
+  const canSeeAllClients = userRole === 'super_admin'
   const myEmployeeForClient = employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
   const myClients: string[] = canSeeAllClients
     ? CLIENTS
@@ -3371,7 +3378,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser }:
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       <div><h2 className="text-xl font-bold text-blue-900">KPI Entry</h2><p className="text-sm text-gray-500">Enter or update monthly KPI scores</p></div>
       {editId && <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><Edit2 className="w-4 h-4"/>Editing existing record for {selEmp?.name}</div>}
       <form onSubmit={handleSave} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
@@ -6803,6 +6810,14 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
   const [myTeamEmployeeIds, setMyTeamEmployeeIds] = useState<string[] | null>(null)
 
   const allMonths = ['2024','2025','2026','2027'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
+  // For the Add Observation form specifically: current month + 6 months
+  // forward only, so it's a short, hard-to-mis-click list instead of years
+  // of scrollable options (filtering past observations still uses the
+  // full allMonths list above).
+  const addObsMonths = Array.from({length: 7}, (_, i) => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + i)
+    return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+  })
 
   useEffect(() => {
     if (employees.length > 0 && !selEmp) setSelEmp(employees[0].id)
@@ -6893,7 +6908,7 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
               <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
               <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                 <option value="">Select month...</option>
-                {allMonths.map(m => <option key={m}>{m}</option>)}
+                {addObsMonths.map(m => <option key={m}>{m}</option>)}
               </select>
             </div>
           </div>
