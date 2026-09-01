@@ -8393,6 +8393,8 @@ function TLComplianceReport({ employees, currentUser, userRole }:
   { employees: Employee[], currentUser: string | null, userRole: string }) {
 
   const [logs, setLogs] = useState<any[]>([])
+  const [teams, setTeams] = useState<any[]>([])
+  const [teamMembers, setTeamMembers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'monthly'|'weekly'>('monthly')
   const [selMonth, setSelMonth] = useState(new Date().toISOString().slice(0,7))
@@ -8400,8 +8402,14 @@ function TLComplianceReport({ employees, currentUser, userRole }:
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const { data } = await supabase.from('coaching_logs').select('*').order('date', { ascending: false })
-      setLogs(data || [])
+      const [{ data: logData }, { data: teamsData }, { data: memberData }] = await Promise.all([
+        supabase.from('coaching_logs').select('*').order('date', { ascending: false }),
+        supabase.from('teams').select('id, team_lead_id').eq('active', true),
+        supabase.from('team_members').select('team_id, employee_id'),
+      ])
+      setLogs(logData || [])
+      setTeams(teamsData || [])
+      setTeamMembers(memberData || [])
       setLoading(false)
     }
     load()
@@ -8419,6 +8427,20 @@ function TLComplianceReport({ employees, currentUser, userRole }:
     if (!tlMap[tl]) tlMap[tl] = { name: tl, sessions: [] }
     tlMap[tl].sessions.push(l)
   })
+
+  // Resolve each TL's actual team size (active members only), so the target
+  // is "2 sessions x this TL's own headcount", not a portal-wide constant.
+  // coached_by is stored as an email; match it to the employee record to
+  // find which team(s) they lead, then count active members of those teams.
+  function getTeamSizeForTL(tlEmail: string): number {
+    const emp = employees.find(e => e.email?.toLowerCase() === tlEmail.toLowerCase())
+    if (!emp) return 0
+    const ledTeamIds = teams.filter(t => t.team_lead_id === emp.id).map(t => t.id)
+    const memberIds = new Set(teamMembers.filter(m => ledTeamIds.includes(m.team_id)).map(m => m.employee_id))
+    return employees.filter(e => memberIds.has(e.id) && e.active).length
+  }
+
+  const PER_AGENT_TARGET = 2
 
   // Weekly breakdown for selected month
   const getWeek = (dateStr: string) => {
@@ -8440,7 +8462,8 @@ function TLComplianceReport({ employees, currentUser, userRole }:
 
   const tlList = Object.entries(tlMap).sort((a,b) => b[1].sessions.length - a[1].sessions.length)
   const WEEKS = ['Week 1', 'Week 2', 'Week 3', 'Week 4']
-  // Target: min 2 sessions per employee per month
+  // Target (informational, for Admin/Super Admin's portal-wide view only):
+  // min 2 sessions per employee per month, across all active employees.
   const activeCount = employees.filter(e => e.active).length
   const TARGET_MONTHLY = activeCount * 2
 
@@ -8485,24 +8508,42 @@ function TLComplianceReport({ employees, currentUser, userRole }:
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Team Lead</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Sessions</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Unique Employees Coached</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status (% of Team Coached)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {tlList.map(([tl, data]) => {
                 const uniqueEmps = new Set(data.sessions.map(s => s.employee_id)).size
-                const onTrack = data.sessions.length >= 2
+                const teamSize = getTeamSizeForTL(tl)
+                const requiredSessions = teamSize * PER_AGENT_TARGET
+                // Cap each agent's counted sessions at the per-agent target so one
+                // over-coached agent can't mask others being under-coached.
+                const perAgentCounts: Record<string, number> = {}
+                data.sessions.forEach(s => { perAgentCounts[s.employee_id] = (perAgentCounts[s.employee_id] || 0) + 1 })
+                const creditedSessions = Object.values(perAgentCounts).reduce((sum, c) => sum + Math.min(c, PER_AGENT_TARGET), 0)
+                const pct = requiredSessions > 0 ? Math.round((creditedSessions / requiredSessions) * 100) : null
+                const onTrack = pct !== null && pct >= 100
                 return (
                   <tr key={tl} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3 font-medium text-gray-900">{tl.split('@')[0]}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="text-lg font-bold text-blue-900">{data.sessions.length}</span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{uniqueEmps} employee{uniqueEmps !== 1 ? 's' : ''}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {uniqueEmps} employee{uniqueEmps !== 1 ? 's' : ''}
+                      {teamSize > 0 && <span className="text-xs text-gray-400"> of {teamSize} on team</span>}
+                    </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${onTrack ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                        {onTrack ? '✓ Compliant' : '⚠ Below Target'}
-                      </span>
+                      {pct === null ? (
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">No team found</span>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${onTrack ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {onTrack ? '✓ Compliant' : '⚠ Below Target'}
+                          </span>
+                          <span className="text-xs text-gray-400">{pct}% ({creditedSessions}/{requiredSessions} required)</span>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
