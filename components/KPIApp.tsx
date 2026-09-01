@@ -1512,7 +1512,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         <div className="px-2 pb-1 space-y-0.5">
           {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="employees" label="Employees" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>}
           {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="teams" label="Teams" icon={<Award className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>}
-          <NavItem id="org-chart" label="Org Chart" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>
+          {userRole !== 'agent' && <NavItem id="org-chart" label="Org Chart" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-amber-400"/>}
         </div>
       )}
 
@@ -1917,7 +1917,8 @@ export default function KPIApp() {
             )}
             {view === 'matrix' && effectiveRole !== 'super_admin' && effectiveRole !== 'admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'settings' && (effectiveRole === 'super_admin' ? <SettingsPanel currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} /> : <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />)}
-            {view === 'org-chart' && <OrgChart employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'org-chart' && effectiveRole !== 'agent' && <OrgChart employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'org-chart' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'tickets' && <TicketsPanel currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
             {view === 'tasks' && <TasksPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} onTasksChanged={() => setTasksRefreshKey(k => k+1)} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
@@ -6994,7 +6995,7 @@ const ACCESS_GUIDE_ROWS: ({ section: string, row?: undefined, note?: undefined }
   { row: ['Weekly Pulse Check', 'ADD (own)','YES (own)','ADD (own) + notes (team)','YES (own + team)','EDIT notes / DELETE','YES (all)','EDIT notes / DELETE','YES (all)'], note: '✅ New -- resignation-risk check-in, real RLS from day one, View As write-blocked, tied into Employee Records compliance. Super Admin does not submit, only reviews' },
   { section: 'People' },
   { row: ['Teams', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Locked to Admin/Super Admin (was open to everyone -- also revealed headcount)' },
-  { row: ['Org Chart', 'NA','YES (own client)','NA','YES (own client)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Client-scoped for Agent/TL' },
+  { row: ['Org Chart', 'NA','NO','NA','YES (own client)','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: '✅ Hidden from Agent entirely; Team Lead client-scoped' },
   { section: 'System' },
   { row: ['Matrix', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'] },
   { row: ['Settings', 'NA','NO','NA','NO','ADD / EDIT / DELETE','YES','ADD / EDIT / DELETE','YES'], note: 'Currently Super Admin only in the app -- Admin row here is aspirational' },
@@ -7165,7 +7166,7 @@ function SettingsPanel({ currentUser, userRole, showToast }: { currentUser: stri
                 ['Weekly Pulse Check', 'A short weekly check-in (work environment, work-life balance, recognition & reward, client interaction, plus a direct retention question) so leadership can spot burnout or flight risk early. Everyone except Super Admin submits their own; Team Lead sees their team\'s answers and can leave a private note, Admin/Super Admin see everyone\'s.'],
                 ['Employees', 'Manage employee profiles, roles, and status. Admin/Super Admin only.'],
                 ['Teams', 'Group employees into teams and assign a Team Lead. Admin/Super Admin only.'],
-                ['Org Chart', 'Visual reporting structure by client and team. Agent/Team Lead only see teams under their own supported client(s).'],
+                ['Org Chart', 'Visual reporting structure by client and team. Hidden from Agents entirely; Team Lead only sees teams under their own supported client(s).'],
                 ['Matrix', 'Internal dev log of features shipped, issues, and pending SQL migrations. Admin/Super Admin only.'],
                 ['Settings', 'App users, audit log, this manual, the Access Guide, and your own password. Super Admin only.'],
               ].map(([title, desc]) => (
