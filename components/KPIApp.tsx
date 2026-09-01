@@ -6810,12 +6810,12 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
   const [myTeamEmployeeIds, setMyTeamEmployeeIds] = useState<string[] | null>(null)
 
   const allMonths = ['2024','2025','2026','2027'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
-  // For the Add Observation form specifically: current month + 6 months
-  // forward only, so it's a short, hard-to-mis-click list instead of years
-  // of scrollable options (filtering past observations still uses the
-  // full allMonths list above).
-  const addObsMonths = Array.from({length: 7}, (_, i) => {
-    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + i)
+  // For the Add Observation form specifically: 3 months back through 6
+  // months forward, so it's a short list instead of years of scrollable
+  // options, while still allowing backdating during this testing period
+  // (filtering past observations still uses the full allMonths list above).
+  const addObsMonths = Array.from({length: 10}, (_, i) => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 3 + i)
     return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
   })
 
@@ -8445,12 +8445,14 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
 
   return (
     <div className="space-y-4">
-      {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Stats row -- "Employees Coached" is meaningless for an agent (it's
+          always just themself), so it's dropped from their view entirely
+          rather than showing a stat of 1. */}
+      <div className={`grid grid-cols-2 ${userRole === 'agent' ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-3`}>
         {[
           { label: 'Total Sessions', value: logs.length },
           { label: 'This Month', value: logs.filter(l => l.date.startsWith(new Date().toISOString().slice(0,7))).length },
-          { label: 'Employees Coached', value: new Set(logs.map(l => l.employee_id)).size },
+          ...(userRole === 'agent' ? [] : [{ label: 'Employees Coached', value: new Set(logs.map(l => l.employee_id)).size }]),
           { label: 'Pending Follow-ups', value: logs.filter(l => l.next_session_date && new Date(l.next_session_date) >= new Date()).length },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
