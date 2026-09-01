@@ -113,6 +113,14 @@ type ComplianceBreakdown = {
 // Weekly Pulse Check submissions were actually expected of someone that
 // calendar month, matching the same Monday-based week_start used by the
 // Pulse Check feature itself.
+// The first week Weekly Pulse Check is actually REQUIRED. The feature
+// launched mid-week (agents only learned about it partway through), so the
+// partial rollout week itself is deliberately excluded from compliance
+// scoring and the Quick Glance nag -- nobody should be flagged as "missing"
+// a check-in for a week that started before the feature even existed for
+// them. The first fully-required week is the next Monday after launch.
+const PULSE_CHECK_REQUIRED_FROM = new Date('2026-08-31')
+
 function countMondaysInRange(start: Date, end: Date): number {
   let count = 0
   const d = new Date(start)
@@ -172,7 +180,8 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
   const coachAcked = (coaching || []).filter(c => c.agent_acknowledged).length
   const taskTotal = (taskData || []).length
   const taskDone = (taskData || []).filter(t => t.is_done).length
-  const pulseTotal = countMondaysInRange(new Date(start), new Date(end))
+  const pulseRangeStart = new Date(Math.max(new Date(start).getTime(), PULSE_CHECK_REQUIRED_FROM.getTime()))
+  const pulseTotal = countMondaysInRange(pulseRangeStart, new Date(end))
   const pulseSubmitted = Math.min((pulseData || []).length, pulseTotal)
   const totalRequired = coachTotal + annIds.length + taskTotal + pulseTotal
   const totalAcked = coachAcked + annAcked + taskDone + pulseSubmitted
@@ -7696,8 +7705,11 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
 
   // Build the list of Mondays expected this month, then diff against what
   // was actually submitted to find which specific weeks are missing.
+  // Clamped to PULSE_CHECK_REQUIRED_FROM -- the rollout week itself is
+  // never "expected", same as getComplianceBreakdown above.
   const expectedWeeks: string[] = []
-  const d = new Date(start); const startDate = new Date(start); const endDate = new Date(end)
+  const rangeStart = new Date(Math.max(new Date(start).getTime(), PULSE_CHECK_REQUIRED_FROM.getTime()))
+  const d = new Date(rangeStart); const startDate = new Date(rangeStart); const endDate = new Date(end)
   const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day
   d.setDate(d.getDate() + diff)
   if (d < startDate) d.setDate(d.getDate() + 7)
@@ -7790,11 +7802,17 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
           .filter(x => x.count > 0)
       }
 
-      // This week's Weekly Pulse Check -- current week only, not the whole month.
+      // This week's Weekly Pulse Check -- current week only, not the whole
+      // month. Skipped entirely during the rollout week itself (before
+      // PULSE_CHECK_REQUIRED_FROM), since nobody should be nagged about a
+      // check-in that wasn't actually required yet.
       const currentWeek = getWeekStart()
-      const { data: pulses } = await supabase.from('pulse_surveys').select('employee_email').eq('week_start', currentWeek)
-      const submittedEmails = new Set((pulses || []).map((p: any) => p.employee_email?.toLowerCase()))
-      const pulsePending = scopedEmployees.filter(e => e.email && !submittedEmails.has(e.email.toLowerCase())).map(e => e.name)
+      let pulsePending: string[] = []
+      if (new Date(currentWeek) >= PULSE_CHECK_REQUIRED_FROM) {
+        const { data: pulses } = await supabase.from('pulse_surveys').select('employee_email').eq('week_start', currentWeek)
+        const submittedEmails = new Set((pulses || []).map((p: any) => p.employee_email?.toLowerCase()))
+        pulsePending = scopedEmployees.filter(e => e.email && !submittedEmails.has(e.email.toLowerCase())).map(e => e.name)
+      }
 
       if (!cancelled) { setQuickAnnPending(annPending); setQuickPulsePending(pulsePending); setQuickLoading(false) }
     })()
