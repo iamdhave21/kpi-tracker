@@ -7755,6 +7755,52 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
     && (teamMemberIds === null || teamMemberIds.has(e.id))
     && (teamFilterIds === null || teamFilterIds.has(e.id)))
 
+  // Quick Glance: "who hasn't acknowledged/checked in RIGHT NOW" -- separate
+  // from the month-by-month browser below, and deliberately independent of
+  // whatever month is selected there, since an outstanding announcement or
+  // this week's pulse check-in matters regardless of which month you're
+  // currently browsing.
+  const [quickAnnPending, setQuickAnnPending] = useState<{ name: string, count: number }[]>([])
+  const [quickPulsePending, setQuickPulsePending] = useState<string[]>([])
+  const [quickLoading, setQuickLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setQuickLoading(true)
+    ;(async () => {
+      const emails = scopedEmployees.filter(e => e.email).map(e => e.email!.toLowerCase())
+      if (emails.length === 0) { if (!cancelled) { setQuickAnnPending([]); setQuickPulsePending([]); setQuickLoading(false) }; return }
+
+      // Unacknowledged announcements -- looks back 60 days so something
+      // posted last week doesn't disappear from the quick glance just
+      // because a new month started.
+      const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+      const { data: anns } = await supabase.from('announcements').select('id').gte('created_at', sixtyDaysAgo)
+      const annIds = (anns || []).map((a: any) => a.id)
+      let annPending: { name: string, count: number }[] = []
+      if (annIds.length) {
+        const { data: acks } = await supabase.from('announcement_acknowledgements').select('announcement_id, user_email').in('announcement_id', annIds)
+        annPending = scopedEmployees
+          .filter(e => e.email)
+          .map(e => {
+            const mine = (acks || []).filter((a: any) => a.user_email?.toLowerCase() === e.email!.toLowerCase()).map((a: any) => a.announcement_id)
+            const missing = annIds.filter((id: string) => !mine.includes(id)).length
+            return { name: e.name, count: missing }
+          })
+          .filter(x => x.count > 0)
+      }
+
+      // This week's Weekly Pulse Check -- current week only, not the whole month.
+      const currentWeek = getWeekStart()
+      const { data: pulses } = await supabase.from('pulse_surveys').select('employee_email').eq('week_start', currentWeek)
+      const submittedEmails = new Set((pulses || []).map((p: any) => p.employee_email?.toLowerCase()))
+      const pulsePending = scopedEmployees.filter(e => e.email && !submittedEmails.has(e.email.toLowerCase())).map(e => e.name)
+
+      if (!cancelled) { setQuickAnnPending(annPending); setQuickPulsePending(pulsePending); setQuickLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [scopedEmployees.map(e => e.id).join(','), teamMemberIds])
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -7805,6 +7851,31 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
           )}
         </div>
       </div>
+
+      {/* Quick Glance -- right now, not tied to the month selector below */}
+      {!quickLoading && (quickAnnPending.length > 0 || quickPulsePending.length > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {quickAnnPending.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-amber-800 mb-2">📢 Haven't acknowledged an announcement ({quickAnnPending.length})</p>
+              <div className="flex flex-wrap gap-2">
+                {quickAnnPending.map(p => <span key={p.name} className="text-xs bg-white border border-amber-200 text-amber-700 px-2 py-1 rounded-full">{p.name} ({p.count})</span>)}
+              </div>
+            </div>
+          )}
+          {quickPulsePending.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-blue-800 mb-2">💙 Haven't done this week's Pulse Check ({quickPulsePending.length})</p>
+              <div className="flex flex-wrap gap-2">
+                {quickPulsePending.map(name => <span key={name} className="text-xs bg-white border border-blue-200 text-blue-700 px-2 py-1 rounded-full">{name}</span>)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {!quickLoading && quickAnnPending.length === 0 && quickPulsePending.length === 0 && scopedEmployees.length > 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700 font-medium">✓ Everyone's caught up on announcements and this week's Pulse Check.</div>
+      )}
 
       {loading ? (
         <div className="text-center py-8 text-gray-400 text-sm">Loading compliance data...</div>
