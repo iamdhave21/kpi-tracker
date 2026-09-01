@@ -3108,6 +3108,16 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   const [expandedId, setExpandedId] = useState<string|null>(null)
   const [noteDrafts, setNoteDrafts] = useState<Record<string,string>>({})
   const [savingNote, setSavingNote] = useState<string|null>(null)
+  const [trendData, setTrendData] = useState<{week: string, avg: number|null, flagged: number}[]>([])
+  const [compareWeeks, setCompareWeeks] = useState<string[]>([])
+
+  // Last 10 weeks (most recent first) for the "Week of" picker -- replaces
+  // a free-text date input the person had to type/pick exactly, with a
+  // fixed, always-valid list of actual submission weeks (Mondays only).
+  const recentWeeks = Array.from({length: 10}, (_, i) => {
+    const d = new Date(currentWeek); d.setDate(d.getDate() - 7*i)
+    return d.toISOString().slice(0,10)
+  })
 
   useEffect(() => {
     if (!canManage) return
@@ -3126,6 +3136,27 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
       }
     })()
   }, [canManage, isTL, teamEmpIds, weekFilter])
+
+  // Trend across recent weeks, scoped the same way as the table above, so
+  // a TL/Manager can see whether the team's pulse is improving, flat, or
+  // declining rather than only ever seeing one week in isolation.
+  useEffect(() => {
+    if (!canManage) return
+    if (isTL && teamEmpIds === null) return
+    ;(async () => {
+      const weeks = [...recentWeeks].reverse()
+      const { data } = await supabase.from('pulse_surveys').select('*').gte('week_start', weeks[0]).lte('week_start', weeks[weeks.length-1])
+      const scoped = isTL ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
+      const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
+      setTrendData(weeks.map(w => {
+        const rows = scoped.filter((r:any) => r.week_start === w)
+        if (rows.length === 0) return { week: w, avg: null, flagged: 0 }
+        const avg = rows.reduce((sum:number, r:any) => sum + ratedKeys.reduce((s,k) => s+(r[k]||0),0)/ratedKeys.length, 0) / rows.length
+        const flagged = rows.filter((r:any) => pulseIsAtRisk(r)).length
+        return { week: w, avg: Math.round(avg*100)/100, flagged }
+      }))
+    })()
+  }, [canManage, isTL, teamEmpIds])
 
   const scopedActiveEmployees = (isTL ? employees.filter(e => teamEmpIds?.has(e.id)) : employees).filter(e => e.active)
   const notYetSubmitted = scopedActiveEmployees.filter(e => !subs.some(s => s.employee_id === e.id))
@@ -3244,9 +3275,48 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <label className="text-sm text-gray-600">Week of</label>
-            <input type="date" value={weekFilter} onChange={e => setWeekFilter(getWeekStart(new Date(e.target.value)))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900"/>
+            <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+              {recentWeeks.map(w => (
+                <option key={w} value={w}>{w === currentWeek ? 'Current week — ' : ''}{new Date(w).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</option>
+              ))}
+            </select>
             {weekFilter !== currentWeek && <button onClick={() => setWeekFilter(currentWeek)} className="text-xs text-blue-600 hover:underline">Back to current week</button>}
           </div>
+
+          {/* Trend across recent weeks */}
+          {trendData.some(t => t.avg !== null) && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold text-blue-900 mb-3">Pulse Trend — Last 10 Weeks</h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="week" tickFormatter={w => new Date(w).toLocaleDateString('en-PH',{month:'short',day:'numeric'})} tick={{fontSize:11}} />
+                  <YAxis domain={[1,5]} tick={{fontSize:11}} />
+                  <Tooltip labelFormatter={w => new Date(w as string).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})} formatter={(v:any,n:any) => n==='avg' ? [v ?? '—','Avg Score'] : [v,'Flagged']} />
+                  <ReferenceLine y={2.5} stroke="#dc2626" strokeDasharray="4 4" label={{value:'At-risk threshold',fontSize:10,fill:'#dc2626'}} />
+                  <Line type="monotone" dataKey="avg" stroke="#1e3a8a" strokeWidth={2} dot={{r:3}} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+              <p className="text-xs text-gray-400 mt-1">Dashed line = at-risk threshold (avg ≤ 2.5). Gaps mean no submissions that week.</p>
+            </div>
+          )}
+
+          {/* Passing vs flagged remark */}
+          {subs.length > 0 && (() => {
+            const flaggedCount = subs.filter(s => pulseIsAtRisk(s)).length
+            const passingCount = subs.length - flaggedCount
+            return (
+              <div className={`rounded-xl border p-4 flex items-center gap-3 ${flaggedCount > 0 ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                <span className="text-2xl">{flaggedCount > 0 ? '🚩' : '✅'}</span>
+                <div>
+                  <p className={`text-sm font-semibold ${flaggedCount > 0 ? 'text-red-800' : 'text-emerald-800'}`}>
+                    {flaggedCount > 0 ? `${flaggedCount} ${flaggedCount===1?'person needs':'people need'} intervention this week` : 'Everyone who checked in this week is passing'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{passingCount} passing · {flaggedCount} flagged (avg ≤ 2.5 or retention ≤ 2) · {notYetSubmitted.length} haven't checked in</p>
+                </div>
+              </div>
+            )
+          })()}
 
           {loadingSubs ? <div className="text-center py-12 text-gray-400">Loading...</div> : (
             <>
