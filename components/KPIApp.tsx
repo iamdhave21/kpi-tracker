@@ -662,13 +662,13 @@ function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackD
 // the play/submit screen and the leaderboard/approval flow stay in sync.
 // game_key is derived from the name so switching games automatically starts
 // a fresh leaderboard instead of mixing scores from the previous game.
-const GAME = { name: 'Temple Run 2', url: 'https://poki.com/en/g/temple-run-2', icon: '🏃', color: 'from-orange-400 to-pink-500' }
+const GAME = { name: 'Snake vs Worms', url: 'https://poki.com/en/g/snake-vs-worms', icon: '🐍', color: 'from-green-400 to-emerald-600' }
 const GAME_KEY = GAME.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 // Historical game_key -> display name. 'game_of_month' is the old generic
 // key used before per-game separation existed (that was Subway Surfers at
 // the time). Add an entry here any time GAME.name changes, so past months
 // still show the right game name instead of a raw slug.
-const GAME_NAMES: Record<string, string> = { 'game_of_month': 'Subway Surfers', [GAME_KEY]: GAME.name }
+const GAME_NAMES: Record<string, string> = { 'game_of_month': 'Subway Surfers', 'temple-run-2': 'Temple Run 2', [GAME_KEY]: GAME.name }
 
 function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string, userName: string, onScoreSaved: () => void }) {
   const [uploading, setUploading] = useState(false)
