@@ -1562,57 +1562,51 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </>
       )}
 
-      {/* MANAGER TOOLS -- Admin/Super Admin only */}
-      {(userRole === 'super_admin' || userRole === 'admin') && (
-        <>
-          <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check'].includes(view as string)} />
-          {!collapsed.mgrtools && (
-            <div className="px-2 pb-1 space-y-0.5">
-              <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
-              <NavItem id="tl-scorecard" label="Team Lead Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
-              <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-blue-400"/>
-              <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
-            </div>
-          )}
-        </>
-      )}
+      {/* MANAGER TOOLS -- visible to everyone; content itself is gated by
+          role (Dashboard hard-blocks below Admin/Super Admin; the rest
+          are shared, self-scoping screens that already show the right
+          data for whoever's viewing). */}
+      <>
+        <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check'].includes(view as string)} />
+        {!collapsed.mgrtools && (
+          <div className="px-2 pb-1 space-y-0.5">
+            <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+            <NavItem id="tl-scorecard" label="Team Lead Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+            <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-blue-400"/>
+            <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+          </div>
+        )}
+      </>
 
-      {/* TEAM LEAD TOOLS -- Team Lead only */}
-      {userRole === 'Team Lead' && (
-        <>
-          <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check'].includes(view as string)} />
-          {!collapsed.tltools && (
-            <div className="px-2 pb-1 space-y-0.5">
-              <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-              <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-              <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-indigo-400"/>
-              <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-              <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-              <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-            </div>
-          )}
-        </>
-      )}
+      {/* TEAM LEAD TOOLS -- visible to everyone; KPI Entry, Observations,
+          and Operating Cadence hard-block below Team Lead. */}
+      <>
+        <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check'].includes(view as string)} />
+        {!collapsed.tltools && (
+          <div className="px-2 pb-1 space-y-0.5">
+            <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-indigo-400"/>
+            <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+          </div>
+        )}
+      </>
 
-      {/* AGENT TOOLS -- Agent, and also shown to Team Lead per the cascade
-          (a TL keeps everything in Team Lead Tools above, plus their own
-          personal Employee Trends and Team Dashboard views here; Coaching
-          Logs and Weekly Pulse Check are skipped in this group for a TL
-          since the fuller versions already live in Team Lead Tools above --
-          same underlying views, just not listed twice). */}
-      {(userRole === 'agent' || userRole === 'Team Lead') && (
-        <>
-          <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check'].includes(view as string)} />
-          {!collapsed.agenttools && (
-            <div className="px-2 pb-1 space-y-0.5">
-              {userRole === 'agent' && <NavItem id="tl-tools" label="Coaching Logs" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-red-500" dotColor="bg-emerald-400"/>}
-              <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
-              <NavItem id="dashboard-team" label="Team Dashboard" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
-              {userRole === 'agent' && <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>}
-            </div>
-          )}
-        </>
-      )}
+      {/* AGENT TOOLS -- visible to everyone; every item here is a shared,
+          self-scoping screen, so nothing hard-blocks in this group. */}
+      <>
+        <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check'].includes(view as string)} />
+        {!collapsed.agenttools && (
+          <div className="px-2 pb-1 space-y-0.5">
+            <NavItem id="tl-tools" label="Coaching Logs" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-red-500" dotColor="bg-emerald-400"/>
+            <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+            <NavItem id="dashboard-team" label="Team Dashboard" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+            <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+          </div>
+        )}
+      </>
 
       {/* PEOPLE */}
       <SectionHeader sectionKey="people" label="People" hasActive={['employees','teams','org-chart'].includes(view)} />
@@ -2006,7 +2000,8 @@ export default function KPIApp() {
           <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
         ) : (
           <>
-            {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
+            {view === 'dashboard-month' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
+            {view === 'dashboard-month' && (effectiveRole === 'Team Lead' || effectiveRole === 'agent') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} />}
             {view === 'pulse-check' && <PulseCheckPanel key={effectiveUser || 'self'} employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} isPreviewing={!!previewTarget} />}
