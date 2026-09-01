@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -121,6 +121,16 @@ type ComplianceBreakdown = {
 // them. The first fully-required week is the next Monday after launch.
 const PULSE_CHECK_REQUIRED_FROM = new Date('2026-08-31')
 
+// Weekly Pulse Check is not required from these specific accounts (by
+// explicit request, Sept 2026) -- they don't submit, aren't nagged for
+// missing it, and it's excluded from their own compliance denominator.
+// Matched by email, case-insensitive, same convention as everything else
+// identity-related in this app.
+const PULSE_CHECK_EXEMPT_EMAILS = ['operations@ab-businesssupport.com', 'andrealiz@ab-businesssupport.com']
+function isPulseCheckExempt(email: string | null | undefined): boolean {
+  return !!email && PULSE_CHECK_EXEMPT_EMAILS.includes(email.toLowerCase())
+}
+
 function countMondaysInRange(start: Date, end: Date): number {
   let count = 0
   const d = new Date(start)
@@ -181,7 +191,7 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
   const taskTotal = (taskData || []).length
   const taskDone = (taskData || []).filter(t => t.is_done).length
   const pulseRangeStart = new Date(Math.max(new Date(start).getTime(), PULSE_CHECK_REQUIRED_FROM.getTime()))
-  const pulseTotal = countMondaysInRange(pulseRangeStart, new Date(end))
+  const pulseTotal = isPulseCheckExempt(employeeEmail) ? 0 : countMondaysInRange(pulseRangeStart, new Date(end))
   const pulseSubmitted = Math.min((pulseData || []).length, pulseTotal)
   const totalRequired = coachTotal + annIds.length + taskTotal + pulseTotal
   const totalAcked = coachAcked + annAcked + taskDone + pulseSubmitted
@@ -1314,7 +1324,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePa
 // -- Collapsible Sidebar -----------------------------------------------------
 function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
-    home: false, perf: false, people: false, ops: false, tltools: false, hris: false, dir: false, sys: false
+    home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false
   })
 
   function toggle(key: string) {
@@ -1552,26 +1562,51 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </>
       )}
 
-      {/* TEAM LEAD TOOLS */}
-      <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard'].includes(view as string)} />
-      {!collapsed.tltools && (
-        <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-          {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
-          <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor={userRole === 'agent' ? 'bg-red-500' : 'bg-amber-500'} dotColor="bg-indigo-400"/>
-          {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
-          {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
-        </div>
+      {/* MANAGER TOOLS -- Admin/Super Admin only */}
+      {(userRole === 'super_admin' || userRole === 'admin') && (
+        <>
+          <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check'].includes(view as string)} />
+          {!collapsed.mgrtools && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+              <NavItem id="tl-scorecard" label="Team Lead Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+              <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-blue-400"/>
+              <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+            </div>
+          )}
+        </>
       )}
 
-      {/* PERFORMANCE */}
-      <SectionHeader sectionKey="perf" label="Performance" hasActive={['dashboard-month','dashboard-employee','pulse-check'].includes(view)} />
-      {!collapsed.perf && (
-        <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
-          <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
-          <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
-        </div>
+      {/* TEAM LEAD TOOLS -- Team Lead only */}
+      {userRole === 'Team Lead' && (
+        <>
+          <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check'].includes(view as string)} />
+          {!collapsed.tltools && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+              <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+              <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-indigo-400"/>
+              <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+              <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+              <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* AGENT TOOLS -- Agent only */}
+      {userRole === 'agent' && (
+        <>
+          <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check'].includes(view as string)} />
+          {!collapsed.agenttools && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <NavItem id="tl-tools" label="Coaching Logs" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-red-500" dotColor="bg-emerald-400"/>
+              <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+              <NavItem id="dashboard-team" label="Team Dashboard" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+              <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+            </div>
+          )}
+        </>
       )}
 
       {/* PEOPLE */}
@@ -1968,6 +2003,7 @@ export default function KPIApp() {
           <>
             {view === 'dashboard-month' && <PerformanceDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} perfView={perfView} setPerfView={setPerfView} selMonth={selMonth} selYear={selYear} selQuarter={selQuarter} setSelMonth={setSelMonth} setSelYear={setSelYear} setSelQuarter={setSelQuarter} searchQ={searchQ} setSearchQ={setSearchQ} onEditRecord={() => loadData()} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
+            {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} />}
             {view === 'pulse-check' && <PulseCheckPanel key={effectiveUser || 'self'} employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} isPreviewing={!!previewTarget} />}
             {view === 'entry' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={effectiveUser} />}
             {view === 'entry' && effectiveRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
@@ -2533,6 +2569,9 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUse
   const [editRecord, setEditRecord] = useState<KpiRecord | null>(null)
   const canEditScores = ['super_admin','admin','Team Lead'].includes(userRole)
   const canDeleteScores = ['super_admin','admin'].includes(userRole)
+  const isAgent = userRole === 'agent'
+  const isTL = userRole === 'Team Lead'
+  const canSeeAllTeams = userRole === 'super_admin' || userRole === 'admin'
 
   async function deleteRecord(r: KpiRecord) {
     if (!confirm(`Delete the ${r.month_label} KPI record for ${r.employee_name}? This cannot be undone.`)) return
@@ -2546,26 +2585,50 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUse
   async function loadTeams() {
     setLoading(true)
     const [{ data: t }, { data: m }] = await Promise.all([
-      supabase.from('teams').select('*, team_lead:employees(name)').order('name'),
+      supabase.from('teams').select('*, team_lead:employees(name, client)').order('name'),
       supabase.from('team_members').select('*, employee:employees(name, designation, employment_type, client)')
     ])
     setTeams(t || []); setMembers(m || [])
-    if (t && t.length > 0 && !selTeam) setSelTeam(t[0].id)
     setLoading(false)
   }
 
   useEffect(() => { loadTeams() }, [])
 
+  // Scope which teams are selectable, per role:
+  // - Admin/Super Admin: every team, unrestricted (unchanged).
+  // - Team Lead: every team supporting the same client(s) they support --
+  //   not just teams they personally lead -- so they can compare their own
+  //   team's standing against peer teams on the same account, without
+  //   seeing teams on a client they have nothing to do with. "A team's
+  //   client" is inferred from its team lead's own `client` field, same
+  //   heuristic used elsewhere in the app (teams has no client column).
+  // - Agent: locked to the single team they belong to, no picker at all.
+  const myEmployee = employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
+  const myClients: string[] = myEmployee?.clients_supported && myEmployee.clients_supported.length
+    ? myEmployee.clients_supported
+    : (myEmployee?.client ? [myEmployee.client] : [])
+  const myOwnTeamIds = myEmployee ? new Set(members.filter(m => m.employee_id === myEmployee.id).map(m => m.team_id)) : new Set<string>()
+
+  const scopedTeams = canSeeAllTeams
+    ? teams
+    : isAgent
+      ? teams.filter(t => myOwnTeamIds.has(t.id))
+      : teams.filter(t => myOwnTeamIds.has(t.id) || (t.team_lead?.client && myClients.includes(t.team_lead.client)))
+
+  useEffect(() => {
+    if (scopedTeams.length > 0 && (!selTeam || !scopedTeams.some(t => t.id === selTeam))) setSelTeam(scopedTeams[0].id)
+  }, [scopedTeams.map(t=>t.id).join(',')])
+
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"/></div>
-  if (teams.length === 0) return (
+  if (scopedTeams.length === 0) return (
     <div className="text-center py-20 text-gray-400">
       <Users className="w-12 h-12 mx-auto mb-3 opacity-30"/>
-      <p className="font-medium">No teams configured yet</p>
-      <p className="text-sm mt-1">Go to the Teams tab to create teams and assign members</p>
+      <p className="font-medium">No team assigned yet</p>
+      <p className="text-sm mt-1">{isAgent ? 'Ask your Team Lead or Admin to add you to a team.' : 'Go to the Teams tab to create teams and assign members.'}</p>
     </div>
   )
 
-  const selectedTeam = teams.find(t => t.id === selTeam)
+  const selectedTeam = scopedTeams.find(t => t.id === selTeam)
   const teamMemberIds = members.filter(m => m.team_id === selTeam).map(m => m.employee_id)
   const activeTeamMemberIds = teamMemberIds.filter(id => activeEmpIds.has(id))
   const teamRecords = records.filter(r =>
@@ -2582,7 +2645,11 @@ function TeamDashboard({ records, employees, activeEmpIds, showToast, currentUse
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div><h2 className="text-xl font-bold text-blue-900">Team View</h2><p className="text-sm text-gray-500">{teamRecords.length} active members with records</p></div>
         <div className="flex flex-wrap gap-2">
-          <select value={selTeam} onChange={e => setSelTeam(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+          {isAgent ? (
+            <span className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700">{selectedTeam?.name}</span>
+          ) : (
+            <select value={selTeam} onChange={e => setSelTeam(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{scopedTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+          )}
           <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{MONTHS.map(m => <option key={m}>{m}</option>)}</select>
           <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{YEARS.map(y => <option key={y}>{y}</option>)}</select>
         </div>
@@ -2940,7 +3007,7 @@ function PulseRatingRow({ text, value, onChange, scaleLabels }: { text: string, 
 
 function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPreviewing }:
   { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, isPreviewing?: boolean }) {
-  const canSubmit = userRole !== 'super_admin'
+  const canSubmit = userRole !== 'super_admin' && !isPulseCheckExempt(currentUser)
   const canManage = ['super_admin','admin','Team Lead'].includes(userRole)
   const isTL = userRole === 'Team Lead'
   const [activeTab, setActiveTab] = useState<'submit'|'manage'>(canSubmit ? 'submit' : 'manage')
@@ -7828,12 +7895,14 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
   // Clamped to PULSE_CHECK_REQUIRED_FROM -- the rollout week itself is
   // never "expected", same as getComplianceBreakdown above.
   const expectedWeeks: string[] = []
-  const rangeStart = new Date(Math.max(new Date(start).getTime(), PULSE_CHECK_REQUIRED_FROM.getTime()))
-  const d = new Date(rangeStart); const startDate = new Date(rangeStart); const endDate = new Date(end)
-  const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day
-  d.setDate(d.getDate() + diff)
-  if (d < startDate) d.setDate(d.getDate() + 7)
-  while (d < endDate) { expectedWeeks.push(d.toISOString().slice(0,10)); d.setDate(d.getDate() + 7) }
+  if (!isPulseCheckExempt(employeeEmail)) {
+    const rangeStart = new Date(Math.max(new Date(start).getTime(), PULSE_CHECK_REQUIRED_FROM.getTime()))
+    const d = new Date(rangeStart); const startDate = new Date(rangeStart); const endDate = new Date(end)
+    const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day
+    d.setDate(d.getDate() + diff)
+    if (d < startDate) d.setDate(d.getDate() + 7)
+    while (d < endDate) { expectedWeeks.push(d.toISOString().slice(0,10)); d.setDate(d.getDate() + 7) }
+  }
   const submittedWeeks = new Set((pulseData || []).map((p:any) => p.week_start))
   const pulseTotal = expectedWeeks.length
   const pulseSubmitted = expectedWeeks.filter(w => submittedWeeks.has(w)).length
@@ -7931,7 +8000,7 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
       if (new Date(currentWeek) >= PULSE_CHECK_REQUIRED_FROM) {
         const { data: pulses } = await supabase.from('pulse_surveys').select('employee_email').eq('week_start', currentWeek)
         const submittedEmails = new Set((pulses || []).map((p: any) => p.employee_email?.toLowerCase()))
-        pulsePending = scopedEmployees.filter(e => e.email && !submittedEmails.has(e.email.toLowerCase())).map(e => e.name)
+        pulsePending = scopedEmployees.filter(e => e.email && !isPulseCheckExempt(e.email) && !submittedEmails.has(e.email.toLowerCase())).map(e => e.name)
       }
 
       if (!cancelled) { setQuickAnnPending(annPending); setQuickPulsePending(pulsePending); setQuickLoading(false) }
@@ -9803,8 +9872,14 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
               </div>
               <p className="text-xs text-gray-400 mt-4">You can download your own documents above. If anything's missing, submit it to your Admin/HR to have it added.</p>
               <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2 text-sm">
-                {myEmp && pulseSubmittedIds.has(myEmp.id) ? <span className="text-emerald-500">✓</span> : <span className="text-amber-400">⏳</span>}
-                <span className={myEmp && pulseSubmittedIds.has(myEmp.id) ? 'text-gray-700' : 'text-amber-600 font-medium'}>Weekly Pulse Check {myEmp && pulseSubmittedIds.has(myEmp.id) ? '— submitted this week' : '— not yet submitted this week'}</span>
+                {isPulseCheckExempt(myEmp?.email) ? (
+                  <span className="text-gray-400">Weekly Pulse Check — not required for this account</span>
+                ) : (
+                  <>
+                    {myEmp && pulseSubmittedIds.has(myEmp.id) ? <span className="text-emerald-500">✓</span> : <span className="text-amber-400">⏳</span>}
+                    <span className={myEmp && pulseSubmittedIds.has(myEmp.id) ? 'text-gray-700' : 'text-amber-600 font-medium'}>Weekly Pulse Check {myEmp && pulseSubmittedIds.has(myEmp.id) ? '— submitted this week' : '— not yet submitted this week'}</span>
+                  </>
+                )}
               </div>
             </div>
           )
@@ -9937,8 +10012,8 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                             </td>
                           )
                         })}
-                        <td className="px-2 py-2.5 text-center">
-                          {pulseSubmittedIds.has(emp.id) ? <span title="Submitted this week" className="text-green-500 text-base">✓</span> : <span title="Not yet submitted this week" className="text-amber-400 text-base">⏳</span>}
+                        <td className="px-3 py-2.5 text-center">
+                          {isPulseCheckExempt(emp.email) ? <span title="Not required for this account" className="text-gray-300 text-base">—</span> : pulseSubmittedIds.has(emp.id) ? <span title="Submitted this week" className="text-green-500 text-base">✓</span> : <span title="Not yet submitted this week" className="text-amber-400 text-base">⏳</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center">
                           <span className={`inline-flex px-2 py-0.5 rounded-full font-medium ${complete ? 'bg-emerald-100 text-emerald-700' : count === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>
