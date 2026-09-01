@@ -4877,6 +4877,27 @@ function CadenceCompliance({ currentUser, userRole, cadenceItems, showToast }: {
   useEffect(() => { loadCurrentRates() }, [currentUser, userRole, cadenceItems])
   useEffect(() => { loadHistory() }, [selectedEmail, historyFreq, cadenceItems])
 
+  const [noteHistory, setNoteHistory] = useState<{period_key:string, item_id:string, note:string}[]>([])
+  const [loadingNotes, setLoadingNotes] = useState(true)
+
+  async function loadNoteHistory() {
+    if (!selectedEmail) { setNoteHistory([]); setLoadingNotes(false); return }
+    setLoadingNotes(true)
+    const periods = historicalPeriodKeys(historyFreq, FREQ_HISTORY_LENGTH[historyFreq])
+    const { data } = await supabase.from('cadence_completions')
+      .select('period_key, item_id, note')
+      .eq('team_lead_email', selectedEmail)
+      .eq('frequency', historyFreq)
+      .in('period_key', periods.map(p => p.key))
+      .not('note', 'is', null)
+      .neq('note', '')
+      .order('period_key', { ascending: false })
+    setNoteHistory(data || [])
+    setLoadingNotes(false)
+  }
+
+  useEffect(() => { loadNoteHistory() }, [selectedEmail, historyFreq, cadenceItems])
+
   const RateBadge = ({ label, value }: { label: string, value: number }) => (
     <div className="text-center">
       <div className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center text-sm font-bold ${value >= 80 ? 'bg-emerald-100 text-emerald-700' : value >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{value}%</div>
@@ -4940,6 +4961,32 @@ function CadenceCompliance({ currentUser, userRole, cadenceItems, showToast }: {
             </div>
           )}
           <p className="text-xs text-gray-400">Green dashed line = 80% target. Dips below show missed days/weeks/months at a glance.</p>
+        </div>
+      )}
+
+      {selectedEmail && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+          <h4 className="font-semibold text-gray-900 text-sm">Notes — {selectedEmail.split('@')[0]} ({historyFreq})</h4>
+          {loadingNotes ? (
+            <div className="text-center py-6 text-gray-400 text-sm">Loading notes...</div>
+          ) : noteHistory.length === 0 ? (
+            <p className="text-sm text-gray-400">No notes recorded for this frequency yet. Notes typed under a checklist item on the {historyFreq} tab are saved here so they don't disappear once the period resets.</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {noteHistory.map((n, i) => {
+                const item = cadenceItems.find(ci => ci.id === n.item_id)
+                return (
+                  <div key={i} className="border border-gray-100 rounded-lg px-3 py-2 bg-gray-50">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-blue-800">{item?.label || n.item_id}</span>
+                      <span className="text-xs text-gray-400">{n.period_key}</span>
+                    </div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{n.note}</p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -8045,7 +8092,14 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
     if (userRole === 'agent' && currentUser) {
       query = query.eq('employee_email', currentUser.toLowerCase())
     } else if (userRole === 'Team Lead') {
-      query = query.in('employee_email', Array.from(tlTeamEmails || []))
+      // Include the TL's own email alongside their team's, so sessions
+      // where the TL themself is the one being coached (e.g. by a Manager
+      // or another TL) also show up here -- previously only sessions about
+      // their team members were fetched, so a TL could never see coaching
+      // logged for them personally.
+      const scope = new Set(tlTeamEmails || [])
+      if (currentUser) scope.add(currentUser.toLowerCase())
+      query = query.in('employee_email', Array.from(scope))
     }
     const { data } = await query
     setLogs(data || [])
@@ -8211,14 +8265,14 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
             <span className="text-xs text-gray-400 self-end pb-2.5">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
           )}
         </div>
-        {canManage && !isPreviewing && (
+        {canManage && (
           <button onClick={() => setShowForm(!showForm)}
             className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
             <PlusCircle className="w-4 h-4" /> Log Session
           </button>
         )}
         {canManage && isPreviewing && (
-          <span className="text-xs text-gray-400 italic px-2">Preview mode -- view only</span>
+          <span className="text-xs text-amber-600 italic px-2">Preview mode — form is visible for demo, but Save is disabled</span>
         )}
       </div>
 
@@ -8326,17 +8380,18 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
               <span className="text-sm text-gray-700 font-medium">📧 Send to agent for e-signature acknowledgment</span>
             </label>
           </div>
-          <div className="flex gap-3">
-            <button onClick={() => handleSave(false)} disabled={saving}
+          <div className="flex gap-3 items-center">
+            <button onClick={() => handleSave(false)} disabled={saving || isPreviewing}
               className="flex items-center gap-2 bg-blue-900 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
               <Save className="w-4 h-4" />{saving ? 'Saving…' : (editingDraftId ? 'Finalize Session' : 'Save Session')}
             </button>
-            <button onClick={() => handleSave(true)} disabled={saving || !form.employee_id}
+            <button onClick={() => handleSave(true)} disabled={saving || !form.employee_id || isPreviewing}
               className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
               <Save className="w-4 h-4" />Save as Draft
             </button>
             <button onClick={() => { setShowForm(false); setForm({...emptyForm}); setEditingDraftId(null) }}
               className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
+            {isPreviewing && <span className="text-xs text-amber-600 italic">Saving is disabled in preview mode</span>}
           </div>
         </div>
       )}
