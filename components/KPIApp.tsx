@@ -3084,23 +3084,34 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
     setSubmitting(false)
   }
 
-  // Management scope: Team Lead -> own team, Admin/Super Admin -> everyone.
+  // Management scope: Team Lead -> own team, Admin -> own supported
+  // client(s) (prep for a future second Admin/manager, same convention
+  // as Dashboard/Employee Trends), Super Admin -> everyone unrestricted.
+  const isAdminOnly = userRole === 'admin'
   const [teamEmpIds, setTeamEmpIds] = useState<Set<string> | null>(null)
   useEffect(() => {
-    if (!isTL || !currentUser) { setTeamEmpIds(null); return }
-    let cancelled = false
-    ;(async () => {
+    if (isTL && currentUser) {
+      let cancelled = false
+      ;(async () => {
+        const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
+        if (!myEmp) { if (!cancelled) setTeamEmpIds(new Set()); return }
+        const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
+        const ledTeamIds = (teamsData || []).filter((t:any) => t.team_lead_id === myEmp.id).map((t:any) => t.id)
+        if (ledTeamIds.length === 0) { if (!cancelled) setTeamEmpIds(new Set()); return }
+        const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
+        const ids = new Set((memberData||[]).map((m:any) => m.employee_id))
+        if (!cancelled) setTeamEmpIds(ids)
+      })()
+      return () => { cancelled = true }
+    } else if (isAdminOnly && currentUser) {
       const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
-      if (!myEmp) { if (!cancelled) setTeamEmpIds(new Set()); return }
-      const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
-      const ledTeamIds = (teamsData || []).filter((t:any) => t.team_lead_id === myEmp.id).map((t:any) => t.id)
-      if (ledTeamIds.length === 0) { if (!cancelled) setTeamEmpIds(new Set()); return }
-      const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
-      const ids = new Set((memberData||[]).map((m:any) => m.employee_id))
-      if (!cancelled) setTeamEmpIds(ids)
-    })()
-    return () => { cancelled = true }
-  }, [isTL, currentUser, employees])
+      const myClients = myEmp?.clients_supported && myEmp.clients_supported.length ? myEmp.clients_supported : (myEmp?.client ? [myEmp.client] : [])
+      setTeamEmpIds(new Set(employees.filter(e => e.client && myClients.includes(e.client)).map(e => e.id)))
+    } else {
+      setTeamEmpIds(null)
+    }
+  }, [isTL, isAdminOnly, currentUser, employees])
+  const isScopedManager = isTL || isAdminOnly
 
   const [weekFilter, setWeekFilter] = useState(currentWeek)
   const [subs, setSubs] = useState<any[]>([])
@@ -3121,12 +3132,12 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 
   useEffect(() => {
     if (!canManage) return
-    if (isTL && teamEmpIds === null) return
+    if (isScopedManager && teamEmpIds === null) return
     setLoadingSubs(true)
     ;(async () => {
       try {
         const { data } = await supabase.from('pulse_surveys').select('*').eq('week_start', weekFilter).order('employee_name')
-        const rows = isTL ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
+        const rows = isScopedManager ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
         setSubs(rows)
       } catch (err) {
         console.error('Pulse submissions load failed:', err)
@@ -3142,11 +3153,11 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   // declining rather than only ever seeing one week in isolation.
   useEffect(() => {
     if (!canManage) return
-    if (isTL && teamEmpIds === null) return
+    if (isScopedManager && teamEmpIds === null) return
     ;(async () => {
       const weeks = [...recentWeeks].reverse()
       const { data } = await supabase.from('pulse_surveys').select('*').gte('week_start', weeks[0]).lte('week_start', weeks[weeks.length-1])
-      const scoped = isTL ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
+      const scoped = isScopedManager ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
       const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
       setTrendData(weeks.map(w => {
         const rows = scoped.filter((r:any) => r.week_start === w)
@@ -3158,7 +3169,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
     })()
   }, [canManage, isTL, teamEmpIds])
 
-  const scopedActiveEmployees = (isTL ? employees.filter(e => teamEmpIds?.has(e.id)) : employees).filter(e => e.active)
+  const scopedActiveEmployees = (isScopedManager ? employees.filter(e => teamEmpIds?.has(e.id)) : employees).filter(e => e.active)
   const notYetSubmitted = scopedActiveEmployees.filter(e => !subs.some(s => s.employee_id === e.id))
 
   async function saveNote(id: string) {
@@ -3182,7 +3193,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 
       {(canSubmit && canManage) && (
         <div className="flex gap-2 border-b border-gray-200">
-          {[['submit','My Check-in'],['manage', isTL ? 'My Team' : 'Everyone']].map(([t,l]) => (
+          {[['submit','My Check-in'],['manage', isScopedManager ? (isTL ? 'My Team' : 'My Clients') : 'Everyone']].map(([t,l]) => (
             <button key={t} onClick={() => setActiveTab(t as any)} className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${activeTab===t ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{l}</button>
           ))}
         </div>
