@@ -1594,16 +1594,21 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </>
       )}
 
-      {/* AGENT TOOLS -- Agent only */}
-      {userRole === 'agent' && (
+      {/* AGENT TOOLS -- Agent, and also shown to Team Lead per the cascade
+          (a TL keeps everything in Team Lead Tools above, plus their own
+          personal Employee Trends and Team Dashboard views here; Coaching
+          Logs and Weekly Pulse Check are skipped in this group for a TL
+          since the fuller versions already live in Team Lead Tools above --
+          same underlying views, just not listed twice). */}
+      {(userRole === 'agent' || userRole === 'Team Lead') && (
         <>
           <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check'].includes(view as string)} />
           {!collapsed.agenttools && (
             <div className="px-2 pb-1 space-y-0.5">
-              <NavItem id="tl-tools" label="Coaching Logs" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-red-500" dotColor="bg-emerald-400"/>
+              {userRole === 'agent' && <NavItem id="tl-tools" label="Coaching Logs" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-red-500" dotColor="bg-emerald-400"/>}
               <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
               <NavItem id="dashboard-team" label="Team Dashboard" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
-              <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+              {userRole === 'agent' && <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>}
             </div>
           )}
         </>
