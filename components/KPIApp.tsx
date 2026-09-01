@@ -3034,6 +3034,8 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   const [form, setForm] = useState<Record<string, number>>({})
   const [feedback, setFeedback] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [myHistory, setMyHistory] = useState<any[]>([])
+  const [showHistoryFor, setShowHistoryFor] = useState<string|null>(null)
 
   useEffect(() => {
     if (!canSubmit || !myEmployee) { setCheckingMine(false); return }
@@ -3048,6 +3050,16 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
       }
     })()
   }, [myEmployee?.id, currentWeek])
+
+  // My own submission history, so an agent can look back at how they
+  // answered in previous weeks instead of it disappearing once submitted.
+  useEffect(() => {
+    if (!canSubmit || !myEmployee) return
+    ;(async () => {
+      const { data } = await supabase.from('pulse_surveys').select('*').eq('employee_id', myEmployee.id).order('week_start', { ascending: false }).limit(12)
+      setMyHistory(data || [])
+    })()
+  }, [myEmployee?.id, mySubmission?.id])
 
   async function submitPulse() {
     if (isPreviewing) { showToast('Preview mode is view-only -- exit preview to submit a real check-in.', 'error'); return }
@@ -3145,9 +3157,47 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
             <div className="text-center py-16 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">No employee record found</p><p className="text-sm mt-1">We couldn't match your login ({currentUser || 'unknown email'}) to an employee record. Contact your admin.</p></div>
           )
           if (mySubmission) return (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
-              <p className="text-emerald-800 font-medium">✓ You've already checked in for the week of {new Date(currentWeek).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})}.</p>
-              <p className="text-sm text-emerald-600 mt-1">Thanks for taking a moment for this. See you again next week!</p>
+            <div className="space-y-4">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
+                <p className="text-emerald-800 font-medium">✓ You've already checked in for the week of {new Date(currentWeek).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})}.</p>
+                <p className="text-sm text-emerald-600 mt-1">Thanks for taking a moment for this. See you again next week!</p>
+              </div>
+              {myHistory.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h3 className="font-semibold text-blue-900 text-sm mb-3">Your Previous Check-ins</h3>
+                  <div className="space-y-2">
+                    {myHistory.map(h => {
+                      const rated = PULSE_RATED_KEYS.filter(k => k !== 'retention')
+                      const avg = rated.length ? rated.reduce((s,k) => s + (h[k]||0), 0) / rated.length : 0
+                      const open = showHistoryFor === h.id
+                      return (
+                        <div key={h.id} className="border border-gray-100 rounded-lg">
+                          <button onClick={() => setShowHistoryFor(open ? null : h.id)} className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-gray-50 transition">
+                            <span className="font-medium text-gray-800">Week of {new Date(h.week_start).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</span>
+                            <span className="flex items-center gap-3 text-gray-500"><span>Avg: {avg.toFixed(1)}/5</span><span>Retention: {h.retention}/5</span>{open ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}</span>
+                          </button>
+                          {open && (
+                            <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-3">
+                              {PULSE_CATEGORIES.map(cat => (
+                                <div key={cat.key}>
+                                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{cat.label}</p>
+                                  {cat.questions.map(q => (
+                                    <div key={q.key} className="flex items-center justify-between text-sm py-0.5">
+                                      <span className="text-gray-600">{q.text}</span>
+                                      <span className="font-medium text-blue-800">{h[q.key]}/5</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                              {h.feedback && <div><p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Your Note</p><p className="text-sm text-gray-700 whitespace-pre-wrap">{h.feedback}</p></div>}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )
           return (
@@ -4268,6 +4318,11 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
   async function loadHuddles() {
     setLoading(true)
     let q = supabase.from('huddle_notes').select('*').order('huddle_date', { ascending: false })
+    // Team Huddle notes were not scoped at all -- every Team Lead could see
+    // every other team's huddle notes regardless of who ran the huddle.
+    // A Team Lead now only sees huddles they personally created (i.e. their
+    // own team's huddles); Admin/Super Admin remain unrestricted.
+    if (userRole === 'Team Lead' && currentUser) q = q.eq('created_by', currentUser)
     const { data } = await q
     setHuddles(data || [])
     setLoading(false)
@@ -8165,22 +8220,26 @@ function TLToolsPanel({ employees, currentUser, userRole, showToast, onAckChange
     <div className="space-y-6">
       <div className="flex items-center gap-3 mb-2">
         <Shield className="w-6 h-6 text-blue-800" />
-        <h2 className="text-xl font-bold text-blue-900">Team Lead Tools</h2>
+        <h2 className="text-xl font-bold text-blue-900">{canManage ? 'Team Lead Tools' : 'Coaching Logs'}</h2>
       </div>
 
       {isViewer && (
         <ViewerCoachingBanner currentUser={currentUser} />
       )}
 
-      {/* Tab switcher */}
-      <div className="flex gap-2 border-b border-gray-200">
-        {([['coaching','📋 Coaching Log'],['compliance','📊 TL Compliance'],['ackCompliance','✅ Team Compliance']] as [string,string][]).map(([tab, label]) => (
-          <button key={tab} onClick={() => setActiveTab(tab as any)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${activeTab === tab ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* Tab switcher -- TL Compliance and Team Compliance are management
+          views; an agent only ever sees their own Coaching Log, so the
+          other two tabs are hidden rather than shown-then-blocked. */}
+      {canManage && (
+        <div className="flex gap-2 border-b border-gray-200">
+          {([['coaching','📋 Coaching Log'],['compliance','📊 TL Compliance'],['ackCompliance','✅ Team Compliance']] as [string,string][]).map(([tab, label]) => (
+            <button key={tab} onClick={() => setActiveTab(tab as any)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${activeTab === tab ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {activeTab === 'coaching' && (
         <CoachingLog employees={employees} currentUser={currentUser} userRole={userRole} canManage={canManage} showToast={showToast} onAckChange={onAckChange} isPreviewing={isPreviewing} />
