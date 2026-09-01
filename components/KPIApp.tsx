@@ -662,7 +662,7 @@ function MonthGroup({ monthKey, announcements, defaultOpen, acks, showAcks, ackD
 // the play/submit screen and the leaderboard/approval flow stay in sync.
 // game_key is derived from the name so switching games automatically starts
 // a fresh leaderboard instead of mixing scores from the previous game.
-const GAME = { name: 'Snake vs Worms', url: 'https://poki.com/en/g/snake-vs-worms', icon: '🐍', color: 'from-green-400 to-emerald-600' }
+const GAME = { name: 'Snake vs Worms', url: 'https://poki.com/en/g/snake-vs-worms', icon: '🐍', color: 'from-green-400 to-emerald-600', mode: 'Infinity Mode' as string | null }
 const GAME_KEY = GAME.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 // Historical game_key -> display name. 'game_of_month' is the old generic
 // key used before per-game separation existed (that was Subway Surfers at
@@ -718,6 +718,7 @@ function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string,
         <div className="text-4xl mb-2">{GAME.icon}</div>
         <h3 className="font-bold text-lg">{GAME.name}</h3>
         <p className="text-white/80 text-xs mb-3">Game of the Month — {getMonthLabel()}</p>
+        {GAME.mode && <p className="inline-block bg-white/20 text-white text-xs font-semibold px-3 py-1 rounded-full mb-3">🎯 Play: {GAME.mode}</p>}
         <a href={GAME.url} target="_blank" rel="noopener noreferrer" className="inline-block bg-white text-orange-500 font-bold px-5 py-2 rounded-lg text-sm hover:bg-orange-50 transition">🎮 Play Now</a>
       </div>
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
