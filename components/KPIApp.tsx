@@ -4311,6 +4311,8 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
   const [filterTo, setFilterTo] = useState('')
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [acks, setAcks] = useState<Record<string, {employee_email: string, acknowledged_at: string}[]>>({})
+  const [acking, setAcking] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     title: '',
@@ -4332,7 +4334,30 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
     if (userRole === 'Team Lead' && currentUser) q = q.eq('created_by', currentUser)
     const { data } = await q
     setHuddles(data || [])
+    const ids = (data || []).map((h: any) => h.id)
+    if (ids.length > 0) {
+      const { data: ackData } = await supabase.from('huddle_acknowledgements').select('huddle_id, employee_email, acknowledged_at').in('huddle_id', ids)
+      const grouped: Record<string, {employee_email: string, acknowledged_at: string}[]> = {}
+      ;(ackData || []).forEach((a: any) => { (grouped[a.huddle_id] ||= []).push({ employee_email: a.employee_email, acknowledged_at: a.acknowledged_at }) })
+      setAcks(grouped)
+    } else {
+      setAcks({})
+    }
     setLoading(false)
+  }
+
+  // Every huddle requires sign-off from its listed participants -- this is
+  // the documentation trail for "did the team actually see this," same
+  // purpose as Coaching Log's agent acknowledgment, applied to huddles.
+  async function acknowledgeHuddle(huddleId: string) {
+    if (!currentUser) return
+    setAcking(huddleId)
+    const { error } = await supabase.from('huddle_acknowledgements')
+      .upsert({ huddle_id: huddleId, employee_email: currentUser.toLowerCase(), acknowledged_at: new Date().toISOString() }, { onConflict: 'huddle_id,employee_email' })
+    if (error) { showToast(error.message, 'error'); setAcking(null); return }
+    setAcks(prev => ({ ...prev, [huddleId]: [...(prev[huddleId]||[]).filter(a => a.employee_email !== currentUser.toLowerCase()), { employee_email: currentUser.toLowerCase(), acknowledged_at: new Date().toISOString() }] }))
+    showToast('Acknowledged ✓')
+    setAcking(null)
   }
 
   async function loadUsers() {
@@ -4604,6 +4629,11 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
                     <span className="text-xs text-gray-500">📅 {new Date(h.huddle_date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})} · {new Date(h.huddle_date).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</span>
                     <span className="text-xs text-gray-500">👤 {h.created_by.split('@')[0]}</span>
                     <span className="text-xs text-gray-500">👥 {(h.participants||[]).length} participants</span>
+                    {(h.participants||[]).length > 0 && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${(acks[h.id]||[]).length >= (h.participants||[]).length ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                        ✓ {(acks[h.id]||[]).length}/{(h.participants||[]).length} acknowledged
+                      </span>
+                    )}
                   </div>
                 </div>
                 <span className="text-gray-400 text-xs flex-shrink-0">{viewHuddle?.id===h.id ? '▲' : '▼'}</span>
@@ -4616,16 +4646,38 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
                       <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{h.agenda}</p>
                     </div>
                   )}
-                  {(h.participants||[]).length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 mb-1">Participants</p>
-                      <div className="flex flex-wrap gap-1">
-                        {(h.participants as string[]).map(e => (
-                          <span key={e} className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full">{e.split('@')[0]}</span>
-                        ))}
+                  {(h.participants||[]).length > 0 && (() => {
+                    const ackedEmails = new Set((acks[h.id]||[]).map(a => a.employee_email))
+                    const myEmailLower = (currentUser||'').toLowerCase()
+                    const iAmParticipant = (h.participants as string[]).some(e => e.toLowerCase() === myEmailLower)
+                    const iHaveAcked = ackedEmails.has(myEmailLower)
+                    return (
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 mb-1">Participants — Sign-off</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(h.participants as string[]).map(e => {
+                            const acked = ackedEmails.has(e.toLowerCase())
+                            const ackInfo = (acks[h.id]||[]).find(a => a.employee_email === e.toLowerCase())
+                            return (
+                              <span key={e} title={acked && ackInfo ? `Acknowledged ${new Date(ackInfo.acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}` : 'Not yet acknowledged'}
+                                className={`text-xs px-2 py-0.5 rounded-full border flex items-center gap-1 ${acked ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                                {acked && <span>✓</span>}{e.split('@')[0]}
+                              </span>
+                            )
+                          })}
+                        </div>
+                        {iAmParticipant && !iHaveAcked && (
+                          <button onClick={() => acknowledgeHuddle(h.id)} disabled={acking===h.id}
+                            className="mt-2 flex items-center gap-1.5 bg-blue-900 hover:bg-blue-950 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50">
+                            <CheckCircle className="w-3.5 h-3.5"/>{acking===h.id ? 'Signing...' : 'Sign & Acknowledge This Huddle'}
+                          </button>
+                        )}
+                        {iAmParticipant && iHaveAcked && (
+                          <p className="mt-2 text-xs text-emerald-600 flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5"/>You've signed off on this huddle.</p>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                   {(h.attachments||[]).length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-gray-500 mb-1">Attachments</p>
