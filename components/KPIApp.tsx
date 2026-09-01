@@ -7393,26 +7393,25 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
       .eq('observed_by',selectedTL).gte('created_at',start).lte('created_at',end)
     const obsScore = Math.min((obsCount||0)/obsTarget,1)*100
 
-    // 4. Tickets resolved
-    const { count: ticketsOwned } = await supabase.from('tickets').select('id',{count:'exact',head:true})
-      .eq('owner',selectedTL).gte('created_at',start).lte('created_at',end)
-    const { count: ticketsResolved } = await supabase.from('tickets').select('id',{count:'exact',head:true})
-      .eq('owner',selectedTL).in('status',['Resolved','Closed']).gte('created_at',start).lte('created_at',end)
-    const ticketScore = (ticketsOwned||0) > 0 ? Math.min((ticketsResolved||0)/(ticketsOwned||1),1)*100 : 100
+    // Tickets Resolved was removed from Compliance scoring (Sept 2026) --
+    // there's no ticket-ownership integration yet, so ticketsOwned was
+    // always 0 for every TL and the old scoring gave a free 100% for that,
+    // artificially inflating everyone's compliance score with a metric
+    // that measured nothing. Re-add once ticket ownership data is real.
 
-    // 5. Huddle notes (target: 4/month or 1/week)
+    // 4. Huddle notes (target: 4/month or 1/week)
     const huddleTarget = period === 'mtd' ? 4 : 1
     const { count: huddleCount } = await supabase.from('huddle_notes').select('id',{count:'exact',head:true})
       .eq('created_by',selectedTL).gte('created_at',start).lte('created_at',end)
     const huddleScore = Math.min((huddleCount||0)/huddleTarget,1)*100
 
-    // 6. KPI entry compliance (target: 1 entry per month)
+    // 5. KPI entry compliance (target: 1 entry per month)
     const { count: kpiCount } = await supabase.from('kpi_records').select('id',{count:'exact',head:true})
       .eq('month_label',monthLabel)
     const kpiScore = (kpiCount||0) > 0 ? 100 : 0
 
-    const complianceSubScores = { cadenceScore, coachScore, obsScore, ticketScore, huddleScore, kpiScore }
-    const complianceScore = (cadenceScore + coachScore + obsScore + ticketScore + huddleScore + kpiScore) / 6
+    const complianceSubScores = { cadenceScore, coachScore, obsScore, huddleScore, kpiScore }
+    const complianceScore = (cadenceScore + coachScore + obsScore + huddleScore + kpiScore) / 5
 
     // Get TL photo
     // selectedTL is now employee UUID from teams table
@@ -7464,7 +7463,6 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
       ...complianceSubScores,
       coachCount: coachCount||0, coachTarget,
       obsCount: obsCount||0, obsTarget,
-      ticketsOwned: ticketsOwned||0, ticketsResolved: ticketsResolved||0,
       huddleCount: huddleCount||0, huddleTarget,
       kpiCount: kpiCount||0,
     })
@@ -7609,7 +7607,6 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
           <SubItem label="Cadence Compliance" score={score.cadenceScore} extra="Avg across daily, weekly, monthly" />
           <SubItem label="Coaching Sessions" score={score.coachScore} count={score.coachCount} target={score.coachTarget} extra="sessions" />
           <SubItem label="Observations Logged" score={score.obsScore} count={score.obsCount} target={score.obsTarget} extra="observations" />
-          <SubItem label="Tickets Resolved" score={score.ticketScore} count={score.ticketsResolved} target={score.ticketsOwned} extra="tickets owned" />
           <SubItem label="Huddle Notes Posted" score={score.huddleScore} count={score.huddleCount} target={score.huddleTarget} extra="huddles" />
           <SubItem label="KPI Entry Compliance" score={score.kpiScore} extra={score.kpiCount > 0 ? 'Entry submitted this month' : 'No entry submitted yet'} />
         </div>
