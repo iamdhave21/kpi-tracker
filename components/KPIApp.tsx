@@ -2291,6 +2291,15 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
     return result
   }
 
+  function getScopedActiveEmployeeCount(): number {
+    const teamEmpIds = selTeam === 'all' ? null : new Set(members.filter(m => m.team_id === selTeam).map(m => m.employee_id))
+    const viewerFilter = userRole === 'agent' && myTeamEmpIds ? myTeamEmpIds : null
+    const clientEmpIds = selClient !== 'All'
+      ? new Set(employees.filter(e => e.client === selClient).map(e => e.id))
+      : (canSeeAllClients ? null : new Set(employees.filter(e => e.client && myClients.includes(e.client)).map(e => e.id)))
+    return employees.filter(e => activeEmpIds.has(e.id) && (teamEmpIds === null || teamEmpIds.has(e.id)) && (viewerFilter === null || viewerFilter.has(e.id)) && (clientEmpIds === null || clientEmpIds.has(e.id))).length
+  }
+
   const filtered = getFilteredByView()
   const displayed = aggregateRecords(filtered)
   const ranked = [...displayed].filter(r => r.overall_score !== null && (r.overall_score||0) > 0).sort((a,b) => (b.overall_score||0)-(a.overall_score||0))
@@ -2308,7 +2317,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Performance</h2>
-          <p className="text-sm text-gray-500">{ranked.length} active employees for {viewLabel}</p>
+          <p className="text-sm text-gray-500">{ranked.length} of {getScopedActiveEmployeeCount()} active employees scored for {viewLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
