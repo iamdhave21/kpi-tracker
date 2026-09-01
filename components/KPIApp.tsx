@@ -2750,6 +2750,18 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
   const isAgent = userRole === 'agent'
   const myEmployee = isAgent ? employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase()) : null
 
+  // Client scoping for the employee picker, same convention used
+  // everywhere else in this app (Directory Links, Performance Dashboard,
+  // Org Chart): Admin/Super Admin unrestricted, everyone else limited to
+  // the client(s) on their own employee record. This was previously
+  // missing entirely -- a Team Lead's picker listed every active employee
+  // company-wide with no client filter at all.
+  const canSeeAllClients = userRole === 'super_admin' || userRole === 'admin'
+  const myEmployeeForClient = employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
+  const myClients: string[] = canSeeAllClients
+    ? []
+    : (myEmployeeForClient?.clients_supported && myEmployeeForClient.clients_supported.length ? myEmployeeForClient.clients_supported : (myEmployeeForClient?.client ? [myEmployeeForClient.client] : []))
+
   useEffect(() => {
     if (isAgent && myEmployee) setSelEmployee(myEmployee.id)
   }, [isAgent, myEmployee?.id])
@@ -2800,7 +2812,10 @@ function EmployeeDashboard({ records, employees, activeEmpIds, selEmployee, setS
   const avgScore = empRecords.length ? empRecords.reduce((s,r) => s+(r.overall_score||0),0)/empRecords.length : 0
   const latest = empRecords[empRecords.length-1]
   const best = empRecords.reduce((b,r) => ((r.overall_score||0)>(b?.overall_score||0)?r:b), empRecords[0])
-  const eligibleEmployees = employees.filter(e => statusFilter === 'active' ? e.active : !e.active)
+  const eligibleEmployees = employees.filter(e =>
+    (statusFilter === 'active' ? e.active : !e.active) &&
+    (canSeeAllClients || (e.client && myClients.includes(e.client)))
+  )
 
   return (
     <div className="space-y-6">
