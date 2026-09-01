@@ -3113,6 +3113,38 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   }, [isTL, isAdminOnly, currentUser, employees])
   const isScopedManager = isTL || isAdminOnly
 
+  // Team filter, available to any manager (TL/Admin/Super Admin) so they
+  // can drill into one specific team within whatever they can already
+  // see, rather than only ever viewing their full scope at once.
+  const [teamsList, setTeamsList] = useState<any[]>([])
+  const [teamMembersList, setTeamMembersList] = useState<any[]>([])
+  const [teamFilter, setTeamFilter] = useState<string>('all')
+  useEffect(() => {
+    if (!canManage) return
+    ;(async () => {
+      const [{ data: t }, { data: m }] = await Promise.all([
+        supabase.from('teams').select('id, name').order('name'),
+        supabase.from('team_members').select('team_id, employee_id'),
+      ])
+      setTeamsList(t || []); setTeamMembersList(m || [])
+    })()
+  }, [canManage])
+  // Only offer teams that fall within this manager's own scope (their own
+  // team for a TL, their supported client's teams for an Admin, every
+  // team for Super Admin) -- never lets someone filter into a team they
+  // couldn't otherwise see.
+  const visibleTeams = teamsList.filter(t => {
+    if (!isScopedManager || teamEmpIds === null) return true
+    const memberIds = teamMembersList.filter(m => m.team_id === t.id).map(m => m.employee_id)
+    return memberIds.some(id => teamEmpIds!.has(id))
+  })
+  const teamFilterEmpIds: Set<string> | null = teamFilter === 'all' ? null : new Set(teamMembersList.filter(m => m.team_id === teamFilter).map(m => m.employee_id))
+  function inScope(employeeId: string): boolean {
+    if (teamEmpIds !== null && !teamEmpIds.has(employeeId)) return false
+    if (teamFilterEmpIds !== null && !teamFilterEmpIds.has(employeeId)) return false
+    return true
+  }
+
   const [weekFilter, setWeekFilter] = useState(currentWeek)
   const [subs, setSubs] = useState<any[]>([])
   const [loadingSubs, setLoadingSubs] = useState(false)
@@ -3137,7 +3169,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
     ;(async () => {
       try {
         const { data } = await supabase.from('pulse_surveys').select('*').eq('week_start', weekFilter).order('employee_name')
-        const rows = isScopedManager ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
+        const rows = (data||[]).filter((r:any) => inScope(r.employee_id))
         setSubs(rows)
       } catch (err) {
         console.error('Pulse submissions load failed:', err)
@@ -3146,7 +3178,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
         setLoadingSubs(false)
       }
     })()
-  }, [canManage, isTL, teamEmpIds, weekFilter])
+  }, [canManage, isTL, teamEmpIds, teamFilter, weekFilter])
 
   // Trend across recent weeks, scoped the same way as the table above, so
   // a TL/Manager can see whether the team's pulse is improving, flat, or
@@ -3157,7 +3189,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
     ;(async () => {
       const weeks = [...recentWeeks].reverse()
       const { data } = await supabase.from('pulse_surveys').select('*').gte('week_start', weeks[0]).lte('week_start', weeks[weeks.length-1])
-      const scoped = isScopedManager ? (data||[]).filter((r:any) => teamEmpIds!.has(r.employee_id)) : (data||[])
+      const scoped = (data||[]).filter((r:any) => inScope(r.employee_id))
       const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
       setTrendData(weeks.map(w => {
         const rows = scoped.filter((r:any) => r.week_start === w)
@@ -3167,9 +3199,9 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
         return { week: w, avg: Math.round(avg*100)/100, flagged }
       }))
     })()
-  }, [canManage, isTL, teamEmpIds])
+  }, [canManage, isTL, teamEmpIds, teamFilter])
 
-  const scopedActiveEmployees = (isScopedManager ? employees.filter(e => teamEmpIds?.has(e.id)) : employees).filter(e => e.active)
+  const scopedActiveEmployees = employees.filter(e => e.active && inScope(e.id))
   const notYetSubmitted = scopedActiveEmployees.filter(e => !subs.some(s => s.employee_id === e.id))
 
   async function saveNote(id: string) {
@@ -3284,7 +3316,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 
       {activeTab === 'manage' && canManage && (
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <label className="text-sm text-gray-600">Week of</label>
             <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
               {recentWeeks.map(w => (
@@ -3292,6 +3324,15 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
               ))}
             </select>
             {weekFilter !== currentWeek && <button onClick={() => setWeekFilter(currentWeek)} className="text-xs text-blue-600 hover:underline">Back to current week</button>}
+            {visibleTeams.length > 1 && (
+              <>
+                <label className="text-sm text-gray-600 ml-2">Team</label>
+                <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                  <option value="all">All Teams</option>
+                  {visibleTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </>
+            )}
           </div>
 
           {/* Trend across recent weeks */}
@@ -7903,7 +7944,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
 
     setScore({
       overall, complianceScore, teamPerfScore, attendanceScore,
-      tlPhoto, tlName, tlTeams: tlTeamsData || [],
+      tlPhoto, tlName, tlEmail, tlTeams: tlTeamsData || [],
       ...complianceSubScores,
       coachCount: coachCount||0, coachTarget,
       obsCount: obsCount||0, obsTarget,
@@ -7935,10 +7976,10 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
 
   function getColor(v:number) { return v>=80?'#10b981':v>=60?'#f59e0b':'#ef4444' }
 
-  const SubItem = ({ label, score, count, target, extra }: { label:string, score:number, count?:number, target?:number, extra?:string }) => (
-    <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+  const SubItem = ({ label, score, count, target, extra, onClick }: { label:string, score:number, count?:number, target?:number, extra?:string, onClick?: () => void }) => (
+    <div className={`flex items-center justify-between py-2 border-b border-gray-50 last:border-0 ${onClick ? 'cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded-lg transition' : ''}`} onClick={onClick}>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-700 font-medium">{label}</p>
+        <p className={`text-sm font-medium ${onClick ? 'text-blue-800 hover:underline' : 'text-gray-700'}`}>{label}{onClick && <span className="text-xs text-gray-400 font-normal ml-1">(click for detail)</span>}</p>
         {count !== undefined && target !== undefined && (
           <p className="text-xs text-gray-400 mt-0.5">{count} of {target} {extra||''}</p>
         )}
@@ -7952,6 +7993,47 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
       </div>
     </div>
   )
+
+  const [showCadenceDrill, setShowCadenceDrill] = useState(false)
+  const [cadenceDrillData, setCadenceDrillData] = useState<{freq:string, periods:{key:string, label:string, doneItems:string[], missingItems:string[]}[]}[] | null>(null)
+  const [loadingDrill, setLoadingDrill] = useState(false)
+
+  async function openCadenceDrilldown() {
+    if (!score?.tlEmail) return
+    setShowCadenceDrill(true)
+    setLoadingDrill(true)
+    const { start, end } = getPeriodBounds()
+    const freqs: ('daily'|'weekly'|'monthly')[] = ['daily','weekly','monthly']
+    const result: {freq:string, periods:{key:string, label:string, doneItems:string[], missingItems:string[]}[]}[] = []
+    for (const freq of freqs) {
+      const { data: items } = await supabase.from('cadence_items').select('id,label').is('retired_at',null).eq('frequency',freq)
+      const itemList = items || []
+      if (itemList.length === 0) { result.push({ freq, periods: [] }); continue }
+      const { data: completions } = await supabase.from('cadence_completions')
+        .select('period_key,item_id,done').eq('team_lead_email',score.tlEmail).eq('frequency',freq).eq('done',true)
+        .gte('period_key', start.slice(0,10)).lte('period_key', end.slice(0,10))
+      const periodKeys = Array.from(new Set((completions||[]).map((c:any)=>c.period_key))).sort()
+      // Also include periods with zero completions within range so fully-missed
+      // periods show up, not just partially-completed ones.
+      const allExpectedKeys = new Set<string>(periodKeys)
+      if (freq === 'daily') {
+        const d = new Date(start)
+        while (d < new Date(end) && d <= new Date()) { allExpectedKeys.add(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1) }
+      }
+      const periods = Array.from(allExpectedKeys).sort().map(pk => {
+        const doneIds = new Set((completions||[]).filter((c:any)=>c.period_key===pk).map((c:any)=>c.item_id))
+        return {
+          key: pk,
+          label: new Date(pk).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}),
+          doneItems: itemList.filter(i => doneIds.has(i.id)).map(i => i.label),
+          missingItems: itemList.filter(i => !doneIds.has(i.id)).map(i => i.label),
+        }
+      })
+      result.push({ freq, periods })
+    }
+    setCadenceDrillData(result)
+    setLoadingDrill(false)
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -8048,7 +8130,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
             <h3 className="font-semibold text-gray-900">Compliance Breakdown</h3>
             <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">30% weight</span>
           </div>
-          <SubItem label="Cadence Compliance" score={score.cadenceScore} extra="Avg across daily, weekly, monthly" />
+          <SubItem label="Cadence Compliance" score={score.cadenceScore} extra="Avg across daily, weekly, monthly" onClick={openCadenceDrilldown} />
           <SubItem label="Coaching Sessions" score={score.coachScore} count={score.coachCount} target={score.coachTarget} extra="sessions" />
           <SubItem label="Observations Logged" score={score.obsScore} count={score.obsCount} target={score.obsTarget} extra="observations" />
           <SubItem label="Huddle Notes Posted" score={score.huddleScore} count={score.huddleCount} target={score.huddleTarget} extra="huddles" />
@@ -8086,6 +8168,51 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
           </div>
         </div>
         </>
+      )}
+
+      {/* Cadence drill-down modal */}
+      {showCadenceDrill && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowCadenceDrill(false)}>
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white">
+              <div>
+                <h3 className="font-bold text-blue-900">Cadence Compliance Detail</h3>
+                <p className="text-xs text-gray-500">{score?.tlName} — {getPeriodBounds().label}</p>
+              </div>
+              <button onClick={() => setShowCadenceDrill(false)} className="text-gray-400 hover:text-gray-700 p-1"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-5">
+              {loadingDrill ? (
+                <div className="text-center py-10 text-gray-400">Loading...</div>
+              ) : !cadenceDrillData || cadenceDrillData.every(f => f.periods.length === 0) ? (
+                <p className="text-sm text-gray-400 text-center py-6">No active cadence items or activity found for this period.</p>
+              ) : (
+                cadenceDrillData.map(f => f.periods.length > 0 && (
+                  <div key={f.freq}>
+                    <h4 className="text-sm font-semibold text-gray-800 capitalize mb-2">{f.freq}</h4>
+                    <div className="space-y-2">
+                      {f.periods.map(p => {
+                        const total = p.doneItems.length + p.missingItems.length
+                        const pct = total > 0 ? Math.round((p.doneItems.length/total)*100) : 0
+                        return (
+                          <div key={p.key} className={`border rounded-lg px-3 py-2 ${p.missingItems.length === 0 ? 'border-emerald-100 bg-emerald-50/50' : 'border-red-100 bg-red-50/50'}`}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-gray-800">{p.label}</span>
+                              <span className={`text-xs font-semibold ${p.missingItems.length === 0 ? 'text-emerald-700' : 'text-red-700'}`}>{p.doneItems.length}/{total} ({pct}%)</span>
+                            </div>
+                            {p.missingItems.length > 0 && (
+                              <p className="text-xs text-red-600 mt-1">Missed: {p.missingItems.join(', ')}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
