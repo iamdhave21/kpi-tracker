@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
-import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye } from 'lucide-react'
+import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye } from 'lucide-react'
 
 type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex'
 
@@ -951,7 +951,7 @@ function MyProfileCard({ currentUser, userName, showToast }: { currentUser: stri
   )
 }
 
-export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl, onBgChange }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string, bgUrl?: string | null, onBgChange?: (url: string | null) => void }) {
+export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl, onBgChange, onNavigate }: { currentUser: string, userRole: string, showToast: (m: string, t: 'success'|'error') => void, activeTab?: string, bgUrl?: string | null, onBgChange?: (url: string | null) => void, onNavigate?: (view: string) => void }) {
   const [leaderboardKey, setLeaderboardKey] = useState(0)
   const stored = typeof window !== 'undefined' ? localStorage.getItem('kpi_user') : null
   const storedName = stored ? JSON.parse(stored).display_name : null
@@ -984,12 +984,70 @@ export function HomeScreen({ currentUser, userRole, showToast, activeTab, bgUrl,
         </div>
       ) : (
         <div className="flex-1 overflow-hidden flex flex-col">
+          {userRole === 'Team Lead' && (
+            <div className="px-6 pt-4">
+              <TodaysCadenceWidget currentUser={currentUser} onNavigate={onNavigate} />
+            </div>
+          )}
           <div className="flex-1 overflow-hidden">
             <AnnouncementsPanel userEmail={currentUser} userRole={userRole} showToast={showToast} onBgChange={onBgChange} />
           </div>
         </div>
       )}
     </div>
+  )
+}
+
+// -- Today's Cadence widget (Home dashboard, Team Lead only) --------------
+// Shows live progress on today's Daily Operating Cadence checklist so a TL
+// can see their current standing at a glance without opening the full
+// Operating Cadence screen. Reuses the same cadence_items/cadence_completions
+// tables and period-key logic as that screen, so the numbers always match.
+function TodaysCadenceWidget({ currentUser, onNavigate }: { currentUser: string, onNavigate?: (view: string) => void }) {
+  const [loading, setLoading] = useState(true)
+  const [done, setDone] = useState(0)
+  const [total, setTotal] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      const { data: items } = await supabase.from('cadence_items').select('id').eq('frequency', 'daily').is('retired_at', null)
+      const itemIds = (items || []).map((i: any) => i.id)
+      if (itemIds.length === 0) { if (!cancelled) { setTotal(0); setDone(0); setLoading(false) } ; return }
+      const periodKey = currentPeriodKey('daily')
+      const { data: completions } = await supabase.from('cadence_completions')
+        .select('item_id, done')
+        .eq('team_lead_email', currentUser.toLowerCase())
+        .eq('period_key', periodKey)
+        .in('item_id', itemIds)
+      const doneCount = (completions || []).filter((c: any) => c.done).length
+      if (!cancelled) { setTotal(itemIds.length); setDone(doneCount); setLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [currentUser])
+
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0
+  const color = pct >= 80 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626'
+  const bg = pct >= 80 ? 'bg-emerald-50 border-emerald-200' : pct >= 50 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+
+  if (loading) return null
+  if (total === 0) return null
+
+  return (
+    <button
+      onClick={() => onNavigate?.('cadence')}
+      className={`w-full text-left border rounded-xl px-5 py-3.5 flex items-center gap-4 hover:shadow-md transition ${bg}`}
+    >
+      <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 bg-white border-2" style={{ borderColor: color, color }}>
+        {pct}%
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-900">Today's Cadence — {done} of {total} items done</p>
+        <p className="text-xs text-gray-500 mt-0.5">Daily Operations Check · resets tomorrow · click to open checklist</p>
+      </div>
+      <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+    </button>
   )
 }
 
@@ -1900,7 +1958,7 @@ export default function KPIApp() {
         <div className="h-full animate-fadeIn relative z-10">
           {/* Announcements & Gaming Hub — full bleed, no padding wrapper */}
           {(view === 'announcements' || view === 'gaming-hub') ? (
-            <HomeScreen currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} onBgChange={setBgUrl} />
+            <HomeScreen currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} activeTab={view} bgUrl={bgUrl} onBgChange={setBgUrl} onNavigate={(v) => setView(v as View)} />
           ) : (
           <div className="px-4 pt-4 pb-6 relative z-10 w-full max-w-[1600px] mx-auto">
           <div className={bgUrl && view !== 'dashboard-month' && view !== 'dashboard-employee' && view !== 'org-chart' ? "bg-white/88 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 p-6" : ""}>
