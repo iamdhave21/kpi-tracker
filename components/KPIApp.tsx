@@ -7473,6 +7473,15 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
     setLoading(true)
     const { start, end } = getPeriodBounds()
 
+    // selectedTL is the employee UUID. Cadence/coaching/observations/huddle
+    // tables key off email (lowercase), not employee_id -- resolve the TL's
+    // email first so those queries actually match. Previously these four
+    // sub-scores compared a UUID directly against an email column and
+    // could never match anything, silently scoring 0 for every TL
+    // regardless of real activity.
+    const { data: tlEmpInfo } = await supabase.from('employees').select('id,name,email').eq('id', selectedTL).maybeSingle()
+    const tlEmail = tlEmpInfo?.email?.toLowerCase() || ''
+
     // --- COMPLIANCE (30%) ---
     // 1. Cadence compliance (avg daily/weekly/monthly for period)
     const periods = ['daily','weekly','monthly']
@@ -7482,7 +7491,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
       const totalItems = (items||[]).length
       if (totalItems === 0) { cadenceTotal += 100; continue }
       const { data: completions } = await supabase.from('cadence_completions')
-        .select('period_key,done').eq('team_lead_email',selectedTL).eq('frequency',freq).eq('done',true)
+        .select('period_key,done').eq('team_lead_email',tlEmail).eq('frequency',freq).eq('done',true)
         .gte('period_key', start.slice(0,10)).lte('period_key', end.slice(0,10))
       const uniquePeriods = new Set((completions||[]).map((c:any)=>c.period_key))
       const avgRate = uniquePeriods.size > 0
@@ -7498,13 +7507,13 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
     // 2. Coaching sessions (target: 2/month or 0.5/week)
     const coachTarget = period === 'mtd' ? 2 : 1
     const { count: coachCount } = await supabase.from('coaching_logs').select('id',{count:'exact',head:true})
-      .eq('coached_by',selectedTL).gte('date',start.slice(0,10)).lte('date',end.slice(0,10))
+      .eq('coached_by',tlEmail).gte('date',start.slice(0,10)).lte('date',end.slice(0,10))
     const coachScore = Math.min((coachCount||0)/coachTarget,1)*100
 
     // 3. Observations (target: 4/month or 1/week)
     const obsTarget = period === 'mtd' ? 4 : 1
     const { count: obsCount } = await supabase.from('observations').select('id',{count:'exact',head:true})
-      .eq('observed_by',selectedTL).gte('created_at',start).lte('created_at',end)
+      .eq('observed_by',tlEmail).gte('created_at',start).lte('created_at',end)
     const obsScore = Math.min((obsCount||0)/obsTarget,1)*100
 
     // Tickets Resolved was removed from Compliance scoring (Sept 2026) --
@@ -7516,20 +7525,20 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
     // 4. Huddle notes (target: 4/month or 1/week)
     const huddleTarget = period === 'mtd' ? 4 : 1
     const { count: huddleCount } = await supabase.from('huddle_notes').select('id',{count:'exact',head:true})
-      .eq('created_by',selectedTL).gte('created_at',start).lte('created_at',end)
+      .eq('created_by',tlEmail).gte('created_at',start).lte('created_at',end)
     const huddleScore = Math.min((huddleCount||0)/huddleTarget,1)*100
 
-    // 5. KPI entry compliance (target: 1 entry per month)
+    // 5. KPI entry compliance (target: 1 entry per month) -- must be scoped
+    // to this TL's own employee_id. Previously had no employee filter at
+    // all, so it counted ANY kpi_records row company-wide for the month,
+    // meaning every TL showed 100% the moment anyone's KPI was entered.
     const { count: kpiCount } = await supabase.from('kpi_records').select('id',{count:'exact',head:true})
-      .eq('month_label',monthLabel)
+      .eq('employee_id', selectedTL).eq('month_label',monthLabel)
     const kpiScore = (kpiCount||0) > 0 ? 100 : 0
 
     const complianceSubScores = { cadenceScore, coachScore, obsScore, huddleScore, kpiScore }
     const complianceScore = (cadenceScore + coachScore + obsScore + huddleScore + kpiScore) / 5
 
-    // Get TL photo
-    // selectedTL is now employee UUID from teams table
-    const { data: tlEmpInfo } = await supabase.from('employees').select('id,name,email').eq('id', selectedTL).maybeSingle()
     const tlPhoto = null
     const tlName = tlEmpInfo?.name || 'Unknown'
 
