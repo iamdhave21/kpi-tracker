@@ -28,6 +28,7 @@ export type NteRecord = {
   department: string | null
   client: string | null
   immediate_supervisor: string | null
+  offense_category: string | null
   date_issued: string
   date_of_incident: string
   warning_level: 'Verbal Warning' | 'Written Warning' | 'Final Written Warning' | 'Dismissal'

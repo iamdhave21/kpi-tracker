@@ -1540,11 +1540,12 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* HRIS */}
-      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-timetracker'].includes(view)} />
+      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-timetracker','nte'].includes(view)} />
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
           {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>}
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
+          <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
         </div>
       )}
@@ -1573,7 +1574,6 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
             <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-scorecard" label="Team Lead Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-blue-400"/>
-            <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
           </div>
         )}
@@ -1582,13 +1582,12 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {/* TEAM LEAD TOOLS -- visible to everyone; KPI Entry, Observations,
           and Operating Cadence hard-block below Team Lead. */}
       <>
-        <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check','nte'].includes(view as string)} />
+        <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check'].includes(view as string)} />
         {!collapsed.tltools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-indigo-400"/>
-            <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
@@ -2015,8 +2014,7 @@ export default function KPIApp() {
             {view === 'teams' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'observations' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <ObservationsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'observations' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
-            {view === 'nte' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <NTEPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
-            {view === 'nte' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {(view === 'nte') && <NTEPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'matrix' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && (
               <div className="max-w-[1600px] mx-auto space-y-6">
                 <div><h2 className="text-xl font-bold text-blue-900">Matrix</h2><p className="text-sm text-gray-500">Track features shipped, issues to fix, and SQL still pending in Supabase</p></div>
@@ -7019,8 +7017,17 @@ const NTE_LEVEL_COLOR: Record<string, string> = {
   'Final Written Warning': 'bg-red-100 text-red-700 border-red-200',
   'Dismissal': 'bg-gray-800 text-white border-gray-900',
 }
+// Used to detect a "similar offense" for auto-escalation -- free-text
+// incident descriptions can't be reliably compared, so the category is
+// the thing repeat offenses are matched on.
+const NTE_OFFENSE_CATEGORIES = ['Attendance & Punctuality', 'Performance & Quality', 'Conduct & Behavior', 'Policy / Compliance Violation', 'Insubordination', 'Other'] as const
+const NTE_ESCALATION_MONTHS = 3
+function nextNteLevel(level: string): typeof NTE_LEVELS[number] {
+  const i = NTE_LEVELS.indexOf(level as any)
+  return NTE_LEVELS[Math.min(i + 1, NTE_LEVELS.length - 1)]
+}
 const emptyNteForm = {
-  employee_id: '', warning_level: 'Verbal Warning' as typeof NTE_LEVELS[number],
+  employee_id: '', offense_category: '' as string, warning_level: 'Verbal Warning' as typeof NTE_LEVELS[number],
   date_issued: new Date().toISOString().slice(0,10), date_of_incident: '',
   incident_statement: '', policy_violated: '',
   findings_evaluation: '', disciplinary_action_imposed: '', effective_date: '',
@@ -7036,12 +7043,19 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
   const [saving, setSaving] = useState(false)
   const [viewRecord, setViewRecord] = useState<NteRecord | null>(null)
   const [sending, setSending] = useState(false)
+  const [escalation, setEscalation] = useState<{ priorLevel: string, priorDate: string, suggested: string } | null>(null)
   const isTL = userRole === 'Team Lead'
-  const canSeeAll = userRole === 'super_admin' || userRole === 'admin'
+  const isAdminOnly = userRole === 'admin'
+  const isSuperAdmin = userRole === 'super_admin'
+  const isAgent = userRole === 'agent'
   const myEmployee = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
 
-  // Same team-scoping pattern as KPI Entry: a Team Lead only sees/issues
-  // NTEs for their own team; Admin/Super Admin are unrestricted.
+  // Access scope, per role:
+  // - Agent: read-only, own record(s) only. Can't issue.
+  // - Team Lead: their own team, can issue.
+  // - Admin: their own supported client(s), can issue -- prep for a
+  //   future 2nd Admin, same convention as Dashboard/Pulse Check.
+  // - Super Admin: unrestricted.
   const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
   useEffect(() => {
     if (!isTL || !currentUser) { setMyTeamEmpIds(null); return }
@@ -7057,18 +7071,63 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
     return () => { cancelled = true }
   }, [isTL, currentUser, employees.length])
 
-  const eligibleEmployees = employees.filter(e => e.active && (!isTL || myTeamEmpIds === null || myTeamEmpIds.has(e.id)))
+  const myClients: string[] = isAdminOnly
+    ? (myEmployee?.clients_supported && myEmployee.clients_supported.length ? myEmployee.clients_supported : (myEmployee?.client ? [myEmployee.client] : []))
+    : []
+
+  function inScope(employeeId: string): boolean {
+    if (isSuperAdmin) return true
+    if (isAdminOnly) {
+      const emp = employees.find(e => e.id === employeeId)
+      return !!emp?.client && myClients.includes(emp.client)
+    }
+    if (isTL) return myTeamEmpIds !== null && myTeamEmpIds.has(employeeId)
+    if (isAgent) return !!myEmployee && myEmployee.id === employeeId
+    return false
+  }
+
+  const eligibleEmployees = employees.filter(e => e.active && inScope(e.id))
+  const canIssue = isTL || isAdminOnly || isSuperAdmin
 
   async function loadRecords() {
     if (isTL && myTeamEmpIds === null) return
     setLoading(true)
-    let q = supabase.from('nte_records').select('*').order('date_issued', { ascending: false })
-    const { data } = await q
-    const rows = isTL ? (data||[]).filter((r:any) => myTeamEmpIds!.has(r.employee_id)) : (data||[])
+    const { data } = await supabase.from('nte_records').select('*').order('date_issued', { ascending: false })
+    const rows = (data||[]).filter((r:any) => inScope(r.employee_id))
     setRecords(rows)
     setLoading(false)
   }
-  useEffect(() => { loadRecords() }, [isTL, myTeamEmpIds])
+  useEffect(() => { loadRecords() }, [isTL, isAdminOnly, isSuperAdmin, isAgent, myTeamEmpIds, myEmployee?.id])
+
+  // Escalation check: does this employee already have an NTE for the same
+  // offense category within the trailing 3 months? If so, suggest the
+  // next severity level up -- the issuer can still override and pick
+  // Verbal Warning again if they judge it isn't really a repeat.
+  useEffect(() => {
+    if (!form.employee_id || !form.offense_category) { setEscalation(null); return }
+    let cancelled = false
+    ;(async () => {
+      const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - NTE_ESCALATION_MONTHS)
+      const { data } = await supabase.from('nte_records')
+        .select('warning_level, date_of_incident')
+        .eq('employee_id', form.employee_id)
+        .eq('offense_category', form.offense_category)
+        .gte('date_of_incident', cutoff.toISOString().slice(0,10))
+        .order('date_of_incident', { ascending: false })
+        .limit(1)
+      if (cancelled) return
+      if (data && data.length > 0) {
+        const prior = data[0] as any
+        const suggested = nextNteLevel(prior.warning_level)
+        setEscalation({ priorLevel: prior.warning_level, priorDate: prior.date_of_incident, suggested })
+        setForm(f => ({ ...f, warning_level: suggested as any }))
+      } else {
+        setEscalation(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [form.employee_id, form.offense_category])
+
 
   function selectEmployee(id: string) {
     const emp = employees.find(e => e.id === id)
@@ -7079,6 +7138,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
   async function saveNte() {
     const emp = employees.find(e => e.id === form.employee_id)
     if (!emp) { showToast('Select an employee', 'error'); return }
+    if (!form.offense_category) { showToast('Select an offense category', 'error'); return }
     if (!form.date_of_incident) { showToast('Date of incident is required', 'error'); return }
     if (!form.incident_statement.trim()) { showToast('Statement of the incident is required', 'error'); return }
     if (!form.policy_violated.trim()) { showToast('Company policy/code of conduct violated is required', 'error'); return }
@@ -7092,6 +7152,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
       department: (emp.departments||[]).join(', ') || null,
       client: emp.client,
       immediate_supervisor: supervisorName,
+      offense_category: form.offense_category,
       date_issued: form.date_issued,
       date_of_incident: form.date_of_incident,
       warning_level: form.warning_level,
@@ -7112,6 +7173,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
     showToast('Notice to Explain generated')
     setShowForm(false)
     setForm({ ...emptyNteForm })
+    setEscalation(null)
     loadRecords()
     setViewRecord(data as NteRecord)
   }
@@ -7147,16 +7209,18 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-blue-900">Notice to Explain</h2>
-          <p className="text-sm text-gray-500">Issue and track disciplinary notices{isTL ? ' for your team' : ''}</p>
+          <p className="text-sm text-gray-500">{isAgent ? 'Your disciplinary record' : `Issue and track disciplinary notices${isTL ? ' for your team' : isAdminOnly ? ' for your supported client(s)' : ''}`}</p>
         </div>
-        <button onClick={() => { setForm({ ...emptyNteForm }); setShowForm(true) }}
-          className="flex items-center gap-2 bg-blue-900 hover:bg-blue-950 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
-          <PlusCircle className="w-4 h-4" /> New Notice to Explain
-        </button>
+        {canIssue && (
+          <button onClick={() => { setForm({ ...emptyNteForm }); setEscalation(null); setShowForm(true) }}
+            className="flex items-center gap-2 bg-blue-900 hover:bg-blue-950 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+            <PlusCircle className="w-4 h-4" /> New Notice to Explain
+          </button>
+        )}
       </div>
 
       {/* Issue form */}
-      {showForm && (
+      {showForm && canIssue && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
           <h3 className="font-semibold text-gray-900">New Notice to Explain</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -7168,6 +7232,22 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
               </select>
               {isTL && myTeamEmpIds && myTeamEmpIds.size === 0 && <p className="text-xs text-amber-600 mt-1">No team members found under your account.</p>}
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Offense Category</label>
+              <select value={form.offense_category} onChange={e => setForm(f => ({ ...f, offense_category: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                <option value="">Select category...</option>
+                {NTE_OFFENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {escalation && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+              ⚠️ This employee already has a <strong>{escalation.priorLevel}</strong> for a similar offense ({form.offense_category}) on {new Date(escalation.priorDate).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})} — within the last {NTE_ESCALATION_MONTHS} months. Warning level has been auto-suggested as <strong>{escalation.suggested}</strong> below. You can still change it if this isn&apos;t actually a repeat offense.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Warning Level</label>
               <select value={form.warning_level} onChange={e => setForm(f => ({ ...f, warning_level: e.target.value as any }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
@@ -7280,7 +7360,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
               <h3 className="font-bold text-blue-900">Notice to Explain — {viewRecord.employee_name}</h3>
               <div className="flex items-center gap-2">
                 <button onClick={handlePrint} className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg transition">Print / Save as PDF</button>
-                <button onClick={() => sendEmail(viewRecord)} disabled={sending} className="flex items-center gap-1.5 bg-blue-900 hover:bg-blue-950 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50">{sending ? 'Sending...' : 'Send via Email'}</button>
+                {canIssue && <button onClick={() => sendEmail(viewRecord)} disabled={sending} className="flex items-center gap-1.5 bg-blue-900 hover:bg-blue-950 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50">{sending ? 'Sending...' : 'Send via Email'}</button>}
                 <button onClick={() => setViewRecord(null)} className="text-gray-400 hover:text-gray-700 p-1"><X className="w-5 h-5"/></button>
               </div>
             </div>
