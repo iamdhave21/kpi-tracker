@@ -7030,8 +7030,6 @@ const emptyNteForm = {
   employee_id: '', offense_category: '' as string, warning_level: 'Verbal Warning' as typeof NTE_LEVELS[number],
   date_issued: new Date().toISOString().slice(0,10), date_of_incident: '',
   incident_statement: '', policy_violated: '',
-  findings_evaluation: '', disciplinary_action_imposed: '', effective_date: '',
-  coaching_action_plan: '', target_followup_date: '', responsible_manager: '', hr_representative: '',
 }
 
 function NTEPanel({ employees, currentUser, userRole, showToast }:
@@ -7043,6 +7041,8 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
   const [saving, setSaving] = useState(false)
   const [viewRecord, setViewRecord] = useState<NteRecord | null>(null)
   const [sending, setSending] = useState(false)
+  const [acks, setAcks] = useState<{party_role: string, signer_name: string, acknowledged_at: string}[]>([])
+  const [acking, setAcking] = useState<string | null>(null)
   const [escalation, setEscalation] = useState<{ priorLevel: string, priorDate: string, suggested: string } | null>(null)
   const isTL = userRole === 'Team Lead'
   const isAdminOnly = userRole === 'admin'
@@ -7158,13 +7158,6 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
       warning_level: form.warning_level,
       incident_statement: form.incident_statement.trim(),
       policy_violated: form.policy_violated.trim(),
-      findings_evaluation: form.findings_evaluation.trim() || null,
-      disciplinary_action_imposed: form.disciplinary_action_imposed.trim() || null,
-      effective_date: form.effective_date || null,
-      coaching_action_plan: form.coaching_action_plan.trim() || null,
-      target_followup_date: form.target_followup_date || null,
-      responsible_manager: form.responsible_manager.trim() || null,
-      hr_representative: form.hr_representative.trim() || null,
       status: 'Issued',
       created_by: currentUser,
     }).select().single()
@@ -7202,7 +7195,43 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
     setTimeout(() => document.body.classList.remove('printing-nte'), 500)
   }
 
-  const needsManagerSection = viewRecord && viewRecord.warning_level !== 'Verbal Warning'
+  // Sign-off parties, matching the template's signature blocks: a Verbal
+  // Warning only needs the issuer + employee; the other three levels also
+  // need HR and an optional Witness. This replaces the old free-text
+  // Manager's Evaluation fields with an actual acknowledgment trail.
+  function partiesFor(record: NteRecord): string[] {
+    return record.warning_level === 'Verbal Warning'
+      ? ['Issued by (Supervisor/Team Lead)', 'Employee (Received Copy)']
+      : ['Manager/Team Lead', 'HR Representative', 'Employee', 'Witness (optional)']
+  }
+
+  async function loadAcks(nteId: string) {
+    const { data } = await supabase.from('nte_acknowledgements').select('party_role, signer_name, acknowledged_at').eq('nte_id', nteId)
+    setAcks(data || [])
+  }
+  useEffect(() => { if (viewRecord) loadAcks(viewRecord.id); else setAcks([]) }, [viewRecord?.id])
+
+  // Who's allowed to sign which role: the Employee row can only be signed
+  // by that same employee (agent viewing their own record); every other
+  // role can be signed by anyone with issue-level access to this record
+  // (Team Lead for their team, Admin for their client, Super Admin always).
+  function canSignRole(record: NteRecord, role: string): boolean {
+    if (role.startsWith('Employee')) return isAgent && !!myEmployee && myEmployee.id === record.employee_id
+    return canIssue && inScope(record.employee_id)
+  }
+
+  async function acknowledgeParty(record: NteRecord, role: string) {
+    setAcking(role)
+    const signerName = myEmployee?.name || currentUser.split('@')[0]
+    const { error } = await supabase.from('nte_acknowledgements')
+      .upsert({ nte_id: record.id, party_role: role, signer_name: signerName, signer_email: currentUser.toLowerCase(), acknowledged_at: new Date().toISOString() }, { onConflict: 'nte_id,party_role' })
+    if (error) { showToast(error.message, 'error'); setAcking(null); return }
+    await loadAcks(record.id)
+    showToast('Signed off ✓')
+    setAcking(null)
+  }
+
+
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -7271,42 +7300,6 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
             <label className="block text-sm font-medium text-gray-700 mb-1">Company Policy / Code of Conduct Violated</label>
             <textarea rows={2} value={form.policy_violated} onChange={e => setForm(f => ({ ...f, policy_violated: e.target.value }))} placeholder="Cite the specific policy or code of conduct section..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           </div>
-
-          {form.warning_level !== 'Verbal Warning' && (
-            <div className="border-t border-gray-100 pt-4 space-y-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Manager&apos;s Evaluation &amp; Intervention Plan (optional at issuance -- can be completed once the employee&apos;s explanation is received)</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Findings / Evaluation</label>
-                  <textarea rows={2} value={form.findings_evaluation} onChange={e => setForm(f => ({ ...f, findings_evaluation: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Disciplinary Action Imposed</label>
-                  <input value={form.disciplinary_action_imposed} onChange={e => setForm(f => ({ ...f, disciplinary_action_imposed: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Effective Date</label>
-                  <input type="date" value={form.effective_date} onChange={e => setForm(f => ({ ...f, effective_date: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Coaching / Action Plan</label>
-                  <textarea rows={2} value={form.coaching_action_plan} onChange={e => setForm(f => ({ ...f, coaching_action_plan: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Follow-up Date</label>
-                  <input type="date" value={form.target_followup_date} onChange={e => setForm(f => ({ ...f, target_followup_date: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Responsible Manager</label>
-                  <input value={form.responsible_manager} onChange={e => setForm(f => ({ ...f, responsible_manager: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">HR Representative</label>
-                  <input value={form.hr_representative} onChange={e => setForm(f => ({ ...f, hr_representative: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div className="flex gap-3">
             <button onClick={saveNte} disabled={saving} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-950 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
@@ -7402,42 +7395,44 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
                 <div className="border border-gray-300 rounded-lg h-20"></div>
               </div>
 
-              {needsManagerSection && (
-                <>
-                  <div>
-                    <p className="font-bold mb-1">MANAGER&apos;S EVALUATION &amp; SIGN-OFF</p>
-                    <p className="text-xs text-gray-500 mb-1">Findings/Evaluation:</p>
-                    <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50 min-h-[3rem]">{viewRecord.findings_evaluation || '—'}</p>
-                    <div className="grid grid-cols-2 gap-4 mt-2">
-                      <p><span className="text-xs text-gray-500">Disciplinary Action Imposed:</span><br/>{viewRecord.disciplinary_action_imposed || '—'}</p>
-                      <p><span className="text-xs text-gray-500">Effective Date:</span><br/>{viewRecord.effective_date ? new Date(viewRecord.effective_date).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}) : '—'}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="font-bold mb-1">MANAGER&apos;S INTERVENTION PLAN</p>
-                    <p className="text-xs text-gray-500 mb-1">Coaching/Action Plan:</p>
-                    <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50 min-h-[3rem]">{viewRecord.coaching_action_plan || '—'}</p>
-                    <div className="grid grid-cols-2 gap-4 mt-2">
-                      <p><span className="text-xs text-gray-500">Target Follow-up Date:</span><br/>{viewRecord.target_followup_date ? new Date(viewRecord.target_followup_date).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}) : '—'}</p>
-                      <p><span className="text-xs text-gray-500">Responsible Manager:</span><br/>{viewRecord.responsible_manager || '—'}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-6 pt-4">
-                    <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Manager/Team Lead — Signature over Printed Name / Date</div>
-                    <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">HR Representative ({viewRecord.hr_representative || 'TBD'}) — Signature over Printed Name / Date</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Employee — Signature over Printed Name / Date</div>
-                    <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Witness (optional) — Signature over Printed Name / Date</div>
-                  </div>
-                </>
-              )}
-              {!needsManagerSection && (
-                <div className="grid grid-cols-2 gap-6 pt-4">
-                  <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Issued by (Supervisor/Team Lead) — Signature over Printed Name / Date</div>
-                  <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Employee (Received Copy) — Signature over Printed Name / Date</div>
+              {/* Sign-off / acknowledgment, replacing the old free-text
+                  Manager's Evaluation section -- a real acknowledgment
+                  trail for every required party instead of an unfilled
+                  form field. */}
+              <div className="print:hidden">
+                <p className="font-bold mb-2">SIGN-OFF</p>
+                <div className="space-y-2">
+                  {partiesFor(viewRecord).map(role => {
+                    const ack = acks.find(a => a.party_role === role)
+                    const canSign = canSignRole(viewRecord, role)
+                    return (
+                      <div key={role} className={`flex items-center justify-between border rounded-lg px-3 py-2 ${ack ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{role}</p>
+                          {ack ? (
+                            <p className="text-xs text-emerald-700">✓ Signed by {ack.signer_name} on {new Date(ack.acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</p>
+                          ) : (
+                            <p className="text-xs text-gray-400">Not yet signed</p>
+                          )}
+                        </div>
+                        {!ack && canSign && (
+                          <button onClick={() => acknowledgeParty(viewRecord, role)} disabled={acking===role}
+                            className="text-xs font-medium bg-blue-900 hover:bg-blue-950 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50">
+                            {acking===role ? 'Signing...' : 'Sign Off'}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-              )}
+              </div>
+              {/* Printed copy still needs physical signature lines for
+                  wet-ink signing when the notice is handed over in person. */}
+              <div className="hidden print:grid grid-cols-2 gap-6 pt-4">
+                {partiesFor(viewRecord).map(role => (
+                  <div key={role} className="border-t border-gray-400 pt-1 text-xs text-gray-500">{role} — Signature over Printed Name / Date</div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

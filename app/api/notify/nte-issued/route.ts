@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
       'Final Written Warning': '#dc2626',
       'Dismissal': '#1f2937',
     }
-    const needsManagerSection = record.warning_level !== 'Verbal Warning'
 
     await transporter.sendMail({
       from: `"AB BSS Operations Portal" <${process.env.GMAIL_USER}>`,
@@ -57,11 +56,6 @@ export async function POST(req: NextRequest) {
 
             <p style="font-weight: 700; font-size: 13px; color: #111827; margin: 20px 0 6px;">COMPANY POLICY / CODE OF CONDUCT VIOLATED</p>
             <p style="font-size: 13px; color: #111827; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; white-space: pre-wrap;">${record.policy_violated || ''}</p>
-
-            ${needsManagerSection && record.findings_evaluation ? `
-            <p style="font-weight: 700; font-size: 13px; color: #111827; margin: 20px 0 6px;">MANAGER'S EVALUATION</p>
-            <p style="font-size: 13px; color: #111827; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; white-space: pre-wrap;">${record.findings_evaluation}</p>
-            ` : ''}
 
             <p style="color: #6b7280; font-size: 12px; margin-top: 24px; border-top: 1px solid #f3f4f6; padding-top: 12px;">Please report to your immediate supervisor to review, discuss, and sign the physical copy of this notice. Your written explanation and action plan should be submitted within 48 hours of receipt. This is an automated notification from the AB BSS Operations Portal.</p>
           </div>
