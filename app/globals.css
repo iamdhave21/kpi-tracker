@@ -34,3 +34,12 @@ body {
   body.printing-handover .print-handover { position: absolute; left: 0; top: 0; width: 100%; }
 }
 
+/* Notice to Explain printing: same isolation pattern as the Handover Doc
+   above, scoped to .print-nte so a clean, signable copy of the notice
+   prints instead of the full app chrome. */
+@media print {
+  body.printing-nte * { visibility: hidden; }
+  body.printing-nte .print-nte, body.printing-nte .print-nte * { visibility: visible; }
+  body.printing-nte .print-nte { position: absolute; left: 0; top: 0; width: 100%; }
+}
+

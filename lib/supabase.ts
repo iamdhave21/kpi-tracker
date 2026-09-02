@@ -19,6 +19,32 @@ export type Employee = {
   created_at: string
 }
 
+export type NteRecord = {
+  id: string
+  employee_id: string
+  employee_name: string
+  employee_code: string | null
+  position: string | null
+  department: string | null
+  client: string | null
+  immediate_supervisor: string | null
+  date_issued: string
+  date_of_incident: string
+  warning_level: 'Verbal Warning' | 'Written Warning' | 'Final Written Warning' | 'Dismissal'
+  incident_statement: string
+  policy_violated: string
+  findings_evaluation: string | null
+  disciplinary_action_imposed: string | null
+  effective_date: string | null
+  coaching_action_plan: string | null
+  target_followup_date: string | null
+  responsible_manager: string | null
+  hr_representative: string | null
+  status: 'Issued' | 'Explanation Submitted' | 'Resolved'
+  created_by: string
+  created_at: string
+}
+
 export type KpiRecord = {
   id: string
   employee_id: string

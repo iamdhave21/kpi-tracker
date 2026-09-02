@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
-import { supabase, Employee, KpiRecord } from '@/lib/supabase'
+import { supabase, Employee, KpiRecord, NteRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1573,6 +1573,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
             <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-scorecard" label="Team Lead Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-blue-400"/>
+            <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
           </div>
         )}
@@ -1581,12 +1582,13 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {/* TEAM LEAD TOOLS -- visible to everyone; KPI Entry, Observations,
           and Operating Cadence hard-block below Team Lead. */}
       <>
-        <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check'].includes(view as string)} />
+        <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check','nte'].includes(view as string)} />
         {!collapsed.tltools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-indigo-400"/>
+            <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
@@ -2013,6 +2015,8 @@ export default function KPIApp() {
             {view === 'teams' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'observations' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <ObservationsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'observations' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'nte' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <NTEPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'nte' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'matrix' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && (
               <div className="max-w-[1600px] mx-auto space-y-6">
                 <div><h2 className="text-xl font-bold text-blue-900">Matrix</h2><p className="text-sm text-gray-500">Track features shipped, issues to fix, and SQL still pending in Supabase</p></div>
@@ -7001,6 +7005,361 @@ function MyObservations({ employees, currentUser }: { employees: Employee[], cur
               <p className="text-sm text-gray-700 whitespace-pre-wrap">{o.observation}</p>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- Notice to Explain --------------------------------------------------
+const NTE_LEVELS = ['Verbal Warning', 'Written Warning', 'Final Written Warning', 'Dismissal'] as const
+const NTE_LEVEL_COLOR: Record<string, string> = {
+  'Verbal Warning': 'bg-amber-100 text-amber-700 border-amber-200',
+  'Written Warning': 'bg-orange-100 text-orange-700 border-orange-200',
+  'Final Written Warning': 'bg-red-100 text-red-700 border-red-200',
+  'Dismissal': 'bg-gray-800 text-white border-gray-900',
+}
+const emptyNteForm = {
+  employee_id: '', warning_level: 'Verbal Warning' as typeof NTE_LEVELS[number],
+  date_issued: new Date().toISOString().slice(0,10), date_of_incident: '',
+  incident_statement: '', policy_violated: '',
+  findings_evaluation: '', disciplinary_action_imposed: '', effective_date: '',
+  coaching_action_plan: '', target_followup_date: '', responsible_manager: '', hr_representative: '',
+}
+
+function NTEPanel({ employees, currentUser, userRole, showToast }:
+  { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [records, setRecords] = useState<NteRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ ...emptyNteForm })
+  const [saving, setSaving] = useState(false)
+  const [viewRecord, setViewRecord] = useState<NteRecord | null>(null)
+  const [sending, setSending] = useState(false)
+  const isTL = userRole === 'Team Lead'
+  const canSeeAll = userRole === 'super_admin' || userRole === 'admin'
+  const myEmployee = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
+
+  // Same team-scoping pattern as KPI Entry: a Team Lead only sees/issues
+  // NTEs for their own team; Admin/Super Admin are unrestricted.
+  const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
+  useEffect(() => {
+    if (!isTL || !currentUser) { setMyTeamEmpIds(null); return }
+    let cancelled = false
+    ;(async () => {
+      const emp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
+      if (!emp) { if (!cancelled) setMyTeamEmpIds(new Set()); return }
+      const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
+      const ledTeamIds = (teamsData || []).filter((t:any) => t.team_lead_id === emp.id).map((t:any) => t.id)
+      const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
+      if (!cancelled) setMyTeamEmpIds(new Set((memberData||[]).map((m:any) => m.employee_id)))
+    })()
+    return () => { cancelled = true }
+  }, [isTL, currentUser, employees.length])
+
+  const eligibleEmployees = employees.filter(e => e.active && (!isTL || myTeamEmpIds === null || myTeamEmpIds.has(e.id)))
+
+  async function loadRecords() {
+    if (isTL && myTeamEmpIds === null) return
+    setLoading(true)
+    let q = supabase.from('nte_records').select('*').order('date_issued', { ascending: false })
+    const { data } = await q
+    const rows = isTL ? (data||[]).filter((r:any) => myTeamEmpIds!.has(r.employee_id)) : (data||[])
+    setRecords(rows)
+    setLoading(false)
+  }
+  useEffect(() => { loadRecords() }, [isTL, myTeamEmpIds])
+
+  function selectEmployee(id: string) {
+    const emp = employees.find(e => e.id === id)
+    setForm(f => ({ ...f, employee_id: id }))
+    return emp
+  }
+
+  async function saveNte() {
+    const emp = employees.find(e => e.id === form.employee_id)
+    if (!emp) { showToast('Select an employee', 'error'); return }
+    if (!form.date_of_incident) { showToast('Date of incident is required', 'error'); return }
+    if (!form.incident_statement.trim()) { showToast('Statement of the incident is required', 'error'); return }
+    if (!form.policy_violated.trim()) { showToast('Company policy/code of conduct violated is required', 'error'); return }
+    setSaving(true)
+    const supervisorName = myEmployee?.name || currentUser.split('@')[0]
+    const { data, error } = await supabase.from('nte_records').insert({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      employee_code: emp.employee_id,
+      position: emp.designation,
+      department: (emp.departments||[]).join(', ') || null,
+      client: emp.client,
+      immediate_supervisor: supervisorName,
+      date_issued: form.date_issued,
+      date_of_incident: form.date_of_incident,
+      warning_level: form.warning_level,
+      incident_statement: form.incident_statement.trim(),
+      policy_violated: form.policy_violated.trim(),
+      findings_evaluation: form.findings_evaluation.trim() || null,
+      disciplinary_action_imposed: form.disciplinary_action_imposed.trim() || null,
+      effective_date: form.effective_date || null,
+      coaching_action_plan: form.coaching_action_plan.trim() || null,
+      target_followup_date: form.target_followup_date || null,
+      responsible_manager: form.responsible_manager.trim() || null,
+      hr_representative: form.hr_representative.trim() || null,
+      status: 'Issued',
+      created_by: currentUser,
+    }).select().single()
+    setSaving(false)
+    if (error) { showToast(error.message, 'error'); return }
+    showToast('Notice to Explain generated')
+    setShowForm(false)
+    setForm({ ...emptyNteForm })
+    loadRecords()
+    setViewRecord(data as NteRecord)
+  }
+
+  async function sendEmail(record: NteRecord) {
+    const emp = employees.find(e => e.id === record.employee_id)
+    if (!emp?.email) { showToast('This employee has no email on file', 'error'); return }
+    setSending(true)
+    try {
+      const res = await fetch('/api/notify/nte-issued', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: emp.email, cc: currentUser, record }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to send')
+      showToast('Notice emailed to ' + emp.email)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to send', 'error')
+    }
+    setSending(false)
+  }
+
+  function handlePrint() {
+    document.body.classList.add('printing-nte')
+    window.print()
+    setTimeout(() => document.body.classList.remove('printing-nte'), 500)
+  }
+
+  const needsManagerSection = viewRecord && viewRecord.warning_level !== 'Verbal Warning'
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Notice to Explain</h2>
+          <p className="text-sm text-gray-500">Issue and track disciplinary notices{isTL ? ' for your team' : ''}</p>
+        </div>
+        <button onClick={() => { setForm({ ...emptyNteForm }); setShowForm(true) }}
+          className="flex items-center gap-2 bg-blue-900 hover:bg-blue-950 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+          <PlusCircle className="w-4 h-4" /> New Notice to Explain
+        </button>
+      </div>
+
+      {/* Issue form */}
+      {showForm && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+          <h3 className="font-semibold text-gray-900">New Notice to Explain</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Employee</label>
+              <select value={form.employee_id} onChange={e => selectEmployee(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                <option value="">Select employee...</option>
+                {eligibleEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              {isTL && myTeamEmpIds && myTeamEmpIds.size === 0 && <p className="text-xs text-amber-600 mt-1">No team members found under your account.</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Warning Level</label>
+              <select value={form.warning_level} onChange={e => setForm(f => ({ ...f, warning_level: e.target.value as any }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+                {NTE_LEVELS.map(l => <option key={l}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date Issued</label>
+              <input type="date" value={form.date_issued} onChange={e => setForm(f => ({ ...f, date_issued: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date of Incident</label>
+              <input type="date" value={form.date_of_incident} onChange={e => setForm(f => ({ ...f, date_of_incident: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Statement of the Incident / Grounds for Notice</label>
+            <textarea rows={3} value={form.incident_statement} onChange={e => setForm(f => ({ ...f, incident_statement: e.target.value }))} placeholder="Describe what happened, when, and who was involved..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Company Policy / Code of Conduct Violated</label>
+            <textarea rows={2} value={form.policy_violated} onChange={e => setForm(f => ({ ...f, policy_violated: e.target.value }))} placeholder="Cite the specific policy or code of conduct section..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+          </div>
+
+          {form.warning_level !== 'Verbal Warning' && (
+            <div className="border-t border-gray-100 pt-4 space-y-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Manager&apos;s Evaluation &amp; Intervention Plan (optional at issuance -- can be completed once the employee&apos;s explanation is received)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Findings / Evaluation</label>
+                  <textarea rows={2} value={form.findings_evaluation} onChange={e => setForm(f => ({ ...f, findings_evaluation: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Disciplinary Action Imposed</label>
+                  <input value={form.disciplinary_action_imposed} onChange={e => setForm(f => ({ ...f, disciplinary_action_imposed: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Effective Date</label>
+                  <input type="date" value={form.effective_date} onChange={e => setForm(f => ({ ...f, effective_date: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Coaching / Action Plan</label>
+                  <textarea rows={2} value={form.coaching_action_plan} onChange={e => setForm(f => ({ ...f, coaching_action_plan: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Follow-up Date</label>
+                  <input type="date" value={form.target_followup_date} onChange={e => setForm(f => ({ ...f, target_followup_date: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Responsible Manager</label>
+                  <input value={form.responsible_manager} onChange={e => setForm(f => ({ ...f, responsible_manager: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HR Representative</label>
+                  <input value={form.hr_representative} onChange={e => setForm(f => ({ ...f, hr_representative: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button onClick={saveNte} disabled={saving} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-950 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+              <Save className="w-4 h-4" />{saving ? 'Generating...' : 'Generate Notice'}
+            </button>
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      {loading ? (
+        <div className="text-center py-10 text-gray-400">Loading...</div>
+      ) : records.length === 0 ? (
+        <div className="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-200">
+          <AlertCircle className="w-10 h-10 mx-auto mb-2 opacity-30"/>
+          <p className="font-medium">No notices issued yet</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <th className="px-4 py-3">Employee</th>
+                <th className="px-4 py-3">Warning Level</th>
+                <th className="px-4 py-3">Date Issued</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {records.map(r => (
+                <tr key={r.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium text-gray-800">{r.employee_name}</td>
+                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${NTE_LEVEL_COLOR[r.warning_level]}`}>{r.warning_level}</span></td>
+                  <td className="px-4 py-3 text-gray-600">{new Date(r.date_issued).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
+                  <td className="px-4 py-3 text-gray-500">{r.status}</td>
+                  <td className="px-4 py-3 text-right"><button onClick={() => setViewRecord(r)} className="text-blue-700 hover:underline text-sm font-medium">View / Print</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* View / Print modal */}
+      {viewRecord && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 print:hidden">
+              <h3 className="font-bold text-blue-900">Notice to Explain — {viewRecord.employee_name}</h3>
+              <div className="flex items-center gap-2">
+                <button onClick={handlePrint} className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg transition">Print / Save as PDF</button>
+                <button onClick={() => sendEmail(viewRecord)} disabled={sending} className="flex items-center gap-1.5 bg-blue-900 hover:bg-blue-950 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50">{sending ? 'Sending...' : 'Send via Email'}</button>
+                <button onClick={() => setViewRecord(null)} className="text-gray-400 hover:text-gray-700 p-1"><X className="w-5 h-5"/></button>
+              </div>
+            </div>
+            <div className="print-nte p-8 space-y-5 text-sm text-gray-900">
+              <div className="flex items-center justify-between border-b-2 border-gray-800 pb-3">
+                <div>
+                  <p className="font-bold text-base">AB BUSINESS SUPPORT SERVICES</p>
+                  <p className="font-bold">NOTICE TO EXPLAIN</p>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${NTE_LEVEL_COLOR[viewRecord.warning_level]}`}>{viewRecord.warning_level.toUpperCase()}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 border border-gray-200 rounded-lg p-4">
+                <p><span className="font-semibold">Employee Name:</span> {viewRecord.employee_name}</p>
+                <p><span className="font-semibold">Employee ID:</span> {viewRecord.employee_code || '—'}</p>
+                <p><span className="font-semibold">Position:</span> {viewRecord.position || '—'}</p>
+                <p><span className="font-semibold">Department:</span> {viewRecord.department || '—'}</p>
+                <p><span className="font-semibold">Client/Account:</span> {viewRecord.client || '—'}</p>
+                <p><span className="font-semibold">Immediate Supervisor:</span> {viewRecord.immediate_supervisor || '—'}</p>
+                <p><span className="font-semibold">Date Issued:</span> {new Date(viewRecord.date_issued).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})}</p>
+                <p><span className="font-semibold">Date of Incident:</span> {new Date(viewRecord.date_of_incident).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})}</p>
+              </div>
+              <div>
+                <p className="font-bold mb-1">STATEMENT OF THE INCIDENT / GROUNDS FOR NOTICE</p>
+                <p className="text-gray-700 mb-2">This is to formally notify you that the Company is considering disciplinary action against you in connection with the incident/violation described below. You are hereby directed to submit a written explanation within forty-eight (48) hours from receipt of this notice as to why no disciplinary action should be imposed against you.</p>
+                <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50">{viewRecord.incident_statement}</p>
+              </div>
+              <div>
+                <p className="font-bold mb-1">COMPANY POLICY / CODE OF CONDUCT VIOLATED</p>
+                <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50">{viewRecord.policy_violated}</p>
+              </div>
+              <div>
+                <p className="font-bold mb-1">EMPLOYEE&apos;S WRITTEN EXPLANATION</p>
+                <p className="text-xs text-gray-400 mb-1">(To be accomplished by the employee. Attach a separate sheet if necessary.)</p>
+                <div className="border border-gray-300 rounded-lg h-24"></div>
+              </div>
+              <div>
+                <p className="font-bold mb-1">EMPLOYEE&apos;S ACTION PLAN</p>
+                <p className="text-xs text-gray-400 mb-1">(To be accomplished by the employee.) Describe the specific steps you will take to ensure this does not happen again.</p>
+                <div className="border border-gray-300 rounded-lg h-20"></div>
+              </div>
+
+              {needsManagerSection && (
+                <>
+                  <div>
+                    <p className="font-bold mb-1">MANAGER&apos;S EVALUATION &amp; SIGN-OFF</p>
+                    <p className="text-xs text-gray-500 mb-1">Findings/Evaluation:</p>
+                    <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50 min-h-[3rem]">{viewRecord.findings_evaluation || '—'}</p>
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <p><span className="text-xs text-gray-500">Disciplinary Action Imposed:</span><br/>{viewRecord.disciplinary_action_imposed || '—'}</p>
+                      <p><span className="text-xs text-gray-500">Effective Date:</span><br/>{viewRecord.effective_date ? new Date(viewRecord.effective_date).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}) : '—'}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-bold mb-1">MANAGER&apos;S INTERVENTION PLAN</p>
+                    <p className="text-xs text-gray-500 mb-1">Coaching/Action Plan:</p>
+                    <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50 min-h-[3rem]">{viewRecord.coaching_action_plan || '—'}</p>
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <p><span className="text-xs text-gray-500">Target Follow-up Date:</span><br/>{viewRecord.target_followup_date ? new Date(viewRecord.target_followup_date).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}) : '—'}</p>
+                      <p><span className="text-xs text-gray-500">Responsible Manager:</span><br/>{viewRecord.responsible_manager || '—'}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-6 pt-4">
+                    <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Manager/Team Lead — Signature over Printed Name / Date</div>
+                    <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">HR Representative ({viewRecord.hr_representative || 'TBD'}) — Signature over Printed Name / Date</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Employee — Signature over Printed Name / Date</div>
+                    <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Witness (optional) — Signature over Printed Name / Date</div>
+                  </div>
+                </>
+              )}
+              {!needsManagerSection && (
+                <div className="grid grid-cols-2 gap-6 pt-4">
+                  <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Issued by (Supervisor/Team Lead) — Signature over Printed Name / Date</div>
+                  <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Employee (Received Copy) — Signature over Printed Name / Date</div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
