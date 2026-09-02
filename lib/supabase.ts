@@ -34,6 +34,7 @@ export type NteRecord = {
   warning_level: 'Verbal Warning' | 'Written Warning' | 'Final Written Warning' | 'Dismissal'
   incident_statement: string
   policy_violated: string
+  attachments: { name: string, url: string, type: string }[] | null
   status: 'Issued' | 'Explanation Submitted' | 'Resolved'
   created_by: string
   created_at: string

@@ -7030,6 +7030,7 @@ const emptyNteForm = {
   employee_id: '', offense_category: '' as string, warning_level: 'Verbal Warning' as typeof NTE_LEVELS[number],
   date_issued: new Date().toISOString().slice(0,10), date_of_incident: '',
   incident_statement: '', policy_violated: '',
+  attachments: [] as { name: string, url: string, type: string }[],
 }
 
 function NTEPanel({ employees, currentUser, userRole, showToast }:
@@ -7043,6 +7044,8 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
   const [sending, setSending] = useState(false)
   const [acks, setAcks] = useState<{party_role: string, signer_name: string, acknowledged_at: string}[]>([])
   const [acking, setAcking] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const [escalation, setEscalation] = useState<{ priorLevel: string, priorDate: string, suggested: string } | null>(null)
   const isTL = userRole === 'Team Lead'
   const isAdminOnly = userRole === 'admin'
@@ -7071,7 +7074,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
     return () => { cancelled = true }
   }, [isTL, currentUser, employees.length])
 
-  const myClients: string[] = isAdminOnly
+  const myClients: string[] = (isAdminOnly || isTL)
     ? (myEmployee?.clients_supported && myEmployee.clients_supported.length ? myEmployee.clients_supported : (myEmployee?.client ? [myEmployee.client] : []))
     : []
 
@@ -7081,7 +7084,16 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
       const emp = employees.find(e => e.id === employeeId)
       return !!emp?.client && myClients.includes(emp.client)
     }
-    if (isTL) return myTeamEmpIds !== null && myTeamEmpIds.has(employeeId)
+    if (isTL) {
+      if (myTeamEmpIds === null || !myTeamEmpIds.has(employeeId)) return false
+      // Belt-and-suspenders: teams have no client column of their own in
+      // this app (only inferable via the lead's own client), so a team
+      // membership mismatch could theoretically put someone on the wrong
+      // client's roster. Require both team membership AND a matching
+      // client before an NTE is visible/issuable to a Team Lead.
+      const emp = employees.find(e => e.id === employeeId)
+      return !!emp?.client && myClients.includes(emp.client)
+    }
     if (isAgent) return !!myEmployee && myEmployee.id === employeeId
     return false
   }
@@ -7135,6 +7147,18 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
     return emp
   }
 
+  async function uploadFile(file: File) {
+    setUploading(true)
+    const path = `nte/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const type = file.type.startsWith('image/') ? 'image' : ext === 'pdf' ? 'pdf' : 'doc'
+    setForm(f => ({ ...f, attachments: [...f.attachments, { name: file.name, url: urlData.publicUrl, type }] }))
+    setUploading(false)
+  }
+
   async function saveNte() {
     const emp = employees.find(e => e.id === form.employee_id)
     if (!emp) { showToast('Select an employee', 'error'); return }
@@ -7158,6 +7182,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
       warning_level: form.warning_level,
       incident_statement: form.incident_statement.trim(),
       policy_violated: form.policy_violated.trim(),
+      attachments: form.attachments,
       status: 'Issued',
       created_by: currentUser,
     }).select().single()
@@ -7301,6 +7326,22 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
             <textarea rows={2} value={form.policy_violated} onChange={e => setForm(f => ({ ...f, policy_violated: e.target.value }))} placeholder="Cite the specific policy or code of conduct section..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Supporting Documents / Screenshots (optional)</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {form.attachments.map((a, i) => (
+                <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-1.5 rounded-lg hover:bg-blue-100 transition">
+                  {a.type === 'image' ? '🖼️' : a.type === 'pdf' ? '📄' : '📎'} {a.name}
+                  <button type="button" onClick={(e) => { e.preventDefault(); setForm(f => ({ ...f, attachments: f.attachments.filter((_, j) => j !== i) })) }} className="text-blue-400 hover:text-red-500 ml-1">✕</button>
+                </a>
+              ))}
+            </div>
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">
+              {uploading ? '⏳ Uploading...' : '📎 Attach File / Screenshot'}
+            </button>
+            <input ref={fileRef} type="file" accept="image/*,.pdf,.doc,.docx" onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = '' }} className="hidden" />
+          </div>
+
           <div className="flex gap-3">
             <button onClick={saveNte} disabled={saving} className="flex items-center gap-2 bg-blue-900 hover:bg-blue-950 text-white px-5 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
               <Save className="w-4 h-4" />{saving ? 'Generating...' : 'Generate Notice'}
@@ -7384,6 +7425,18 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
                 <p className="font-bold mb-1">COMPANY POLICY / CODE OF CONDUCT VIOLATED</p>
                 <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50">{viewRecord.policy_violated}</p>
               </div>
+              {viewRecord.attachments && viewRecord.attachments.length > 0 && (
+                <div className="print:hidden">
+                  <p className="font-bold mb-1">SUPPORTING DOCUMENTS / SCREENSHOTS</p>
+                  <div className="flex flex-wrap gap-2">
+                    {viewRecord.attachments.map((a, i) => (
+                      <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-1.5 rounded-lg hover:bg-blue-100 transition">
+                        {a.type === 'image' ? '🖼️' : a.type === 'pdf' ? '📄' : '📎'} {a.name}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <p className="font-bold mb-1">EMPLOYEE&apos;S WRITTEN EXPLANATION</p>
                 <p className="text-xs text-gray-400 mb-1">(To be accomplished by the employee. Attach a separate sheet if necessary.)</p>
