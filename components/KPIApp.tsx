@@ -7044,6 +7044,8 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
   const [sending, setSending] = useState(false)
   const [acks, setAcks] = useState<{party_role: string, signer_name: string, acknowledged_at: string}[]>([])
   const [acking, setAcking] = useState<string | null>(null)
+  const [actionPlanDraft, setActionPlanDraft] = useState('')
+  const [savingActionPlan, setSavingActionPlan] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [escalation, setEscalation] = useState<{ priorLevel: string, priorDate: string, suggested: string } | null>(null)
@@ -7101,15 +7103,36 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
   const eligibleEmployees = employees.filter(e => e.active && inScope(e.id))
   const canIssue = isTL || isAdminOnly || isSuperAdmin
 
+  const [listAcks, setListAcks] = useState<Record<string, {party_role: string, signer_name: string, acknowledged_at: string}[]>>({})
+
   async function loadRecords() {
     if (isTL && myTeamEmpIds === null) return
     setLoading(true)
     const { data } = await supabase.from('nte_records').select('*').order('date_issued', { ascending: false })
     const rows = (data||[]).filter((r:any) => inScope(r.employee_id))
     setRecords(rows)
+    // Load acknowledgment status for every visible record so the list can
+    // show a live "Acknowledged / Pending" column without opening each one.
+    const ids = rows.map((r:any) => r.id)
+    if (ids.length > 0) {
+      const { data: ackData } = await supabase.from('nte_acknowledgements').select('nte_id, party_role, signer_name, acknowledged_at').in('nte_id', ids)
+      const grouped: Record<string, {party_role: string, signer_name: string, acknowledged_at: string}[]> = {}
+      ;(ackData||[]).forEach((a:any) => { (grouped[a.nte_id] ||= []).push(a) })
+      setListAcks(grouped)
+    } else {
+      setListAcks({})
+    }
     setLoading(false)
   }
   useEffect(() => { loadRecords() }, [isTL, isAdminOnly, isSuperAdmin, isAgent, myTeamEmpIds, myEmployee?.id])
+
+  // The "Employee" sign-off role differs by warning level (see
+  // partiesFor below); this resolves whichever one applies for a given
+  // record so the list column and the modal agree on the same status.
+  function employeeAckFor(record: NteRecord) {
+    const role = record.warning_level === 'Verbal Warning' ? 'Employee (Received Copy)' : 'Employee'
+    return (listAcks[record.id] || []).find(a => a.party_role === role) || null
+  }
 
   // Escalation check: does this employee already have an NTE for the same
   // offense category within the trailing 3 months? If so, suggest the
@@ -7235,6 +7258,19 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
     setAcks(data || [])
   }
   useEffect(() => { if (viewRecord) loadAcks(viewRecord.id); else setAcks([]) }, [viewRecord?.id])
+  useEffect(() => { setActionPlanDraft(viewRecord?.employee_action_plan || '') }, [viewRecord?.id])
+
+  async function saveActionPlan() {
+    if (!viewRecord) return
+    setSavingActionPlan(true)
+    const { error } = await supabase.from('nte_records').update({ employee_action_plan: actionPlanDraft.trim() || null }).eq('id', viewRecord.id)
+    setSavingActionPlan(false)
+    if (error) { showToast(error.message, 'error'); return }
+    const updated = { ...viewRecord, employee_action_plan: actionPlanDraft.trim() || null }
+    setViewRecord(updated)
+    setRecords(prev => prev.map(r => r.id === updated.id ? updated : r))
+    showToast('Action plan saved')
+  }
 
   // Who's allowed to sign which role: the Employee row can only be signed
   // by that same employee (agent viewing their own record); every other
@@ -7252,6 +7288,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
       .upsert({ nte_id: record.id, party_role: role, signer_name: signerName, signer_email: currentUser.toLowerCase(), acknowledged_at: new Date().toISOString() }, { onConflict: 'nte_id,party_role' })
     if (error) { showToast(error.message, 'error'); setAcking(null); return }
     await loadAcks(record.id)
+    setListAcks(prev => ({ ...prev, [record.id]: [...(prev[record.id]||[]).filter(a => a.party_role !== role), { party_role: role, signer_name: signerName, acknowledged_at: new Date().toISOString() }] }))
     showToast('Signed off ✓')
     setAcking(null)
   }
@@ -7368,19 +7405,29 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
                 <th className="px-4 py-3">Warning Level</th>
                 <th className="px-4 py-3">Date Issued</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Employee Sign-off</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {records.map(r => (
+              {records.map(r => {
+                const ack = employeeAckFor(r)
+                return (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{r.employee_name}</td>
                   <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${NTE_LEVEL_COLOR[r.warning_level]}`}>{r.warning_level}</span></td>
                   <td className="px-4 py-3 text-gray-600">{new Date(r.date_issued).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</td>
                   <td className="px-4 py-3 text-gray-500">{r.status}</td>
+                  <td className="px-4 py-3">
+                    {ack ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">✓ Acknowledged {new Date(ack.acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric'})}</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">⏳ Pending</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right"><button onClick={() => setViewRecord(r)} className="text-blue-700 hover:underline text-sm font-medium">View / Print</button></td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
@@ -7444,8 +7491,22 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
               </div>
               <div>
                 <p className="font-bold mb-1">EMPLOYEE&apos;S ACTION PLAN</p>
-                <p className="text-xs text-gray-400 mb-1">(To be accomplished by the employee.) Describe the specific steps you will take to ensure this does not happen again.</p>
-                <div className="border border-gray-300 rounded-lg h-20"></div>
+                <p className="text-xs text-gray-400 mb-1">Describe the specific steps you will take to ensure this does not happen again.</p>
+                {isAgent && myEmployee && myEmployee.id === viewRecord.employee_id ? (
+                  <div className="print:hidden">
+                    <textarea rows={3} value={actionPlanDraft} onChange={e => setActionPlanDraft(e.target.value)} placeholder="Type your action plan here..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
+                    <button onClick={saveActionPlan} disabled={savingActionPlan || actionPlanDraft === (viewRecord.employee_action_plan||'')} className="mt-2 text-xs font-medium bg-blue-900 hover:bg-blue-950 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50">
+                      {savingActionPlan ? 'Saving...' : 'Save Action Plan'}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50 min-h-[3rem] print:hidden">{viewRecord.employee_action_plan || <span className="text-gray-400">Not yet submitted by the employee.</span>}</p>
+                )}
+                {/* Printed copy: show the saved text if present, otherwise a
+                    blank writable area for a handwritten plan. */}
+                {viewRecord.employee_action_plan
+                  ? <p className="hidden print:block whitespace-pre-wrap border border-gray-300 rounded-lg p-3">{viewRecord.employee_action_plan}</p>
+                  : <div className="hidden print:block border border-gray-300 rounded-lg h-20"></div>}
               </div>
 
               {/* Sign-off / acknowledgment, replacing the old free-text
