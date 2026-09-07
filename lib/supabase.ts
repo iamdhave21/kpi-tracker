@@ -36,6 +36,7 @@ export type NteRecord = {
   policy_violated: string
   attachments: { name: string, url: string, type: string }[] | null
   employee_action_plan: string | null
+  party_term: string | null
   status: 'Issued' | 'Explanation Submitted' | 'Resolved'
   created_by: string
   created_at: string

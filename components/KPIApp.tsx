@@ -7026,6 +7026,18 @@ function nextNteLevel(level: string): typeof NTE_LEVELS[number] {
   const i = NTE_LEVELS.indexOf(level as any)
   return NTE_LEVELS[Math.min(i + 1, NTE_LEVELS.length - 1)]
 }
+// AB BSS engages both regular employees and independent contractors, and
+// this document has real legal weight, so it must never assert the wrong
+// status. Only the two clearly-mapped employment_type values get their
+// own specific term; everything else (including unset/unrecognized
+// values) falls back to the combined phrasing rather than guessing.
+function ntePartyTerm(employmentType: string | null | undefined): string {
+  const t = (employmentType || '').trim().toLowerCase()
+  if (t === 'contractor') return 'Contractor'
+  if (t === 'intern') return 'Intern'
+  if (['manager', 'team lead', 'agent', 'probationary'].includes(t)) return 'Employee'
+  return 'Employee/Contractor'
+}
 const emptyNteForm = {
   employee_id: '', offense_category: '' as string, warning_level: 'Verbal Warning' as typeof NTE_LEVELS[number],
   date_issued: new Date().toISOString().slice(0,10), date_of_incident: '',
@@ -7126,12 +7138,11 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
   }
   useEffect(() => { loadRecords() }, [isTL, isAdminOnly, isSuperAdmin, isAgent, myTeamEmpIds, myEmployee?.id])
 
-  // The "Employee" sign-off role differs by warning level (see
-  // partiesFor below); this resolves whichever one applies for a given
-  // record so the list column and the modal agree on the same status.
+  // The employee/contractor sign-off is always stored under the stable
+  // key 'employee' regardless of the displayed term (Employee/Contractor/
+  // Intern/etc.) -- see partiesFor below.
   function employeeAckFor(record: NteRecord) {
-    const role = record.warning_level === 'Verbal Warning' ? 'Employee (Received Copy)' : 'Employee'
-    return (listAcks[record.id] || []).find(a => a.party_role === role) || null
+    return (listAcks[record.id] || []).find(a => a.party_role === 'employee') || null
   }
 
   // Escalation check: does this employee already have an NTE for the same
@@ -7206,6 +7217,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
       incident_statement: form.incident_statement.trim(),
       policy_violated: form.policy_violated.trim(),
       attachments: form.attachments,
+      party_term: ntePartyTerm(emp.employment_type),
       status: 'Issued',
       created_by: currentUser,
     }).select().single()
@@ -7245,12 +7257,17 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
 
   // Sign-off parties, matching the template's signature blocks: a Verbal
   // Warning only needs the issuer + employee; the other three levels also
-  // need HR and an optional Witness. This replaces the old free-text
-  // Manager's Evaluation fields with an actual acknowledgment trail.
-  function partiesFor(record: NteRecord): string[] {
+  // need HR and an optional Witness. `key` is a stable internal
+  // identifier used for permission checks and DB storage; `label` is the
+  // display text, which uses the record's stored party_term (Employee /
+  // Contractor / Intern / Employee-Contractor) instead of hardcoding
+  // "Employee" -- this app serves both regular employees and independent
+  // contractors, and this document has real legal weight.
+  function partiesFor(record: NteRecord): { key: string, label: string }[] {
+    const term = record.party_term || 'Employee/Contractor'
     return record.warning_level === 'Verbal Warning'
-      ? ['Issued by (Supervisor/Team Lead)', 'Employee (Received Copy)']
-      : ['Manager/Team Lead', 'HR Representative', 'Employee', 'Witness (optional)']
+      ? [{ key: 'issuer', label: 'Issued by (Supervisor/Team Lead)' }, { key: 'employee', label: `${term} (Received Copy)` }]
+      : [{ key: 'manager_tl', label: 'Manager/Team Lead' }, { key: 'hr_rep', label: 'HR Representative' }, { key: 'employee', label: term }, { key: 'witness', label: 'Witness (optional)' }]
   }
 
   async function loadAcks(nteId: string) {
@@ -7272,23 +7289,24 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
     showToast('Action plan saved')
   }
 
-  // Who's allowed to sign which role: the Employee row can only be signed
-  // by that same employee (agent viewing their own record); every other
-  // role can be signed by anyone with issue-level access to this record
-  // (Team Lead for their team, Admin for their client, Super Admin always).
-  function canSignRole(record: NteRecord, role: string): boolean {
-    if (role.startsWith('Employee')) return isAgent && !!myEmployee && myEmployee.id === record.employee_id
+  // Who's allowed to sign which role: the "employee" key can only be
+  // signed by that same person (agent viewing their own record, whatever
+  // their employment_type actually is); every other role can be signed by
+  // anyone with issue-level access to this record (Team Lead for their
+  // team, Admin for their client, Super Admin always).
+  function canSignRole(record: NteRecord, key: string): boolean {
+    if (key === 'employee') return isAgent && !!myEmployee && myEmployee.id === record.employee_id
     return canIssue && inScope(record.employee_id)
   }
 
-  async function acknowledgeParty(record: NteRecord, role: string) {
-    setAcking(role)
+  async function acknowledgeParty(record: NteRecord, key: string) {
+    setAcking(key)
     const signerName = myEmployee?.name || currentUser.split('@')[0]
     const { error } = await supabase.from('nte_acknowledgements')
-      .upsert({ nte_id: record.id, party_role: role, signer_name: signerName, signer_email: currentUser.toLowerCase(), acknowledged_at: new Date().toISOString() }, { onConflict: 'nte_id,party_role' })
+      .upsert({ nte_id: record.id, party_role: key, signer_name: signerName, signer_email: currentUser.toLowerCase(), acknowledged_at: new Date().toISOString() }, { onConflict: 'nte_id,party_role' })
     if (error) { showToast(error.message, 'error'); setAcking(null); return }
     await loadAcks(record.id)
-    setListAcks(prev => ({ ...prev, [record.id]: [...(prev[record.id]||[]).filter(a => a.party_role !== role), { party_role: role, signer_name: signerName, acknowledged_at: new Date().toISOString() }] }))
+    setListAcks(prev => ({ ...prev, [record.id]: [...(prev[record.id]||[]).filter(a => a.party_role !== key), { party_role: key, signer_name: signerName, acknowledged_at: new Date().toISOString() }] }))
     showToast('Signed off ✓')
     setAcking(null)
   }
@@ -7454,8 +7472,8 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
                 <span className={`px-3 py-1 rounded-full text-xs font-bold border ${NTE_LEVEL_COLOR[viewRecord.warning_level]}`}>{viewRecord.warning_level.toUpperCase()}</span>
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 border border-gray-200 rounded-lg p-4">
-                <p><span className="font-semibold">Employee Name:</span> {viewRecord.employee_name}</p>
-                <p><span className="font-semibold">Employee ID:</span> {viewRecord.employee_code || '—'}</p>
+                <p><span className="font-semibold">{viewRecord.party_term || 'Employee/Contractor'} Name:</span> {viewRecord.employee_name}</p>
+                <p><span className="font-semibold">ID:</span> {viewRecord.employee_code || '—'}</p>
                 <p><span className="font-semibold">Position:</span> {viewRecord.position || '—'}</p>
                 <p><span className="font-semibold">Department:</span> {viewRecord.department || '—'}</p>
                 <p><span className="font-semibold">Client/Account:</span> {viewRecord.client || '—'}</p>
@@ -7485,12 +7503,12 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
                 </div>
               )}
               <div>
-                <p className="font-bold mb-1">EMPLOYEE&apos;S WRITTEN EXPLANATION</p>
-                <p className="text-xs text-gray-400 mb-1">(To be accomplished by the employee. Attach a separate sheet if necessary.)</p>
+                <p className="font-bold mb-1">{(viewRecord.party_term || 'EMPLOYEE/CONTRACTOR').toUpperCase()}&apos;S WRITTEN EXPLANATION</p>
+                <p className="text-xs text-gray-400 mb-1">(To be accomplished by the {(viewRecord.party_term || 'employee/contractor').toLowerCase()}. Attach a separate sheet if necessary.)</p>
                 <div className="border border-gray-300 rounded-lg h-24"></div>
               </div>
               <div>
-                <p className="font-bold mb-1">EMPLOYEE&apos;S ACTION PLAN</p>
+                <p className="font-bold mb-1">{(viewRecord.party_term || 'EMPLOYEE/CONTRACTOR').toUpperCase()}&apos;S ACTION PLAN</p>
                 <p className="text-xs text-gray-400 mb-1">Describe the specific steps you will take to ensure this does not happen again.</p>
                 {isAgent && myEmployee && myEmployee.id === viewRecord.employee_id ? (
                   <div className="print:hidden">
@@ -7500,7 +7518,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
                     </button>
                   </div>
                 ) : (
-                  <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50 min-h-[3rem] print:hidden">{viewRecord.employee_action_plan || <span className="text-gray-400">Not yet submitted by the employee.</span>}</p>
+                  <p className="whitespace-pre-wrap border border-gray-200 rounded-lg p-3 bg-gray-50 min-h-[3rem] print:hidden">{viewRecord.employee_action_plan || <span className="text-gray-400">Not yet submitted by the {(viewRecord.party_term || 'employee/contractor').toLowerCase()}.</span>}</p>
                 )}
                 {/* Printed copy: show the saved text if present, otherwise a
                     blank writable area for a handwritten plan. */}
@@ -7516,13 +7534,13 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
               <div className="print:hidden">
                 <p className="font-bold mb-2">SIGN-OFF</p>
                 <div className="space-y-2">
-                  {partiesFor(viewRecord).map(role => {
-                    const ack = acks.find(a => a.party_role === role)
-                    const canSign = canSignRole(viewRecord, role)
+                  {partiesFor(viewRecord).map(party => {
+                    const ack = acks.find(a => a.party_role === party.key)
+                    const canSign = canSignRole(viewRecord, party.key)
                     return (
-                      <div key={role} className={`flex items-center justify-between border rounded-lg px-3 py-2 ${ack ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
+                      <div key={party.key} className={`flex items-center justify-between border rounded-lg px-3 py-2 ${ack ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
                         <div>
-                          <p className="text-sm font-medium text-gray-800">{role}</p>
+                          <p className="text-sm font-medium text-gray-800">{party.label}</p>
                           {ack ? (
                             <p className="text-xs text-emerald-700">✓ Signed by {ack.signer_name} on {new Date(ack.acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</p>
                           ) : (
@@ -7530,9 +7548,9 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
                           )}
                         </div>
                         {!ack && canSign && (
-                          <button onClick={() => acknowledgeParty(viewRecord, role)} disabled={acking===role}
+                          <button onClick={() => acknowledgeParty(viewRecord, party.key)} disabled={acking===party.key}
                             className="text-xs font-medium bg-blue-900 hover:bg-blue-950 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50">
-                            {acking===role ? 'Signing...' : 'Sign Off'}
+                            {acking===party.key ? 'Signing...' : 'Sign Off'}
                           </button>
                         )}
                       </div>
@@ -7543,8 +7561,8 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
               {/* Printed copy still needs physical signature lines for
                   wet-ink signing when the notice is handed over in person. */}
               <div className="hidden print:grid grid-cols-2 gap-6 pt-4">
-                {partiesFor(viewRecord).map(role => (
-                  <div key={role} className="border-t border-gray-400 pt-1 text-xs text-gray-500">{role} — Signature over Printed Name / Date</div>
+                {partiesFor(viewRecord).map(party => (
+                  <div key={party.key} className="border-t border-gray-400 pt-1 text-xs text-gray-500">{party.label} — Signature over Printed Name / Date</div>
                 ))}
               </div>
             </div>

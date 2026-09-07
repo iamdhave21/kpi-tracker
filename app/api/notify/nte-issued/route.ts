@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
       'Final Written Warning': '#dc2626',
       'Dismissal': '#1f2937',
     }
+    const partyTerm = record.party_term || 'Employee/Contractor'
 
     await transporter.sendMail({
       from: `"AB BSS Operations Portal" <${process.env.GMAIL_USER}>`,
@@ -40,8 +41,8 @@ export async function POST(req: NextRequest) {
             <div style="display: inline-block; background: ${levelColor[record.warning_level] || '#374151'}; color: white; font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 999px; margin-bottom: 16px;">${(record.warning_level || '').toUpperCase()}</div>
 
             <table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px;">
-              <tr><td style="padding: 6px 0; color: #6b7280; width: 160px;">Employee Name</td><td style="padding: 6px 0; color: #111827; font-weight: 600;">${record.employee_name || ''}</td></tr>
-              <tr><td style="padding: 6px 0; color: #6b7280;">Employee ID</td><td style="padding: 6px 0; color: #111827;">${record.employee_code || '—'}</td></tr>
+              <tr><td style="padding: 6px 0; color: #6b7280; width: 160px;">${partyTerm} Name</td><td style="padding: 6px 0; color: #111827; font-weight: 600;">${record.employee_name || ''}</td></tr>
+              <tr><td style="padding: 6px 0; color: #6b7280;">ID</td><td style="padding: 6px 0; color: #111827;">${record.employee_code || '—'}</td></tr>
               <tr><td style="padding: 6px 0; color: #6b7280;">Position</td><td style="padding: 6px 0; color: #111827;">${record.position || '—'}</td></tr>
               <tr><td style="padding: 6px 0; color: #6b7280;">Department</td><td style="padding: 6px 0; color: #111827;">${record.department || '—'}</td></tr>
               <tr><td style="padding: 6px 0; color: #6b7280;">Client/Account</td><td style="padding: 6px 0; color: #111827;">${record.client || '—'}</td></tr>
