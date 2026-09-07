@@ -1,0 +1,47 @@
+name: Nightly database backup
+
+# pg_dump of production, uploaded as a workflow artifact -- the off-machine half of this
+# project's two-layer backup (see scripts/backup-db.ps1 for the local half, and CLAUDE.md for
+# a pointer to both). Independent of this repo's owner's laptop, and independent of Supabase's
+# own backup story -- the Free plan this project runs on has neither scheduled backups nor
+# point-in-time recovery at all (confirmed in the dashboard; see AUDIT.md).
+#
+# OPS_PORTAL_DB_PASSWORD must be set as a repository secret (Settings -> Secrets and variables
+# -> Actions) -- the database password only, not a full connection string. Host/port/user/dbname
+# below are not secret (already documented in this repo's SCHEMA.md/ARCHITECTURE.md) and are
+# passed as plain env vars rather than folded into a URI, because this project's actual password
+# contains a literal "@", which breaks libpq's URI parsing (proven while testing
+# scripts/backup-db.ps1 -- see that file's header for the full explanation). PGHOST below MUST
+# stay the Session Pooler host, not the direct-connect one, which is IPv6-only and was proven
+# unreachable from the local half's network -- using the pooler everywhere means neither half
+# depends on a runner happening to have IPv6 egress.
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 2am Manila (UTC+8)
+  workflow_dispatch: {} # lets you trigger a run by hand from the Actions tab to test it
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      PGHOST: aws-1-ap-southeast-2.pooler.supabase.com
+      PGPORT: "5432"
+      PGUSER: postgres.vgqbyzcchvhvjbvoodxe
+      PGDATABASE: postgres
+      PGPASSWORD: ${{ secrets.OPS_PORTAL_DB_PASSWORD }}
+    steps:
+      - name: Dump production database
+        run: |
+          docker run --rm -e PGHOST -e PGPORT -e PGUSER -e PGDATABASE -e PGPASSWORD postgres:17 pg_dump -Fc > backup.dump
+
+      - name: Verify dump is structurally valid
+        run: |
+          docker run --rm -v "$PWD:/backup" postgres:17 pg_restore --list /backup/backup.dump
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup.dump
+          retention-days: 90
