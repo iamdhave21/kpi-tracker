@@ -13,6 +13,7 @@ export type Employee = {
   employee_id: string | null
   departments: string[] | null
   employment_type: string | null
+  contract_type: string | null
   client: string | null
   clients_supported: string[] | null
   active: boolean

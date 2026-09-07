@@ -3579,6 +3579,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [newEmpId, setNewEmpId] = useState('')
   const [newDepartments, setNewDepartments] = useState<string[]>([])
   const [newEmpType, setNewEmpType] = useState('Agent')
+  const [newContractType, setNewContractType] = useState('')
   const [newClients, setNewClients] = useState<string[]>([CLIENTS[0]])
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
@@ -3587,6 +3588,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [editEmpId, setEditEmpId] = useState('')
   const [editDepartments, setEditDepartments] = useState<string[]>([])
   const [editEmpType, setEditEmpType] = useState('Agent')
+  const [editContractType, setEditContractType] = useState('')
   const [editClients, setEditClients] = useState<string[]>([CLIENTS[0]])
   const [editPortalRole, setEditPortalRole] = useState<string>('agent')
   const [searchQ, setSearchQ] = useState('')
@@ -3674,6 +3676,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     if (!emailTrimmed) { showToast('Work email is required.', 'error'); return }
     if (!newDepartments.length) { showToast('Select at least one Department (Operations, IT, etc.).', 'error'); return }
     if (!newClients.length) { showToast('Select at least one Client Supported.', 'error'); return }
+    if (!newContractType) { showToast('Select a Contract Type (Employee/Contractual/Probationary/Intern) -- required for new records so this can never be ambiguous on a disciplinary notice.', 'error'); return }
     // Duplicate check: Employee ID first (most reliable unique identifier),
     // then email, since both should be unique per person/role.
     const idMatch = employees.find(e => e.employee_id && e.employee_id.trim().toLowerCase() === empIdTrimmed.toLowerCase())
@@ -3696,6 +3699,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       employee_id: newEmpId.trim()||null,
       departments: newDepartments.length ? newDepartments : null,
       employment_type: newEmpType,
+      contract_type: newContractType,
       client: primaryClient,
       clients_supported: newClients.length ? newClients : null,
       active:true
@@ -3722,7 +3726,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           }
         }
       }
-      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewClients([CLIENTS[0]]); setNewPortalRole('agent'); onChanged()
+      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewContractType(''); setNewClients([CLIENTS[0]]); setNewPortalRole('agent'); onChanged()
     }
     setAdding(false)
   }
@@ -3732,7 +3736,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     const existingForPerson = employees.filter(e => e.name.trim().toLowerCase() === editName.trim().toLowerCase())
     const editPrimaryClient = editClients[0] || CLIENTS[0]
     const generatedDesig = generateDesignation(editEmpType, editPrimaryClient, existingForPerson, id)
-    const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,client:editPrimaryClient,clients_supported:editClients.length?editClients:null}).eq('id',id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,contract_type:editContractType||null,client:editPrimaryClient,clients_supported:editClients.length?editClients:null}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
     // Sync to app_users if a work email is present. If the email actually
     // changed, look up their EXISTING login by the OLD email first and
@@ -3869,6 +3873,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           <select value={newEmpType} onChange={e=>setNewEmpType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
+          <select value={newContractType} onChange={e=>setNewContractType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Legal engagement type -- separate from Role, used on disciplinary notices and legal documents">
+            <option value="">Contract Type *</option>
+            {CONTRACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
           <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           {userRole === 'super_admin' && (
             <select value={newPortalRole} onChange={e=>setNewPortalRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Portal Role -- creates their login immediately if a work email is set">
@@ -3878,7 +3886,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
               <option value="super_admin">Portal: Super Admin</option>
             </select>
           )}
-          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length||!newClients.length} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length||!newClients.length||!newContractType} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
         <div className="mt-3">
           <p className="text-xs font-medium text-gray-500 mb-1.5">Client(s) Supported * — controls which clients this person's records are visible under</p>
@@ -3972,7 +3980,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditClients(emps[0].clients_supported&&emps[0].clients_supported.length?emps[0].clients_supported:(emps[0].client?[emps[0].client]:[CLIENTS[0]]));if(emps[0].email){const el=emps[0].email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditContractType(emps[0].contract_type||'');setEditClients(emps[0].clients_supported&&emps[0].clients_supported.length?emps[0].clients_supported:(emps[0].client?[emps[0].client]:[CLIENTS[0]]));if(emps[0].email){const el=emps[0].email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -4001,6 +4009,13 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                       <label className="block text-xs font-medium text-gray-500 mb-1">Role</label>
                       <select value={editEmpType} onChange={e=>setEditEmpType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                         {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Contract Type</label>
+                      <select value={editContractType} onChange={e=>setEditContractType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Legal engagement type -- separate from Role, used on disciplinary notices and legal documents">
+                        <option value="">Not set</option>
+                        {CONTRACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </div>
                     <div>
@@ -4067,7 +4082,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditClients(emp.clients_supported&&emp.clients_supported.length?emp.clients_supported:(emp.client?[emp.client]:[CLIENTS[0]]));if(emp.email){const el=emp.email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditContractType(emp.contract_type||'');setEditClients(emp.clients_supported&&emp.clients_supported.length?emp.clients_supported:(emp.client?[emp.client]:[CLIENTS[0]]));if(emp.email){const el=emp.email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -4084,6 +4099,11 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Role</label>
                           <select value={editEmpType} onChange={e=>setEditEmpType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select></div>
+                        <div><label className="block text-xs font-medium text-gray-500 mb-1">Contract Type</label>
+                          <select value={editContractType} onChange={e=>setEditContractType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Legal engagement type -- separate from Role, used on disciplinary notices and legal documents">
+                            <option value="">Not set</option>
+                            {CONTRACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select></div>
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Work Email</label>
                           <input type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="@ab-businesssupport.com"/></div>
@@ -7026,12 +7046,23 @@ function nextNteLevel(level: string): typeof NTE_LEVELS[number] {
   const i = NTE_LEVELS.indexOf(level as any)
   return NTE_LEVELS[Math.min(i + 1, NTE_LEVELS.length - 1)]
 }
-// AB BSS engages both regular employees and independent contractors, and
-// this document has real legal weight, so it must never assert the wrong
-// status. Only the two clearly-mapped employment_type values get their
-// own specific term; everything else (including unset/unrecognized
-// values) falls back to the combined phrasing rather than guessing.
-function ntePartyTerm(employmentType: string | null | undefined): string {
+// Contract Type is the authoritative legal-status field, entirely
+// separate from the Role/employment_type field (which is a job title
+// used for designation generation). AB BSS engages both regular
+// employees and independent contractors, and this document has real
+// legal weight, so it must never assert the wrong status. Contract Type
+// takes priority when set; employment_type is only used as a fallback
+// while existing employee records are still being backfilled, and even
+// then only for the two unambiguous cases -- everything else falls back
+// to the combined phrasing rather than guessing.
+const CONTRACT_TYPES = ['Employee', 'Contractual', 'Probationary', 'Intern'] as const
+function ntePartyTerm(contractType: string | null | undefined, employmentType: string | null | undefined): string {
+  const c = (contractType || '').trim().toLowerCase()
+  if (c === 'employee' || c === 'probationary') return 'Employee'
+  if (c === 'contractual') return 'Contractor'
+  if (c === 'intern') return 'Intern'
+  // Contract Type not set yet -- fall back to the old employment_type
+  // heuristic as a safety net during backfill.
   const t = (employmentType || '').trim().toLowerCase()
   if (t === 'contractor') return 'Contractor'
   if (t === 'intern') return 'Intern'
@@ -7217,7 +7248,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
       incident_statement: form.incident_statement.trim(),
       policy_violated: form.policy_violated.trim(),
       attachments: form.attachments,
-      party_term: ntePartyTerm(emp.employment_type),
+      party_term: ntePartyTerm(emp.contract_type, emp.employment_type),
       status: 'Issued',
       created_by: currentUser,
     }).select().single()
