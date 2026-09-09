@@ -9258,6 +9258,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   const [saving, setSaving] = useState(false)
   const [filterEmp, setFilterEmp] = useState('')
   const [filterMonth, setFilterMonth] = useState('')
+  const [filterSignoff, setFilterSignoff] = useState<'all'|'pending'|'acknowledged'|'not-required'>('all')
   const [deleting, setDeleting] = useState<string|null>(null)
   const [tlTeamEmails, setTlTeamEmails] = useState<Set<string> | null>(null)
   const [viewLog, setViewLog] = useState<any|null>(null)
@@ -9407,6 +9408,9 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
     if (l.status === 'Draft') return false
     if (filterEmp && l.employee_id !== filterEmp) return false
     if (filterMonth && !l.date.startsWith(filterMonth)) return false
+    if (filterSignoff === 'pending' && !(l.requires_acknowledgment && !l.agent_acknowledged)) return false
+    if (filterSignoff === 'acknowledged' && !(l.requires_acknowledgment && l.agent_acknowledged)) return false
+    if (filterSignoff === 'not-required' && l.requires_acknowledgment) return false
     return true
   })
 
@@ -9466,10 +9470,20 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
             <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900" />
           </div>
-          {(filterEmp || filterMonth) && (
-            <button onClick={() => { setFilterEmp(''); setFilterMonth('') }} className="text-sm text-blue-600 hover:underline self-end pb-2">Clear</button>
+          <div>
+            <label className="block text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-0.5">Agent Sign-off</label>
+            <select value={filterSignoff} onChange={e => setFilterSignoff(e.target.value as any)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
+              <option value="all">All</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="acknowledged">✓ Acknowledged</option>
+              <option value="not-required">Not required</option>
+            </select>
+          </div>
+          {(filterEmp || filterMonth || filterSignoff !== 'all') && (
+            <button onClick={() => { setFilterEmp(''); setFilterMonth(''); setFilterSignoff('all') }} className="text-sm text-blue-600 hover:underline self-end pb-2">Clear</button>
           )}
-          {(filterEmp || filterMonth) && (
+          {(filterEmp || filterMonth || filterSignoff !== 'all') && (
             <span className="text-xs text-gray-400 self-end pb-2.5">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
           )}
         </div>
