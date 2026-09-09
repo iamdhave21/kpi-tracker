@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord, NteRecord } from '@/lib/supabase'
-import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
+import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe } from 'lucide-react'
 
 type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard'
@@ -4066,6 +4066,32 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
       </ResponsiveContainer>
     )
   }
+  // Report-friendly version of the Coaching Compliance rate -- visible
+  // axis, a % label printed directly on each bar, and the target line
+  // labeled inline, sized and laid out so a plain screenshot of this
+  // panel reads clearly on its own without needing the rest of the
+  // dashboard for context.
+  function CoachingRateChart({ data, target }: { data: OpsMonthStats[], target: number }) {
+    const chartData = data.map(d => ({
+      month: d.month, pct: d.coachRate !== null ? Math.round(d.coachRate * 1000) / 10 : 0,
+      hasData: d.coachRate !== null,
+    }))
+    return (
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={chartData} margin={{ top: 24, right: 16, left: 0, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+          <XAxis dataKey="month" tick={{fontSize:12}} />
+          <YAxis domain={[0,100]} tick={{fontSize:11}} tickFormatter={v => `${v}%`} />
+          <Tooltip formatter={(v:any, _n, item:any) => [item.payload.hasData ? `${v}%` : 'No coaching data', 'Coaching Compliance']} />
+          <ReferenceLine y={target} stroke="#d97706" strokeDasharray="4 4" label={{value:`Target ${target}%`,fontSize:11,fill:'#d97706',position:'right'}} />
+          <Bar dataKey="pct" radius={[4,4,0,0]} maxBarSize={80}>
+            {chartData.map((d, i) => <Cell key={i} fill={!d.hasData ? '#e5e7eb' : d.pct >= target ? '#059669' : d.pct >= target * 0.6 ? '#d97706' : '#dc2626'} />)}
+            <LabelList dataKey="pct" position="top" formatter={(v: any) => `${v}%`} style={{ fontSize: 13, fontWeight: 600, fill: '#1e3a8a' }} />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    )
+  }
 
   function deltaLabel(latest: number | null, prev: number | null, higherIsBetter: boolean | undefined, suffix = '') {
     if (latest === null || prev === null) return <span className="text-gray-300 text-xs">—</span>
@@ -4145,7 +4171,6 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
                   )}
                 </div>
                 <div className="mt-2"><TrendMini data={stats} dataKey="coachRate" color="#1e3a8a" isPercent domain={[0,100]} referenceValue={complianceTarget} /></div>
-                <p className="text-xs text-gray-400 mt-1">{stats[2].coachCompliantCount}/{stats[2].coachTotalScoped} employees coached & acknowledged in {currentMonth}</p>
               </div>
             )
 
@@ -4244,6 +4269,10 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
             <>
               {expandedCard === 'coaching' && coachingDetail && (
                 <div className="space-y-4">
+                  <div className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+                    <p className="text-xs font-semibold text-gray-500 mb-1">Coaching Compliance — Monthly % (screenshot-friendly)</p>
+                    <CoachingRateChart data={stats!} target={complianceTarget} />
+                  </div>
                   <div>
                     <p className="text-xs font-semibold text-gray-500 mb-2">Not Coached This Month ({coachingDetail.notCoached.length})</p>
                     {coachingDetail.notCoached.length === 0 ? <p className="text-sm text-gray-400">Everyone in scope had at least one coaching session logged.</p> : (
