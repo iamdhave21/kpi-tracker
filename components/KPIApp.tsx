@@ -1322,6 +1322,101 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePa
 
 
 // -- Collapsible Sidebar -----------------------------------------------------
+// -- Attention Banner ---------------------------------------------------
+// Aggregates things that specifically require THIS person's own action --
+// not oversight/management counts, just personal to-dos -- across
+// Coaching Log sign-off, Team Huddle sign-off, Notice to Explain sign-off,
+// and this week's Pulse Check submission. Shown on every screen so
+// nothing gets missed just because someone didn't happen to open the
+// right tab.
+function AttentionBanner({ employees, currentUser, userRole, setView }:
+  { employees: Employee[], currentUser: string | null, userRole: string, setView: (v: any) => void }) {
+  const [items, setItems] = useState<{ label: string, count: number, view: string }[]>([])
+  const [expanded, setExpanded] = useState(false)
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!currentUser) return
+    let cancelled = false
+    ;(async () => {
+      const emailLower = currentUser.toLowerCase()
+      const myEmployee = employees.find(e => e.email?.toLowerCase() === emailLower)
+      const results: { label: string, count: number, view: string }[] = []
+
+      // 1. Coaching sessions where I'm the one being coached and haven't
+      //    signed off yet -- applies regardless of role, since a Team
+      //    Lead or Admin can also be someone else's coachee.
+      const { data: coachingData } = await supabase.from('coaching_logs')
+        .select('id').eq('employee_email', emailLower).eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
+      if (coachingData && coachingData.length > 0) results.push({ label: `${coachingData.length} coaching session${coachingData.length===1?'':'s'} to acknowledge`, count: coachingData.length, view: 'tl-tools' })
+
+      // 2. Team Huddles I'm a listed participant in and haven't signed off.
+      const { data: huddleData } = await supabase.from('huddle_notes').select('id, participants')
+      const myHuddleIds = (huddleData || []).filter((h: any) => (h.participants||[]).some((p: string) => p.toLowerCase() === emailLower)).map((h: any) => h.id)
+      if (myHuddleIds.length > 0) {
+        const { data: hackData } = await supabase.from('huddle_acknowledgements').select('huddle_id').eq('employee_email', emailLower).in('huddle_id', myHuddleIds)
+        const ackedIds = new Set((hackData || []).map((a: any) => a.huddle_id))
+        const pending = myHuddleIds.filter(id => !ackedIds.has(id))
+        if (pending.length > 0) results.push({ label: `${pending.length} team huddle note${pending.length===1?'':'s'} to acknowledge`, count: pending.length, view: 'cadence' })
+      }
+
+      // 3. Notice to Explain records where I'm the employee/contractor
+      //    party and haven't signed off yet.
+      if (myEmployee) {
+        const { data: nteData } = await supabase.from('nte_records').select('id').eq('employee_id', myEmployee.id)
+        if (nteData && nteData.length > 0) {
+          const nteIds = nteData.map((n: any) => n.id)
+          const { data: nteAckData } = await supabase.from('nte_acknowledgements').select('nte_id').eq('party_role', 'employee').in('nte_id', nteIds)
+          const ackedNteIds = new Set((nteAckData || []).map((a: any) => a.nte_id))
+          const pendingNte = nteIds.filter(id => !ackedNteIds.has(id))
+          if (pendingNte.length > 0) results.push({ label: `${pendingNte.length} Notice to Explain requiring your sign-off`, count: pendingNte.length, view: 'nte' })
+        }
+      }
+
+      // 4. This week's Pulse Check, if required of this person and not yet
+      //    submitted -- same exemption rule as the Pulse Check screen
+      //    itself (Super Admin + the 2 exempted accounts never see this).
+      if (myEmployee && userRole !== 'super_admin' && !isPulseCheckExempt(currentUser)) {
+        const week = getWeekStart()
+        const { data: pulseData } = await supabase.from('pulse_surveys').select('id').eq('employee_id', myEmployee.id).eq('week_start', week).maybeSingle()
+        if (!pulseData) results.push({ label: `Your Weekly Pulse Check is due`, count: 1, view: 'pulse-check' })
+      }
+
+      if (!cancelled) setItems(results)
+    })()
+    return () => { cancelled = true }
+  }, [currentUser, userRole, employees.length])
+
+  const totalCount = items.reduce((s, i) => s + i.count, 0)
+  const todayKey = new Date().toISOString().slice(0,10)
+  if (totalCount === 0 || dismissedFor === todayKey) return null
+
+  return (
+    <div className="mx-3 mt-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-sm relative z-20">
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <div className="flex items-center gap-2 min-w-0">
+          <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0"/>
+          <span className="font-medium truncate">You have {totalCount} item{totalCount===1?'':'s'} needing your attention</span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }} className="text-xs font-semibold underline">{expanded ? 'Hide' : 'View'}</button>
+          <button onClick={(e) => { e.stopPropagation(); setDismissedFor(todayKey) }} className="text-amber-400 hover:text-amber-700"><X className="w-4 h-4"/></button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="px-4 pb-3 space-y-1.5 border-t border-amber-200 pt-2">
+          {items.map((it, i) => (
+            <button key={i} onClick={() => setView(it.view)} className="w-full text-left flex items-center justify-between text-sm bg-white/60 hover:bg-white rounded-lg px-3 py-2 transition">
+              <span>{it.label}</span>
+              <span className="text-amber-600 text-xs font-semibold">Go →</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false
@@ -1983,6 +2078,7 @@ export default function KPIApp() {
               )}
             </div>
           )}
+          <AttentionBanner employees={employees} currentUser={effectiveUser} userRole={effectiveRole} setView={setView} />
           {/* Global background for non-performance views */}
           {!(['dashboard-month','dashboard-employee','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
             <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
