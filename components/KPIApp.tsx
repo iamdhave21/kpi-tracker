@@ -3674,12 +3674,17 @@ async function getCompanyComplianceSummary(employees: Employee[], monthLabel: st
   }
 }
 
-// Per-month drill-down specifically for coaching: who wasn't coached at
-// all this month (zero coaching_logs rows, regardless of status), and
-// who was coached but hasn't acknowledged yet -- these are the two
-// concrete, actionable things a manager actually wants to know, not
-// just a single acknowledgment percentage.
-async function getCoachingMonthDetail(scopedEmployees: Employee[], monthLabel: string): Promise<{
+// Coaching, computed as employee COVERAGE, not just acknowledgment
+// among whoever happened to already be coached. The earlier version
+// (coachAcked / coachTotal, where coachTotal only counted sessions that
+// actually existed) could show 100% while most of the team was never
+// coached at all -- if nobody's coached, there's nothing to fail to
+// acknowledge, so the old formula rewarded not coaching people. Rate is
+// now (employees coached AND fully acknowledged) / (employees in
+// scope), so someone never coached counts against the score exactly
+// like the drill-down below it already implied they should.
+async function getCoachingMonthStats(scopedEmployees: Employee[], monthLabel: string): Promise<{
+  rate: number | null, totalScoped: number, compliantCount: number,
   notCoached: {name: string, email: string}[],
   pendingAck: {name: string, email: string, pendingCount: number}[],
 }> {
@@ -3700,7 +3705,9 @@ async function getCoachingMonthDetail(scopedEmployees: Employee[], monthLabel: s
     const pending = required.filter(s => !s.agent_acknowledged)
     if (pending.length > 0) pendingAck.push({ name: e.name, email: e.email!, pendingCount: pending.length })
   })
-  return { notCoached, pendingAck }
+  const totalScoped = active.length
+  const compliantCount = totalScoped - notCoached.length - pendingAck.length
+  return { rate: totalScoped > 0 ? compliantCount / totalScoped : null, totalScoped, compliantCount, notCoached, pendingAck }
 }
 
 // Per-month drill-down for Announcement Acknowledgement: which scoped
@@ -3802,8 +3809,8 @@ async function getPerfMonthDetail(monthLabel: string, employeeIdFilter?: Set<str
 type OpsMonthStats = {
   month: string
   coachRate: number | null
-  coachTotal: number
-  coachAcked: number
+  coachTotalScoped: number
+  coachCompliantCount: number
   annRate: number | null
   annTotal: number
   annAcked: number
@@ -3863,7 +3870,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
   const [loading, setLoading] = useState(true)
   const [expandedCard, setExpandedCard] = useState<'coaching'|'ann'|'task'|'pulse'|'obs'|'perf'|null>(null)
   const [drillMonth, setDrillMonth] = useState(currentMonth)
-  const [coachingDetail, setCoachingDetail] = useState<Awaited<ReturnType<typeof getCoachingMonthDetail>> | null>(null)
+  const [coachingDetail, setCoachingDetail] = useState<Awaited<ReturnType<typeof getCoachingMonthStats>> | null>(null)
   const [annDetail, setAnnDetail] = useState<Awaited<ReturnType<typeof getAnnMonthDetail>> | null>(null)
   const [taskDetail, setTaskDetail] = useState<Awaited<ReturnType<typeof getTaskMonthDetail>> | null>(null)
   const [pulseDetail, setPulseDetail] = useState<Awaited<ReturnType<typeof getPulseMonthDetail>> | null>(null)
@@ -3895,7 +3902,8 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
     const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
     const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
-    const [compliance, pulseRes, obsRes, kpiRes] = await Promise.all([
+    const [coaching, compliance, pulseRes, obsRes, kpiRes] = await Promise.all([
+      getCoachingMonthStats(scopedEmployees, monthLabel),
       getCompanyComplianceSummary(scopedEmployees, monthLabel),
       supabase.from('pulse_surveys').select('*').gte('week_start', start).lt('week_start', end),
       supabase.from('observations').select('employee_id').eq('month_label', monthLabel),
@@ -3913,7 +3921,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     }
     return {
       month: monthLabel,
-      coachRate: compliance.coachTotal > 0 ? compliance.coachAcked / compliance.coachTotal : null, coachTotal: compliance.coachTotal, coachAcked: compliance.coachAcked,
+      coachRate: coaching.rate, coachTotalScoped: coaching.totalScoped, coachCompliantCount: coaching.compliantCount,
       annRate: compliance.annTotal > 0 ? compliance.annAcked / compliance.annTotal : null, annTotal: compliance.annTotal, annAcked: compliance.annAcked,
       taskRate: compliance.taskTotal > 0 ? compliance.taskDone / compliance.taskTotal : null, taskTotal: compliance.taskTotal, taskDone: compliance.taskDone,
       pulseAvg: pulseAvg !== null ? Math.round(pulseAvg * 100) / 100 : null, pulseFlagged, pulseSubmitted: pulseRows.length,
@@ -3942,7 +3950,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     setLoadingDetail(true)
     ;(async () => {
       if (expandedCard === 'coaching') {
-        const d = await getCoachingMonthDetail(scopedEmployees, drillMonth)
+        const d = await getCoachingMonthStats(scopedEmployees, drillMonth)
         if (!cancelled) setCoachingDetail(d)
       } else if (expandedCard === 'ann') {
         const d = await getAnnMonthDetail(scopedEmployees, drillMonth)
@@ -4088,7 +4096,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
               )}
             </div>
             <div className="mt-2"><TrendMini data={stats} dataKey="coachRate" color="#1e3a8a" isPercent domain={[0,100]} referenceValue={complianceTarget} /></div>
-            <p className="text-xs text-gray-400 mt-1">{stats[2].coachAcked}/{stats[2].coachTotal} coaching sign-offs acknowledged in {currentMonth}</p>
+            <p className="text-xs text-gray-400 mt-1">{stats[2].coachCompliantCount}/{stats[2].coachTotalScoped} employees coached & acknowledged in {currentMonth}</p>
           </div>
 
           {/* Announcement Acknowledgement */}
