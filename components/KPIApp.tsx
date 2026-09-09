@@ -1330,8 +1330,8 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePa
 // nothing gets missed just because someone didn't happen to open the
 // right tab.
 function AttentionBanner({ employees, currentUser, userRole, setView }:
-  { employees: Employee[], currentUser: string | null, userRole: string, setView: (v: any) => void }) {
-  const [items, setItems] = useState<{ label: string, count: number, view: string }[]>([])
+  { employees: Employee[], currentUser: string | null, userRole: string, setView: (v: any, subTab?: string) => void }) {
+  const [items, setItems] = useState<{ label: string, count: number, view: string, subTab?: string }[]>([])
   const [expanded, setExpanded] = useState(false)
   const [dismissedFor, setDismissedFor] = useState<string | null>(null)
 
@@ -1341,7 +1341,7 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
     ;(async () => {
       const emailLower = currentUser.toLowerCase()
       const myEmployee = employees.find(e => e.email?.toLowerCase() === emailLower)
-      const results: { label: string, count: number, view: string }[] = []
+      const results: { label: string, count: number, view: string, subTab?: string }[] = []
 
       // 1. Coaching sessions where I'm the one being coached and haven't
       //    signed off yet -- applies regardless of role, since a Team
@@ -1357,7 +1357,7 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
         const { data: hackData } = await supabase.from('huddle_acknowledgements').select('huddle_id').eq('employee_email', emailLower).in('huddle_id', myHuddleIds)
         const ackedIds = new Set((hackData || []).map((a: any) => a.huddle_id))
         const pending = myHuddleIds.filter(id => !ackedIds.has(id))
-        if (pending.length > 0) results.push({ label: `${pending.length} team huddle note${pending.length===1?'':'s'} to acknowledge`, count: pending.length, view: 'cadence' })
+        if (pending.length > 0) results.push({ label: `${pending.length} team huddle note${pending.length===1?'':'s'} to acknowledge`, count: pending.length, view: 'cadence', subTab: 'huddle' })
       }
 
       // 3. Notice to Explain records where I'm the employee/contractor
@@ -1406,7 +1406,7 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
       {expanded && (
         <div className="px-4 pb-3 space-y-1.5 border-t border-amber-200 pt-2">
           {items.map((it, i) => (
-            <button key={i} onClick={() => setView(it.view)} className="w-full text-left flex items-center justify-between text-sm bg-white/60 hover:bg-white rounded-lg px-3 py-2 transition">
+            <button key={i} onClick={() => setView(it.view, it.subTab)} className="w-full text-left flex items-center justify-between text-sm bg-white/60 hover:bg-white rounded-lg px-3 py-2 transition">
               <span>{it.label}</span>
               <span className="text-amber-600 text-xs font-semibold">Go →</span>
             </button>
@@ -1770,6 +1770,17 @@ export default function KPIApp() {
     loadPreviewableUsers()
   }, [userRole])
   const [view, setView] = useState<View>('announcements')
+  // Deep-link request for Operating Cadence's internal tab (e.g. so the
+  // AttentionBanner's "team huddle notes to acknowledge" item can land
+  // directly on the Team Huddle tab instead of the default Daily tab,
+  // where the actual pending item wouldn't be visible at all). The
+  // timestamp forces OperatingCadence to remount (via its key prop) even
+  // if the person is already on the Operating Cadence screen.
+  const [cadenceTabRequest, setCadenceTabRequest] = useState<{ tab: string, ts: number } | null>(null)
+  function navigateToTab(v: View, subTab?: string) {
+    setView(v)
+    if (v === 'cadence' && subTab) setCadenceTabRequest({ tab: subTab, ts: Date.now() })
+  }
   const [perfView, setPerfView] = useState<PerfView>('monthly')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [records, setRecords] = useState<KpiRecord[]>([])
@@ -2078,7 +2089,7 @@ export default function KPIApp() {
               )}
             </div>
           )}
-          <AttentionBanner employees={employees} currentUser={effectiveUser} userRole={effectiveRole} setView={setView} />
+          <AttentionBanner employees={employees} currentUser={effectiveUser} userRole={effectiveRole} setView={navigateToTab} />
           {/* Global background for non-performance views */}
           {!(['dashboard-month','dashboard-employee','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
             <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
@@ -2174,7 +2185,7 @@ export default function KPIApp() {
             {view === 'opex' && effectiveRole === 'super_admin' && <OpexPanel currentUser={effectiveUser} showToast={showToast} />}
             {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
-            {view === 'cadence' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <OperatingCadence currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'cadence' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <OperatingCadence key={cadenceTabRequest?.ts || 'default'} initialTab={cadenceTabRequest?.tab as any} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'cadence' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'resources' && <ResourcesPanel userRole={effectiveRole} showToast={showToast} />}
           </>
@@ -3688,10 +3699,10 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   { employees: Employee[], onChanged: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string }) {
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
-  const [newPortalRole, setNewPortalRole] = useState<string>('agent')
+  const [newPortalRole, setNewPortalRole] = useState<string>('')
   const [newEmpId, setNewEmpId] = useState('')
   const [newDepartments, setNewDepartments] = useState<string[]>([])
-  const [newEmpType, setNewEmpType] = useState('Agent')
+  const [newEmpType, setNewEmpType] = useState('')
   const [newContractType, setNewContractType] = useState('')
   const [newClients, setNewClients] = useState<string[]>([CLIENTS[0]])
   const [adding, setAdding] = useState(false)
@@ -3789,7 +3800,9 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     if (!emailTrimmed) { showToast('Work email is required.', 'error'); return }
     if (!newDepartments.length) { showToast('Select at least one Department (Operations, IT, etc.).', 'error'); return }
     if (!newClients.length) { showToast('Select at least one Client Supported.', 'error'); return }
+    if (!newEmpType) { showToast('Select a Role.', 'error'); return }
     if (!newContractType) { showToast('Select a Contract Type (Employee/Contractual/Probationary/Intern) -- required for new records so this can never be ambiguous on a disciplinary notice.', 'error'); return }
+    if (userRole === 'super_admin' && !newPortalRole) { showToast('Select a Portal Role.', 'error'); return }
     // Duplicate check: Employee ID first (most reliable unique identifier),
     // then email, since both should be unique per person/role.
     const idMatch = employees.find(e => e.employee_id && e.employee_id.trim().toLowerCase() === empIdTrimmed.toLowerCase())
@@ -3839,7 +3852,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           }
         }
       }
-      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType('Agent'); setNewContractType(''); setNewClients([CLIENTS[0]]); setNewPortalRole('agent'); onChanged()
+      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType(''); setNewContractType(''); setNewClients([CLIENTS[0]]); setNewPortalRole(''); onChanged()
     }
     setAdding(false)
   }
@@ -3984,6 +3997,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           <input value={newEmpId} onChange={e=>setNewEmpId(e.target.value)} placeholder="Employee ID (ABBSS-XXXXXX) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name (Last, First) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           <select value={newEmpType} onChange={e=>setNewEmpType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+            <option value="">Role *</option>
             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           <select value={newContractType} onChange={e=>setNewContractType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Legal engagement type -- separate from Role, used on disciplinary notices and legal documents">
@@ -3993,13 +4007,14 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           {userRole === 'super_admin' && (
             <select value={newPortalRole} onChange={e=>setNewPortalRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Portal Role -- creates their login immediately if a work email is set">
+              <option value="">Portal Role *</option>
               <option value="agent">Portal: Agent</option>
               <option value="Team Lead">Portal: Team Lead</option>
               <option value="admin">Portal: Admin</option>
               <option value="super_admin">Portal: Super Admin</option>
             </select>
           )}
-          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length||!newClients.length||!newContractType} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length||!newClients.length||!newContractType||!newEmpType||(userRole==='super_admin'&&!newPortalRole)} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
         <div className="mt-3">
           <p className="text-xs font-medium text-gray-500 mb-1.5">Client(s) Supported * — controls which clients this person's records are visible under</p>
@@ -5067,8 +5082,8 @@ function historicalPeriodKeys(frequency: 'daily' | 'weekly' | 'monthly', count: 
   return out
 }
 
-function OperatingCadence({ currentUser, userRole, showToast }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle'>('daily')
+function OperatingCadence({ currentUser, userRole, showToast, initialTab }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, initialTab?: 'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle' }) {
+  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle'>(initialTab || 'daily')
   const [completions, setCompletions] = useState<Record<string, { done: boolean, note: string }>>({})
   const [cadenceItems, setCadenceItems] = useState<CadenceItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -9510,6 +9525,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
 
   async function handleDelete(id: string) {
     if (isPreviewing) { showToast('Preview mode is view-only -- exit preview to delete a real session.', 'error'); return }
+    if (!confirm('This permanently deletes the coaching record. Coaching Log entries are meant to be a permanent history -- only delete this if it was a genuine mistake (duplicate/test entry). Continue?')) return
     setDeleting(id)
     await supabase.from('coaching_logs').delete().eq('id', id)
     showToast('Entry deleted.')
@@ -9820,10 +9836,16 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                             <button onClick={() => setViewLog(log)} className="text-gray-400 hover:text-blue-600 transition p-1 rounded" title="View full session">
                               <Eye className="w-3.5 h-3.5"/>
                             </button>
-                            <button onClick={() => handleDelete(log.id)} disabled={deleting === log.id}
-                              className="text-gray-400 hover:text-red-500 transition p-1 rounded">
-                              {deleting === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400"/> : <Trash2 className="w-3.5 h-3.5"/>}
-                            </button>
+                            {/* Coaching Log is meant to be a permanent record --
+                                delete is a hidden Super Admin emergency-only
+                                escape hatch for genuine mistakes (duplicate/
+                                test entries), not a general-purpose action. */}
+                            {userRole === 'super_admin' && (
+                              <button onClick={() => handleDelete(log.id)} disabled={deleting === log.id} title="Super Admin only: emergency delete"
+                                className="text-gray-400 hover:text-red-500 transition p-1 rounded">
+                                {deleting === log.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400"/> : <Trash2 className="w-3.5 h-3.5"/>}
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
