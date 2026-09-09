@@ -3689,6 +3689,23 @@ async function getObsMonthDetail(monthLabel: string, employeeIdFilter?: Set<stri
   return { byEmployee }
 }
 
+// Per-month detail for the Attendance/Accuracy/Efficiency drill-down:
+// the company (or scoped) averages alone don't say who actually needs
+// attention, so this surfaces the lowest-scoring individuals that
+// month -- same "make the raw number actionable" convention as the
+// Pulse Check and Observations drill-downs above.
+async function getPerfMonthDetail(monthLabel: string, employeeIdFilter?: Set<string> | null): Promise<{ lowest: {name: string, attendance: number|null, accuracy: number|null, efficiency: number|null}[] }> {
+  const { data } = await supabase.from('kpi_records').select('employee_id, employee_name, attendance, accuracy, efficiency').eq('month_label', monthLabel)
+  const rows = (data || []).filter((r: any) => !employeeIdFilter || employeeIdFilter.has(r.employee_id))
+  const withScore = rows.map((r: any) => {
+    const vals = [r.attendance, r.accuracy, r.efficiency].filter((v: any) => typeof v === 'number')
+    const avg = vals.length ? vals.reduce((a: number,b: number) => a+b, 0) / vals.length : null
+    return { name: r.employee_name, attendance: r.attendance, accuracy: r.accuracy, efficiency: r.efficiency, avg }
+  }).filter((r: any) => r.avg !== null)
+  withScore.sort((a: any, b: any) => a.avg - b.avg)
+  return { lowest: withScore.slice(0, 8).map(({avg, ...rest}: any) => rest) }
+}
+
 // -- Ops Dashboard -------------------------------------------------------
 // Fixed 3-month rolling window (current month + the 2 before it) for
 // Admin/Super Admin: Coaching Compliance, Weekly Pulse Check, and
@@ -3705,6 +3722,10 @@ type OpsMonthStats = {
   pulseFlagged: number
   pulseSubmitted: number
   obsCount: number
+  attendanceAvg: number | null
+  accuracyAvg: number | null
+  efficiencyAvg: number | null
+  perfRecordCount: number
 }
 function OpsDashboard({ employees }: { employees: Employee[] }) {
   // Current month + the 2 before it, oldest first, in the same
@@ -3747,20 +3768,22 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
 
   const [stats, setStats] = useState<OpsMonthStats[] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [expandedCard, setExpandedCard] = useState<'compliance'|'pulse'|'obs'|null>(null)
+  const [expandedCard, setExpandedCard] = useState<'compliance'|'pulse'|'obs'|'perf'|null>(null)
   const [drillMonth, setDrillMonth] = useState(currentMonth)
   const [complianceDetail, setComplianceDetail] = useState<Awaited<ReturnType<typeof getCompanyComplianceSummary>> | null>(null)
   const [pulseDetail, setPulseDetail] = useState<Awaited<ReturnType<typeof getPulseMonthDetail>> | null>(null)
   const [obsDetail, setObsDetail] = useState<Awaited<ReturnType<typeof getObsMonthDetail>> | null>(null)
+  const [perfDetail, setPerfDetail] = useState<Awaited<ReturnType<typeof getPerfMonthDetail>> | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
   // Coaching Compliance target -- a real, durable setting (stored in
   // app_settings, same pattern as the announcement background image)
   // rather than a hardcoded number, so it can be adjusted later without
-  // a code change. Defaults to 90% until someone sets it explicitly.
-  const [complianceTarget, setComplianceTarget] = useState(90)
+  // a code change. Defaults to 100% (the actual expectation) until
+  // someone changes it.
+  const [complianceTarget, setComplianceTarget] = useState(100)
   const [editingTarget, setEditingTarget] = useState(false)
-  const [targetDraft, setTargetDraft] = useState('90')
+  const [targetDraft, setTargetDraft] = useState('100')
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key','ops_compliance_target').maybeSingle()
       .then(({ data }) => { if (data?.value) { setComplianceTarget(Number(data.value)); setTargetDraft(data.value) } })
@@ -3776,21 +3799,29 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
     const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
     const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
-    const [compliance, pulseRes, obsRes] = await Promise.all([
+    const [compliance, pulseRes, obsRes, kpiRes] = await Promise.all([
       getCompanyComplianceSummary(scopedEmployees, monthLabel),
       supabase.from('pulse_surveys').select('*').gte('week_start', start).lt('week_start', end),
       supabase.from('observations').select('employee_id').eq('month_label', monthLabel),
+      supabase.from('kpi_records').select('employee_id, attendance, accuracy, efficiency').eq('month_label', monthLabel),
     ])
     const pulseRows = (pulseRes.data || []).filter((r: any) => scopedEmployeeIds.has(r.employee_id))
     const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
     const pulseAvg = pulseRows.length ? pulseRows.reduce((sum: number, r: any) => sum + ratedKeys.reduce((s, k) => s + (r[k] || 0), 0) / ratedKeys.length, 0) / pulseRows.length : null
     const pulseFlagged = pulseRows.filter((r: any) => pulseIsAtRisk(r)).length
     const obsRows = (obsRes.data || []).filter((r: any) => scopedEmployeeIds.has(r.employee_id))
+    const kpiRows = (kpiRes.data || []).filter((r: any) => scopedEmployeeIds.has(r.employee_id))
+    const avgOfField = (field: 'attendance'|'accuracy'|'efficiency') => {
+      const vals = kpiRows.map((r: any) => r[field]).filter((v: any) => typeof v === 'number')
+      return vals.length ? vals.reduce((a: number,b: number) => a+b, 0) / vals.length : null
+    }
     return {
       month: monthLabel,
       complianceRate: compliance.rate, complianceRequired: compliance.totalRequired, complianceAcked: compliance.totalAcked,
       pulseAvg: pulseAvg !== null ? Math.round(pulseAvg * 100) / 100 : null, pulseFlagged, pulseSubmitted: pulseRows.length,
       obsCount: obsRows.length,
+      attendanceAvg: avgOfField('attendance'), accuracyAvg: avgOfField('accuracy'), efficiencyAvg: avgOfField('efficiency'),
+      perfRecordCount: kpiRows.length,
     }
   }
 
@@ -3823,13 +3854,16 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
       } else if (expandedCard === 'obs') {
         const d = await getObsMonthDetail(drillMonth, filterActive ? scopedEmployeeIds : null)
         if (!cancelled) setObsDetail(d)
+      } else if (expandedCard === 'perf') {
+        const d = await getPerfMonthDetail(drillMonth, filterActive ? scopedEmployeeIds : null)
+        if (!cancelled) setPerfDetail(d)
       }
       if (!cancelled) setLoadingDetail(false)
     })()
     return () => { cancelled = true }
   }, [expandedCard, drillMonth, employees.length])
 
-  function toggleCard(card: 'compliance'|'pulse'|'obs') {
+  function toggleCard(card: 'compliance'|'pulse'|'obs'|'perf') {
     if (expandedCard === card) { setExpandedCard(null); return }
     setExpandedCard(card)
     setDrillMonth(currentMonth)
@@ -3861,6 +3895,30 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
           <Tooltip />
           <Bar dataKey="value" fill={color} radius={[3,3,0,0]} />
         </BarChart>
+      </ResponsiveContainer>
+    )
+  }
+  // Three lines (Attendance/Accuracy/Efficiency) on one small chart --
+  // these are meant to be read together, not as 3 separate cards, since
+  // that's how they're already grouped everywhere else in the app (KPI
+  // Entry, Employee Trends).
+  function TrendMiniPerf({ data }: { data: OpsMonthStats[] }) {
+    const chartData = data.map(d => ({
+      month: shortMonth(d.month),
+      attendanceAvg: d.attendanceAvg !== null ? d.attendanceAvg * 100 : null,
+      accuracyAvg: d.accuracyAvg !== null ? d.accuracyAvg * 100 : null,
+      efficiencyAvg: d.efficiencyAvg !== null ? d.efficiencyAvg * 100 : null,
+    }))
+    return (
+      <ResponsiveContainer width="100%" height={70}>
+        <LineChart data={chartData}>
+          <XAxis dataKey="month" tick={{fontSize:10}} axisLine={false} tickLine={false} />
+          <YAxis hide domain={[0,100]} />
+          <Tooltip formatter={(v:any,n:any) => [v===null?'—':`${(v as number).toFixed(0)}%`, n==='attendanceAvg'?'Attendance':n==='accuracyAvg'?'Accuracy':'Efficiency']} labelFormatter={() => ''} />
+          <Line type="monotone" dataKey="attendanceAvg" stroke="#0891b2" strokeWidth={2} dot={{r:2.5}} connectNulls />
+          <Line type="monotone" dataKey="accuracyAvg" stroke="#ca8a04" strokeWidth={2} dot={{r:2.5}} connectNulls />
+          <Line type="monotone" dataKey="efficiencyAvg" stroke="#dc2626" strokeWidth={2} dot={{r:2.5}} connectNulls />
+        </LineChart>
       </ResponsiveContainer>
     )
   }
@@ -3903,7 +3961,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
       {loading || !stats ? (
         <div className="text-center py-12 text-gray-400">Loading...</div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Coaching Compliance */}
           <div onClick={() => toggleCard('compliance')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='compliance' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
             <div className="flex items-center justify-between">
@@ -3955,6 +4013,26 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
             <div className="mt-2"><TrendMiniBars data={stats} dataKey="obsCount" color="#7c3aed" /></div>
             <p className="text-xs text-gray-400 mt-1">Informational only -- more or fewer isn't inherently good or bad.</p>
           </div>
+
+          {/* Attendance / Accuracy / Efficiency */}
+          <div onClick={() => toggleCard('perf')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='perf' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Attendance / Accuracy / Efficiency</p>
+              <span className="text-gray-400 text-xs">{expandedCard==='perf' ? '▲' : '▼'}</span>
+            </div>
+            <div className="flex items-baseline gap-3 mt-1">
+              <span className="text-sm"><span className="font-bold text-cyan-700">{stats[2].attendanceAvg !== null ? `${(stats[2].attendanceAvg*100).toFixed(0)}%` : '—'}</span></span>
+              <span className="text-sm"><span className="font-bold text-yellow-700">{stats[2].accuracyAvg !== null ? `${(stats[2].accuracyAvg*100).toFixed(0)}%` : '—'}</span></span>
+              <span className="text-sm"><span className="font-bold text-red-700">{stats[2].efficiencyAvg !== null ? `${(stats[2].efficiencyAvg*100).toFixed(0)}%` : '—'}</span></span>
+            </div>
+            <div className="flex items-center gap-2.5 mt-1 flex-wrap">
+              <span className="text-[10px] text-cyan-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-600 inline-block"/>Attendance</span>
+              <span className="text-[10px] text-yellow-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-600 inline-block"/>Accuracy</span>
+              <span className="text-[10px] text-red-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600 inline-block"/>Efficiency</span>
+            </div>
+            <div className="mt-2"><TrendMiniPerf data={stats} /></div>
+            <p className="text-xs text-gray-400 mt-1">{stats[2].perfRecordCount} KPI records in {currentMonth}</p>
+          </div>
         </div>
       )}
 
@@ -3963,7 +4041,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
             <h3 className="text-sm font-semibold text-blue-900">
-              {expandedCard==='compliance' ? 'Coaching Compliance Breakdown' : expandedCard==='pulse' ? 'Pulse Check Detail' : 'Observations Detail'}
+              {expandedCard==='compliance' ? 'Coaching Compliance Breakdown' : expandedCard==='pulse' ? 'Pulse Check Detail' : expandedCard==='obs' ? 'Observations Detail' : 'Attendance / Accuracy / Efficiency Detail'}
             </h3>
             <div className="flex gap-1.5">
               {rollingMonths.map(m => (
@@ -4028,6 +4106,34 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
                           <span className="font-medium text-blue-900">{e.count}</span>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {expandedCard === 'perf' && perfDetail && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">Lowest Attendance/Accuracy/Efficiency Average</p>
+                  {perfDetail.lowest.length === 0 ? <p className="text-sm text-gray-400">No KPI records for {drillMonth}.</p> : (
+                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead><tr className="bg-gray-50 border-b border-gray-100">
+                          <th className="text-left px-3 py-2 font-medium text-gray-500">Employee</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-500">Attendance</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-500">Accuracy</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-500">Efficiency</th>
+                        </tr></thead>
+                        <tbody>
+                          {perfDetail.lowest.map(e => (
+                            <tr key={e.name} className="border-b border-gray-50">
+                              <td className="px-3 py-2 font-medium text-gray-800">{e.name}</td>
+                              <td className="px-3 py-2 text-gray-600">{e.attendance !== null ? `${(e.attendance*100).toFixed(0)}%` : '—'}</td>
+                              <td className="px-3 py-2 text-gray-600">{e.accuracy !== null ? `${(e.accuracy*100).toFixed(0)}%` : '—'}</td>
+                              <td className="px-3 py-2 text-gray-600">{e.efficiency !== null ? `${(e.efficiency*100).toFixed(0)}%` : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>
