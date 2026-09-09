@@ -2991,6 +2991,19 @@ const PULSE_CATEGORIES: { key: string, label: string, questions: { key: string, 
 const PULSE_RATED_KEYS = [...PULSE_CATEGORIES.flatMap(c => c.questions.map(q => q.key)), 'retention']
 const PULSE_SCALE_LABELS: Record<number,string> = { 1: 'Strongly Disagree', 2: 'Disagree', 3: 'Neutral', 4: 'Agree', 5: 'Strongly Agree' }
 const RETENTION_SCALE_LABELS: Record<number,string> = { 1: 'Very Unlikely', 2: 'Unlikely', 3: 'Not Sure', 4: 'Likely', 5: 'Very Likely' }
+// Qualitative reading of the 1-5 Overall Avg (a continuous mean across
+// all rated questions), separate from the per-question agree/disagree
+// scale above -- this is what turns "4.0/5" into something a manager can
+// actually interpret at a glance.
+const OVERALL_SCALE_LABELS: Record<number,string> = { 1: 'Very Dissatisfied', 2: 'Dissatisfied', 3: 'Neutral', 4: 'Satisfied', 5: 'Very Satisfied' }
+function overallScaleLabel(avg: number | null): string {
+  if (avg === null) return '—'
+  if (avg < 1.5) return OVERALL_SCALE_LABELS[1]
+  if (avg < 2.5) return OVERALL_SCALE_LABELS[2]
+  if (avg < 3.5) return OVERALL_SCALE_LABELS[3]
+  if (avg < 4.5) return OVERALL_SCALE_LABELS[4]
+  return OVERALL_SCALE_LABELS[5]
+}
 
 function getWeekStart(d: Date = new Date()): string {
   const day = d.getDay()
@@ -3374,6 +3387,10 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 
           {loadingSubs ? <div className="text-center py-12 text-gray-400">Loading...</div> : (
             <>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400 -mb-1">
+                <span className="font-medium text-gray-500">Overall Avg scale:</span>
+                {[1,2,3,4,5].map(n => <span key={n}>{n} = {OVERALL_SCALE_LABELS[n]}</span>)}
+              </div>
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <table className="w-full text-sm">
                   <thead><tr className="bg-gray-50 border-b border-gray-100">
@@ -3391,7 +3408,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
                         <Fragment key={s.id}>
                           <tr className="border-b border-gray-50 hover:bg-gray-50">
                             <td className="px-4 py-2.5 font-medium text-gray-800">{s.employee_name}</td>
-                            <td className="px-4 py-2.5 text-gray-600">{avg?.toFixed(1) ?? '—'} / 5</td>
+                            <td className="px-4 py-2.5 text-gray-600">{avg !== null ? <>{avg.toFixed(1)} / 5 <span className="text-xs text-gray-400">· {overallScaleLabel(avg)}</span></> : '—'}</td>
                             <td className="px-4 py-2.5 text-gray-600">{s.retention ? `${s.retention} · ${RETENTION_SCALE_LABELS[s.retention]}` : '—'}</td>
                             <td className="px-4 py-2.5">{atRisk ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">🚩 At Risk</span> : <span className="text-gray-300 text-xs">—</span>}</td>
                             <td className="px-4 py-2.5 text-right"><button onClick={() => setExpandedId(expandedId===s.id?null:s.id)} className="text-xs text-blue-600 hover:underline">{expandedId===s.id?'Hide':'View'} details</button></td>
