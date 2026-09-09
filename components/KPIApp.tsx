@@ -8666,9 +8666,33 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
     return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
   })
 
+  // Employees visible to the current viewer in dropdowns/filters. Placed
+  // above the default-selection effect below on purpose -- that effect
+  // depends on activeVisibleEmployees, and previously used the raw,
+  // unfiltered `employees` array instead, which could silently select
+  // an inactive employee's id (e.g. whoever happened to sort first)
+  // even though that person was never actually rendered as a selectable
+  // option in the dropdown. Because the browser's <select> has no
+  // matching option for an id that isn't in its list, it visually falls
+  // back to showing the first available option instead -- so the screen
+  // could show one person selected while the real underlying value used
+  // on Save was someone else entirely. This is exactly how an
+  // observation about one person got saved against a different,
+  // unrelated inactive employee.
+  const visibleEmployees = myTeamEmployeeIds === null
+    ? employees
+    : employees.filter(e => myTeamEmployeeIds.includes(e.id))
+  const activeVisibleEmployees = visibleEmployees.filter(e => e.active)
+
   useEffect(() => {
-    if (employees.length > 0 && !selEmp) setSelEmp(employees[0].id)
-  }, [employees])
+    // Also self-corrects if the currently selected employee ever becomes
+    // invalid for this dropdown (deactivated, or scoped out by a Team
+    // Lead's team changing) -- same safety check KPI Entry already uses,
+    // so a stale selEmp can't silently persist and get used on Save.
+    if (activeVisibleEmployees.length > 0 && (!selEmp || !activeVisibleEmployees.some(e => e.id === selEmp))) {
+      setSelEmp(activeVisibleEmployees[0].id)
+    }
+  }, [activeVisibleEmployees.map(e => e.id).join(',')])
 
   // Team Leads only see observations for employees on teams they lead.
   // Manager/Super Admin see everyone (no scoping applied).
@@ -8685,11 +8709,6 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
     }
     loadMyTeamScope()
   }, [userRole, currentUser, employees])
-
-  // Employees visible to the current viewer in dropdowns/filters
-  const visibleEmployees = myTeamEmployeeIds === null
-    ? employees
-    : employees.filter(e => myTeamEmployeeIds.includes(e.id))
 
   async function loadObs() {
     setLoading(true)
@@ -8748,7 +8767,7 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Employee</label>
               <select value={selEmp} onChange={e => setSelEmp(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-                {visibleEmployees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name} — {e.employment_type||'Agent'} ({e.client||'AB BSS'})</option>)}
+                {activeVisibleEmployees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.employment_type||'Agent'} ({e.client||'AB BSS'})</option>)}
               </select>
             </div>
             <div>
