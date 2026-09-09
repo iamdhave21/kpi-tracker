@@ -4623,6 +4623,16 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
   const fileRef = useRef<HTMLInputElement>(null)
   const [acks, setAcks] = useState<Record<string, {employee_email: string, acknowledged_at: string}[]>>({})
   const [acking, setAcking] = useState<string | null>(null)
+  // Auto-expand + scroll to the current user's own pending (unacknowledged)
+  // huddle on first load. Without this, a deep-link from the AttentionBanner
+  // lands on the Team Huddle tab but the list can still *look* empty at a
+  // glance -- especially when there are several huddles and the pending one
+  // isn't the most recent, or the person has to scroll to find it. Guarded
+  // by a ref so this only happens once per mount, not on every reload
+  // (e.g. right after the person acknowledges, which re-triggers loadHuddles).
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const autoFocusedRef = useRef(false)
+  const [highlightHuddleId, setHighlightHuddleId] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     title: '',
@@ -4658,10 +4668,32 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
       const grouped: Record<string, {employee_email: string, acknowledged_at: string}[]> = {}
       ;(ackData || []).forEach((a: any) => { (grouped[a.huddle_id] ||= []).push({ employee_email: a.employee_email, acknowledged_at: a.acknowledged_at }) })
       setAcks(grouped)
+      autoFocusPending(data || [], grouped)
     } else {
       setAcks({})
     }
     setLoading(false)
+  }
+
+  // Finds the current user's own oldest pending huddle sign-off (same
+  // "am I a listed participant who hasn't acknowledged" check used
+  // elsewhere) and, the first time this screen loads, opens it and
+  // scrolls it into view with a brief highlight so it's unmistakable --
+  // rather than requiring the person to hunt through the list themselves.
+  function autoFocusPending(list: any[], ackMap: Record<string, {employee_email: string}[]>) {
+    if (autoFocusedRef.current || !currentUser) return
+    const myEmailLower = currentUser.toLowerCase()
+    const pending = list
+      .filter((h: any) => (h.participants || []).some((p: string) => p.toLowerCase() === myEmailLower))
+      .filter((h: any) => !(ackMap[h.id] || []).some(a => a.employee_email === myEmailLower))
+      .sort((a: any, b: any) => new Date(a.huddle_date).getTime() - new Date(b.huddle_date).getTime())
+    if (pending.length === 0) return
+    autoFocusedRef.current = true
+    const target = pending[0]
+    setViewHuddle(target)
+    setHighlightHuddleId(target.id)
+    setTimeout(() => cardRefs.current[target.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150)
+    setTimeout(() => setHighlightHuddleId(prev => prev === target.id ? null : prev), 4000)
   }
 
   // Every huddle requires sign-off from its listed participants -- this is
@@ -4939,7 +4971,9 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
       ) : (
         <div className="space-y-3">
           {filtered.map(h => (
-            <div key={h.id} className="bg-white border border-gray-200 rounded-xl p-4 hover:border-blue-300 transition cursor-pointer" onClick={() => setViewHuddle(viewHuddle?.id===h.id ? null : h)}>
+            <div key={h.id} ref={el => { cardRefs.current[h.id] = el }}
+              className={`bg-white border rounded-xl p-4 hover:border-blue-300 transition cursor-pointer ${highlightHuddleId===h.id ? 'border-amber-400 ring-2 ring-amber-300 animate-pulse' : 'border-gray-200'}`}
+              onClick={() => { setViewHuddle(viewHuddle?.id===h.id ? null : h); if (highlightHuddleId===h.id) setHighlightHuddleId(null) }}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 text-sm">{h.title}</p>
