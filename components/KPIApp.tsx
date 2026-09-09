@@ -1693,12 +1693,13 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {/* AGENT TOOLS -- visible to everyone; every item here is a shared,
           self-scoping screen, so nothing hard-blocks in this group. */}
       <>
-        <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check'].includes(view as string)} />
+        <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check','cadence'].includes(view as string)} />
         {!collapsed.agenttools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="tl-tools" label="Coaching Logs" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-red-500" dotColor="bg-emerald-400"/>
             <NavItem id="dashboard-employee" label="Employee Trends" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
             <NavItem id="dashboard-team" label="Team Dashboard" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+            {userRole === 'agent' && <NavItem id="cadence" label="Team Huddle Notes" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>}
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
           </div>
         )}
@@ -2185,8 +2186,9 @@ export default function KPIApp() {
             {view === 'opex' && effectiveRole === 'super_admin' && <OpexPanel currentUser={effectiveUser} showToast={showToast} />}
             {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
-            {view === 'cadence' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <OperatingCadence key={cadenceTabRequest?.ts || 'default'} initialTab={cadenceTabRequest?.tab as any} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
-            {view === 'cadence' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {/* Agents CAN reach this view -- see note inside OperatingCadence
+                about restricting them to the Team Huddle tab only. */}
+            {view === 'cadence' && <OperatingCadence key={cadenceTabRequest?.ts || 'default'} initialTab={cadenceTabRequest?.tab as any} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'resources' && <ResourcesPanel userRole={effectiveRole} showToast={showToast} />}
           </>
         )}
@@ -4640,7 +4642,15 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
     // A Team Lead now only sees huddles they personally created (i.e. their
     // own team's huddles); Admin/Super Admin remain unrestricted.
     if (userRole === 'Team Lead' && currentUser) q = q.eq('created_by', currentUser)
-    const { data } = await q
+    const { data: rawData } = await q
+    // Agents can be listed participants in a huddle (they attended it) but
+    // never create/manage huddles -- they only need to see (and sign off
+    // on) huddles they were actually part of, not every huddle company-
+    // wide. Filtered client-side (case-insensitive) since participants is
+    // a plain text[] and email casing isn't guaranteed consistent.
+    const data = (userRole === 'agent' && currentUser)
+      ? (rawData || []).filter((h: any) => (h.participants||[]).some((p: string) => p.toLowerCase() === currentUser.toLowerCase()))
+      : rawData
     setHuddles(data || [])
     const ids = (data || []).map((h: any) => h.id)
     if (ids.length > 0) {
@@ -5083,7 +5093,13 @@ function historicalPeriodKeys(frequency: 'daily' | 'weekly' | 'monthly', count: 
 }
 
 function OperatingCadence({ currentUser, userRole, showToast, initialTab }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, initialTab?: 'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle' }) {
-  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle'>(initialTab || 'daily')
+  // Agents can be listed participants in a Team Huddle and need to
+  // acknowledge it, but everything else on this screen (daily/weekly/
+  // monthly checklists, compliance, manage tasks) is Team Lead+ only --
+  // so an Agent is locked to the Team Huddle tab specifically, not
+  // blocked from the screen entirely.
+  const isAgent = userRole === 'agent'
+  const [tab, setTab] = useState<'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle'>(isAgent ? 'huddle' : (initialTab || 'daily'))
   const [completions, setCompletions] = useState<Record<string, { done: boolean, note: string }>>({})
   const [cadenceItems, setCadenceItems] = useState<CadenceItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -5228,18 +5244,20 @@ function OperatingCadence({ currentUser, userRole, showToast, initialTab }: { cu
   const weeklyItems = cadenceItems.filter(i => i.frequency === 'weekly')
   const monthlyItems = cadenceItems.filter(i => i.frequency === 'monthly')
 
-  const tabs: [string,string][] = [
-    ['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['deliverables','Deliverables'],
-    ...(canViewCompliance ? [['compliance','Compliance']] as [string,string][] : []),
-    ['huddle','📋 Team Huddle'],
-    ...(canManageItems ? [['manage','⚙ Manage Tasks']] as [string,string][] : []),
-  ]
+  const tabs: [string,string][] = isAgent
+    ? [['huddle','📋 Team Huddle']]
+    : [
+        ['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['deliverables','Deliverables'],
+        ...(canViewCompliance ? [['compliance','Compliance']] as [string,string][] : []),
+        ['huddle','📋 Team Huddle'],
+        ...(canManageItems ? [['manage','⚙ Manage Tasks']] as [string,string][] : []),
+      ]
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-blue-900">Team Leader Operating Cadence</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Your daily, weekly, and monthly rhythm for effective team leadership</p>
+        <h1 className="text-xl font-bold text-blue-900">{isAgent ? 'Team Huddle Notes' : 'Team Leader Operating Cadence'}</h1>
+        <p className="text-sm text-gray-500 mt-0.5">{isAgent ? 'Huddles you were part of, and any that need your sign-off' : 'Your daily, weekly, and monthly rhythm for effective team leadership'}</p>
       </div>
 
       {/* Tabs */}
