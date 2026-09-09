@@ -3662,12 +3662,12 @@ async function getCompanyComplianceSummary(employees: Employee[], monthLabel: st
 // (so a manager can see e.g. "Work-Life Balance is the weak spot," not
 // just one blended number) plus the actual names of anyone flagged
 // at-risk that month, since that's the genuinely actionable part.
-async function getPulseMonthDetail(monthLabel: string): Promise<{ categoryAverages: {key: string, label: string, avg: number}[], flagged: {name: string, avg: number|null, retention: number}[] }> {
+async function getPulseMonthDetail(monthLabel: string, employeeIdFilter?: Set<string> | null): Promise<{ categoryAverages: {key: string, label: string, avg: number}[], flagged: {name: string, avg: number|null, retention: number}[] }> {
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
   const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
   const { data } = await supabase.from('pulse_surveys').select('*').gte('week_start', start).lt('week_start', end)
-  const rows = data || []
+  const rows = (data || []).filter((r: any) => !employeeIdFilter || employeeIdFilter.has(r.employee_id))
   const categoryAverages = PULSE_CATEGORIES.map(cat => {
     const vals = rows.flatMap((r: any) => cat.questions.map(q => r[q.key]).filter((v: any) => typeof v === 'number'))
     return { key: cat.key, label: cat.label, avg: vals.length ? Math.round((vals.reduce((a: number,b: number) => a+b, 0) / vals.length) * 100) / 100 : 0 }
@@ -3680,10 +3680,11 @@ async function getPulseMonthDetail(monthLabel: string): Promise<{ categoryAverag
 // observations logged against them that month -- the count on its own
 // doesn't say much, but "who" makes it actually useful to a manager
 // scanning for a pattern.
-async function getObsMonthDetail(monthLabel: string): Promise<{ byEmployee: {name: string, count: number}[] }> {
-  const { data } = await supabase.from('observations').select('employee_name').eq('month_label', monthLabel)
+async function getObsMonthDetail(monthLabel: string, employeeIdFilter?: Set<string> | null): Promise<{ byEmployee: {name: string, count: number}[] }> {
+  const { data } = await supabase.from('observations').select('employee_id, employee_name').eq('month_label', monthLabel)
+  const rows = (data || []).filter((r: any) => !employeeIdFilter || employeeIdFilter.has(r.employee_id))
   const counts: Record<string, number> = {}
-  ;(data || []).forEach((r: any) => { counts[r.employee_name] = (counts[r.employee_name] || 0) + 1 })
+  rows.forEach((r: any) => { counts[r.employee_name] = (counts[r.employee_name] || 0) + 1 })
   const byEmployee = Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8)
   return { byEmployee }
 }
@@ -3713,6 +3714,37 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
   })
   const currentMonth = rollingMonths[rollingMonths.length - 1]
+
+  // Client + Team filters -- purely a view-level narrowing of what this
+  // dashboard aggregates, not an access-control change (Admin/Super
+  // Admin already see everyone; this just lets them zoom into one
+  // client or team instead of only ever seeing the whole company).
+  // Client list comes straight off the employees roster (primary
+  // `client` field, same convention as other client-scoped screens
+  // like Links/Org Chart); Team list + membership comes from
+  // teams/team_members, same pattern as Pulse Check's manage tab.
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [teamFilter, setTeamFilter] = useState<string>('all')
+  const [teamsList, setTeamsList] = useState<{id: string, name: string}[]>([])
+  const [teamMembersList, setTeamMembersList] = useState<{team_id: string, employee_id: string}[]>([])
+  useEffect(() => {
+    (async () => {
+      const [{ data: t }, { data: m }] = await Promise.all([
+        supabase.from('teams').select('id, name').order('name'),
+        supabase.from('team_members').select('team_id, employee_id'),
+      ])
+      setTeamsList(t || []); setTeamMembersList(m || [])
+    })()
+  }, [])
+  const clientOptions = Array.from(new Set(employees.map(e => e.client).filter(Boolean))) as string[]
+  const scopedEmployees = employees.filter(e => {
+    if (clientFilter !== 'all' && e.client !== clientFilter && !(e.clients_supported||[]).includes(clientFilter)) return false
+    if (teamFilter !== 'all' && !teamMembersList.some(m => m.team_id === teamFilter && m.employee_id === e.id)) return false
+    return true
+  })
+  const scopedEmployeeIds = new Set(scopedEmployees.map(e => e.id))
+  const filterActive = clientFilter !== 'all' || teamFilter !== 'all'
+
   const [stats, setStats] = useState<OpsMonthStats[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedCard, setExpandedCard] = useState<'compliance'|'pulse'|'obs'|null>(null)
@@ -3722,24 +3754,43 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
   const [obsDetail, setObsDetail] = useState<Awaited<ReturnType<typeof getObsMonthDetail>> | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
+  // Coaching Compliance target -- a real, durable setting (stored in
+  // app_settings, same pattern as the announcement background image)
+  // rather than a hardcoded number, so it can be adjusted later without
+  // a code change. Defaults to 90% until someone sets it explicitly.
+  const [complianceTarget, setComplianceTarget] = useState(90)
+  const [editingTarget, setEditingTarget] = useState(false)
+  const [targetDraft, setTargetDraft] = useState('90')
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key','ops_compliance_target').maybeSingle()
+      .then(({ data }) => { if (data?.value) { setComplianceTarget(Number(data.value)); setTargetDraft(data.value) } })
+  }, [])
+  async function saveTarget() {
+    const n = Math.max(0, Math.min(100, Number(targetDraft) || 0))
+    setComplianceTarget(n)
+    await supabase.from('app_settings').upsert({ key: 'ops_compliance_target', value: String(n) }, { onConflict: 'key' })
+    setEditingTarget(false)
+  }
+
   async function loadMonthStats(monthLabel: string): Promise<OpsMonthStats> {
     const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
     const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
     const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
     const [compliance, pulseRes, obsRes] = await Promise.all([
-      getCompanyComplianceSummary(employees, monthLabel),
+      getCompanyComplianceSummary(scopedEmployees, monthLabel),
       supabase.from('pulse_surveys').select('*').gte('week_start', start).lt('week_start', end),
-      supabase.from('observations').select('id', { count: 'exact', head: true }).eq('month_label', monthLabel),
+      supabase.from('observations').select('employee_id').eq('month_label', monthLabel),
     ])
-    const pulseRows = pulseRes.data || []
+    const pulseRows = (pulseRes.data || []).filter((r: any) => scopedEmployeeIds.has(r.employee_id))
     const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
     const pulseAvg = pulseRows.length ? pulseRows.reduce((sum: number, r: any) => sum + ratedKeys.reduce((s, k) => s + (r[k] || 0), 0) / ratedKeys.length, 0) / pulseRows.length : null
     const pulseFlagged = pulseRows.filter((r: any) => pulseIsAtRisk(r)).length
+    const obsRows = (obsRes.data || []).filter((r: any) => scopedEmployeeIds.has(r.employee_id))
     return {
       month: monthLabel,
       complianceRate: compliance.rate, complianceRequired: compliance.totalRequired, complianceAcked: compliance.totalAcked,
       pulseAvg: pulseAvg !== null ? Math.round(pulseAvg * 100) / 100 : null, pulseFlagged, pulseSubmitted: pulseRows.length,
-      obsCount: obsRes.count || 0,
+      obsCount: obsRows.length,
     }
   }
 
@@ -3752,7 +3803,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
       setStats(results); setLoading(false)
     })
     return () => { cancelled = true }
-  }, [employees.length, currentMonth])
+  }, [employees.length, currentMonth, clientFilter, teamFilter, teamMembersList.length])
 
   // Detail is fetched lazily, only for whichever card is expanded and
   // whichever of the 3 months is currently selected inside it -- no need
@@ -3764,13 +3815,13 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     setLoadingDetail(true)
     ;(async () => {
       if (expandedCard === 'compliance') {
-        const d = await getCompanyComplianceSummary(employees, drillMonth)
+        const d = await getCompanyComplianceSummary(scopedEmployees, drillMonth)
         if (!cancelled) setComplianceDetail(d)
       } else if (expandedCard === 'pulse') {
-        const d = await getPulseMonthDetail(drillMonth)
+        const d = await getPulseMonthDetail(drillMonth, filterActive ? scopedEmployeeIds : null)
         if (!cancelled) setPulseDetail(d)
       } else if (expandedCard === 'obs') {
-        const d = await getObsMonthDetail(drillMonth)
+        const d = await getObsMonthDetail(drillMonth, filterActive ? scopedEmployeeIds : null)
         if (!cancelled) setObsDetail(d)
       }
       if (!cancelled) setLoadingDetail(false)
@@ -3786,7 +3837,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
 
   const shortMonth = (m: string) => new Date(`${m} 1`).toLocaleDateString('en-PH', {month:'short'})
 
-  function TrendMini({ data, dataKey, color, isPercent, domain }: { data: OpsMonthStats[], dataKey: keyof OpsMonthStats, color: string, isPercent?: boolean, domain?: [number,number] }) {
+  function TrendMini({ data, dataKey, color, isPercent, domain, referenceValue }: { data: OpsMonthStats[], dataKey: keyof OpsMonthStats, color: string, isPercent?: boolean, domain?: [number,number], referenceValue?: number }) {
     const chartData = data.map(d => ({ month: shortMonth(d.month), value: d[dataKey] === null ? null : (isPercent ? (d[dataKey] as number) * 100 : d[dataKey]) }))
     return (
       <ResponsiveContainer width="100%" height={70}>
@@ -3794,6 +3845,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
           <XAxis dataKey="month" tick={{fontSize:10}} axisLine={false} tickLine={false} />
           <YAxis hide domain={domain || ['auto','auto']} />
           <Tooltip formatter={(v:any) => [v === null ? '—' : (isPercent ? `${(v as number).toFixed(0)}%` : v), '']} labelFormatter={() => ''} />
+          {referenceValue !== undefined && <ReferenceLine y={referenceValue} stroke="#d97706" strokeDasharray="3 3" />}
           <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{r:3}} connectNulls />
         </LineChart>
       </ResponsiveContainer>
@@ -3833,6 +3885,21 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
         </div>
       </div>
 
+      <div className="flex items-center gap-3 flex-wrap bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+        <label className="text-sm text-gray-600">Client</label>
+        <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+          <option value="all">All Clients</option>
+          {clientOptions.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <label className="text-sm text-gray-600 ml-2">Team</label>
+        <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+          <option value="all">All Teams</option>
+          {teamsList.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        {filterActive && <button onClick={() => { setClientFilter('all'); setTeamFilter('all') }} className="text-xs text-blue-600 hover:underline">Clear filters</button>}
+        <span className="text-xs text-gray-400 ml-auto">{scopedEmployees.length} of {employees.filter(e=>e.active).length} active employees in scope</span>
+      </div>
+
       {loading || !stats ? (
         <div className="text-center py-12 text-gray-400">Loading...</div>
       ) : (
@@ -3845,7 +3912,23 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
             </div>
             <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].complianceRate !== null ? `${(stats[2].complianceRate*100).toFixed(0)}%` : '—'}</p>
             {deltaLabel(stats[2].complianceRate !== null ? stats[2].complianceRate*100 : null, stats[1].complianceRate !== null ? stats[1].complianceRate*100 : null, true, 'pts')}
-            <div className="mt-2"><TrendMini data={stats} dataKey="complianceRate" color="#1e3a8a" isPercent domain={[0,100]} /></div>
+            <div onClick={e => e.stopPropagation()} className="flex items-center gap-1.5 mt-1.5">
+              {editingTarget ? (
+                <>
+                  <input type="number" min={0} max={100} value={targetDraft} onChange={e => setTargetDraft(e.target.value)} className="w-14 border border-gray-300 rounded px-1.5 py-0.5 text-xs" autoFocus />
+                  <button onClick={saveTarget} className="text-xs text-blue-600 hover:underline">Save</button>
+                  <button onClick={() => { setEditingTarget(false); setTargetDraft(String(complianceTarget)) }} className="text-xs text-gray-400 hover:underline">Cancel</button>
+                </>
+              ) : (
+                <>
+                  <span className={`text-xs font-medium ${stats[2].complianceRate !== null && stats[2].complianceRate*100 >= complianceTarget ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    Target: {complianceTarget}%{stats[2].complianceRate !== null ? ` (${stats[2].complianceRate*100 >= complianceTarget ? '+' : ''}${(stats[2].complianceRate*100 - complianceTarget).toFixed(0)} pts)` : ''}
+                  </span>
+                  <button onClick={() => setEditingTarget(true)} className="text-xs text-gray-400 hover:text-blue-600 hover:underline">Edit</button>
+                </>
+              )}
+            </div>
+            <div className="mt-2"><TrendMini data={stats} dataKey="complianceRate" color="#1e3a8a" isPercent domain={[0,100]} referenceValue={complianceTarget} /></div>
             <p className="text-xs text-gray-400 mt-1">{stats[2].complianceAcked}/{stats[2].complianceRequired} items completed in {currentMonth}</p>
           </div>
 
