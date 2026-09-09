@@ -3277,6 +3277,14 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   const [savingNote, setSavingNote] = useState<string|null>(null)
   const [trendData, setTrendData] = useState<{week: string, avg: number|null, flagged: number}[]>([])
   const [compareWeeks, setCompareWeeks] = useState<string[]>([])
+  // Per-agent trend view: lets a manager pull up one specific person's own
+  // multi-week history (same shape as what an agent sees for themselves
+  // under "My Check-in") instead of only ever seeing the team aggregate
+  // or one week at a time. Cached per employee_id so re-toggling the same
+  // person doesn't re-fetch.
+  const [trendAgentId, setTrendAgentId] = useState<string|null>(null)
+  const [agentTrendCache, setAgentTrendCache] = useState<Record<string, {week: string, avg: number|null, retention: number|null}[]>>({})
+  const [loadingAgentTrend, setLoadingAgentTrend] = useState<string|null>(null)
 
   // Last 10 weeks (most recent first) for the "Week of" picker -- replaces
   // a free-text date input the person had to type/pick exactly, with a
@@ -3324,6 +3332,31 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
       }))
     })()
   }, [canManage, isTL, teamEmpIds, teamFilter])
+
+  // Fetches (and caches) one employee's own last-12-week pulse history,
+  // same "avg excludes retention, retention plotted separately" convention
+  // as the team-wide trend above, scoped to the manager's own recent-weeks
+  // window so gaps (no submission that week) render as gaps, not zeros.
+  async function loadAgentTrend(employeeId: string) {
+    if (agentTrendCache[employeeId]) return
+    setLoadingAgentTrend(employeeId)
+    const weeks = [...recentWeeks].reverse()
+    const { data } = await supabase.from('pulse_surveys').select('*').eq('employee_id', employeeId).gte('week_start', weeks[0]).lte('week_start', weeks[weeks.length-1])
+    const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
+    const rows = weeks.map(w => {
+      const row = (data||[]).find((r:any) => r.week_start === w)
+      if (!row) return { week: w, avg: null, retention: null }
+      const avg = ratedKeys.reduce((s,k) => s+(row[k]||0),0)/ratedKeys.length
+      return { week: w, avg: Math.round(avg*100)/100, retention: row.retention ?? null }
+    })
+    setAgentTrendCache(prev => ({ ...prev, [employeeId]: rows }))
+    setLoadingAgentTrend(null)
+  }
+  function toggleAgentTrend(employeeId: string) {
+    if (trendAgentId === employeeId) { setTrendAgentId(null); return }
+    setTrendAgentId(employeeId)
+    loadAgentTrend(employeeId)
+  }
 
   const scopedActiveEmployees = employees.filter(e => e.active && inScope(e.id))
   const notYetSubmitted = scopedActiveEmployees.filter(e => !subs.some(s => s.employee_id === e.id))
@@ -3520,8 +3553,36 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
                             <td className="px-4 py-2.5 text-gray-600">{avg !== null ? <>{avg.toFixed(1)} / 5 <span className="text-xs text-gray-400">· {overallScaleLabel(avg)}</span></> : '—'}</td>
                             <td className="px-4 py-2.5 text-gray-600">{s.retention ? `${s.retention} · ${RETENTION_SCALE_LABELS[s.retention]}` : '—'}</td>
                             <td className="px-4 py-2.5">{atRisk ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">🚩 At Risk</span> : <span className="text-gray-300 text-xs">—</span>}</td>
-                            <td className="px-4 py-2.5 text-right"><button onClick={() => setExpandedId(expandedId===s.id?null:s.id)} className="text-xs text-blue-600 hover:underline">{expandedId===s.id?'Hide':'View'} details</button></td>
+                            <td className="px-4 py-2.5 text-right whitespace-nowrap"><button onClick={() => toggleAgentTrend(s.employee_id)} className="text-xs text-blue-600 hover:underline mr-3">{trendAgentId===s.employee_id?'Hide':'📈 Trend'}</button><button onClick={() => setExpandedId(expandedId===s.id?null:s.id)} className="text-xs text-blue-600 hover:underline">{expandedId===s.id?'Hide':'View'} details</button></td>
                           </tr>
+                          {trendAgentId === s.employee_id && (
+                            <tr className="bg-gray-50">
+                              <td colSpan={5} className="px-4 py-4">
+                                {loadingAgentTrend === s.employee_id || !agentTrendCache[s.employee_id] ? (
+                                  <div className="text-center py-6 text-gray-400 text-sm">Loading trend...</div>
+                                ) : agentTrendCache[s.employee_id].every(t => t.avg === null) ? (
+                                  <div className="text-center py-6 text-gray-400 text-sm">No pulse check history for {s.employee_name} in the last 10 weeks.</div>
+                                ) : (
+                                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                                    <h4 className="text-sm font-semibold text-blue-900 mb-3">{s.employee_name} — Pulse Trend (Last 10 Weeks)</h4>
+                                    <ResponsiveContainer width="100%" height={180}>
+                                      <LineChart data={agentTrendCache[s.employee_id]}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                        <XAxis dataKey="week" tickFormatter={w => new Date(w).toLocaleDateString('en-PH',{month:'short',day:'numeric'})} tick={{fontSize:11}} />
+                                        <YAxis domain={[1,5]} tick={{fontSize:11}} />
+                                        <Tooltip labelFormatter={w => new Date(w as string).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'})} formatter={(v:any,n:any) => [v ?? '—', n==='avg' ? 'Overall Avg' : 'Retention Likelihood']} />
+                                        <Legend wrapperStyle={{fontSize:11}} formatter={(v:string) => v==='avg' ? 'Overall Avg' : 'Retention Likelihood'} />
+                                        <ReferenceLine y={2.5} stroke="#dc2626" strokeDasharray="4 4" label={{value:'At-risk',fontSize:10,fill:'#dc2626'}} />
+                                        <Line type="monotone" dataKey="avg" stroke="#1e3a8a" strokeWidth={2} dot={{r:3}} connectNulls />
+                                        <Line type="monotone" dataKey="retention" stroke="#059669" strokeWidth={2} dot={{r:3}} connectNulls strokeDasharray="4 2" />
+                                      </LineChart>
+                                    </ResponsiveContainer>
+                                    <p className="text-xs text-gray-400 mt-1">Gaps mean no check-in submitted that week. Dashed red line = at-risk threshold (avg ≤ 2.5).</p>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
                           {expandedId === s.id && (
                             <tr className="bg-gray-50">
                               <td colSpan={5} className="px-4 py-4">
