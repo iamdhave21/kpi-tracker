@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord, NteRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
-import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye } from 'lucide-react'
+import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe } from 'lucide-react'
 
 type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard'
 
@@ -2037,6 +2037,24 @@ export default function KPIApp() {
           <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><Menu className="w-4 h-4" /></button>
           <img src="/ab-logo.png" alt="AB BSS" className="h-8 w-8 object-contain" />
           <span className="font-semibold text-white tracking-wide hidden sm:block">AB BSS Operations Portal</span>
+          {/* Social links, adjacent to the logo. Tracking params (e.g. the
+              Facebook click-id query string) stripped from the website
+              URL -- we just want the clean canonical link, not whatever
+              campaign tag happened to be attached to the copy Dhave had. */}
+          <div className="hidden sm:flex items-center gap-1 ml-1 pl-3 border-l border-white/20">
+            <a href="https://ab-businesssupport.com/" target="_blank" rel="noopener noreferrer" title="AB BSS Website" className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition">
+              <Globe className="w-4 h-4" />
+            </a>
+            <a href="https://www.facebook.com/abbusinesssupportservices/" target="_blank" rel="noopener noreferrer" title="AB BSS on Facebook" className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94Z"/></svg>
+            </a>
+            <a href="https://www.instagram.com/abbussinesssupportservices/" target="_blank" rel="noopener noreferrer" title="AB BSS on Instagram" className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+            </a>
+            <a href="https://www.linkedin.com/company/ab-business-support-services/posts/" target="_blank" rel="noopener noreferrer" title="AB BSS on LinkedIn" className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.03-1.85-3.03-1.85 0-2.14 1.45-2.14 2.94v5.66H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29ZM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12ZM7.12 20.45H3.56V9h3.56v11.45Z"/></svg>
+            </a>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => { localStorage.removeItem('kpi_user'); setUser(null) }} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition font-medium">
