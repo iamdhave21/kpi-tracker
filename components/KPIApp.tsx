@@ -9801,7 +9801,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">✓ Acknowledged</span>
                             {log.agent_acknowledged_at && <p className="text-xs text-gray-400 mt-0.5">{new Date(log.agent_acknowledged_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</p>}
                           </div>
-                        ) : userRole === 'agent' ? (
+                        ) : log.employee_email?.toLowerCase() === currentUser?.toLowerCase() ? (
                           isPreviewing ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400" title="Preview mode is view-only">👁 Pending (view-only)</span>
                           ) : (
