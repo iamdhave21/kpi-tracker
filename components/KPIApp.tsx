@@ -3634,25 +3634,69 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 // same per-employee getComplianceBreakdown logic used everywhere else
 // (KPI Entry auto-fill, HRIS compliance, Team Compliance), just summed
 // across every active employee with an email, rather than introducing a
-// second, potentially-diverging aggregate formula. Fine to run as
-// Promise.all across the whole roster since this only loads on an
-// Admin/Super Admin dashboard someone opens occasionally, not a hot path.
-async function getCompanyComplianceSummary(employees: Employee[], monthLabel: string): Promise<{ rate: number | null, totalRequired: number, totalAcked: number, employeeCount: number }> {
+// second, potentially-diverging aggregate formula. Also returns the
+// per-category totals (coaching/announcement/task/pulse) so the Ops
+// Dashboard drill-down can show what's actually driving the rate, not
+// just the single percentage. Fine to run as Promise.all across the
+// whole roster since this only loads on an Admin/Super Admin dashboard
+// someone opens occasionally, not a hot path.
+async function getCompanyComplianceSummary(employees: Employee[], monthLabel: string): Promise<{
+  rate: number | null, totalRequired: number, totalAcked: number, employeeCount: number,
+  coachTotal: number, coachAcked: number, annTotal: number, annAcked: number,
+  taskTotal: number, taskDone: number, pulseTotal: number, pulseSubmitted: number,
+}> {
+  const empty = { rate: null, totalRequired: 0, totalAcked: 0, employeeCount: 0, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, pulseTotal: 0, pulseSubmitted: 0 }
   const active = employees.filter(e => e.active && e.email)
-  if (active.length === 0) return { rate: null, totalRequired: 0, totalAcked: 0, employeeCount: 0 }
+  if (active.length === 0) return empty
   const results = await Promise.all(active.map(e => getComplianceBreakdown(e.email, monthLabel)))
-  const totalRequired = results.reduce((s, r) => s + r.totalRequired, 0)
-  const totalAcked = results.reduce((s, r) => s + r.totalAcked, 0)
-  return { rate: totalRequired > 0 ? totalAcked / totalRequired : null, totalRequired, totalAcked, employeeCount: active.length }
+  const sum = (k: keyof ComplianceBreakdown) => results.reduce((s, r) => s + (typeof r[k] === 'number' ? (r[k] as number) : 0), 0)
+  const totalRequired = sum('totalRequired'), totalAcked = sum('totalAcked')
+  return {
+    rate: totalRequired > 0 ? totalAcked / totalRequired : null, totalRequired, totalAcked, employeeCount: active.length,
+    coachTotal: sum('coachTotal'), coachAcked: sum('coachAcked'), annTotal: sum('annTotal'), annAcked: sum('annAcked'),
+    taskTotal: sum('taskTotal'), taskDone: sum('taskDone'), pulseTotal: sum('pulseTotal'), pulseSubmitted: sum('pulseSubmitted'),
+  }
+}
+
+// Per-month detail for the Pulse Check drill-down: category sub-averages
+// (so a manager can see e.g. "Work-Life Balance is the weak spot," not
+// just one blended number) plus the actual names of anyone flagged
+// at-risk that month, since that's the genuinely actionable part.
+async function getPulseMonthDetail(monthLabel: string): Promise<{ categoryAverages: {key: string, label: string, avg: number}[], flagged: {name: string, avg: number|null, retention: number}[] }> {
+  const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
+  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
+  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  const { data } = await supabase.from('pulse_surveys').select('*').gte('week_start', start).lt('week_start', end)
+  const rows = data || []
+  const categoryAverages = PULSE_CATEGORIES.map(cat => {
+    const vals = rows.flatMap((r: any) => cat.questions.map(q => r[q.key]).filter((v: any) => typeof v === 'number'))
+    return { key: cat.key, label: cat.label, avg: vals.length ? Math.round((vals.reduce((a: number,b: number) => a+b, 0) / vals.length) * 100) / 100 : 0 }
+  })
+  const flagged = rows.filter((r: any) => pulseIsAtRisk(r)).map((r: any) => ({ name: r.employee_name, avg: pulseAverage(r), retention: r.retention }))
+  return { categoryAverages, flagged }
+}
+
+// Per-month detail for the Observations drill-down: who has the most
+// observations logged against them that month -- the count on its own
+// doesn't say much, but "who" makes it actually useful to a manager
+// scanning for a pattern.
+async function getObsMonthDetail(monthLabel: string): Promise<{ byEmployee: {name: string, count: number}[] }> {
+  const { data } = await supabase.from('observations').select('employee_name').eq('month_label', monthLabel)
+  const counts: Record<string, number> = {}
+  ;(data || []).forEach((r: any) => { counts[r.employee_name] = (counts[r.employee_name] || 0) + 1 })
+  const byEmployee = Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8)
+  return { byEmployee }
 }
 
 // -- Ops Dashboard -------------------------------------------------------
-// Month-over-month view for Admin/Super Admin: pick two months and see,
-// side by side, how Coaching Compliance, the Weekly Pulse Check pulse,
-// and Observation volume moved between them -- rather than having to
-// piece this together across three separate screens (Team Compliance,
-// Pulse Check's manage tab, Observations) one month at a time.
+// Fixed 3-month rolling window (current month + the 2 before it) for
+// Admin/Super Admin: Coaching Compliance, Weekly Pulse Check, and
+// Observation volume, each as a small trend across the 3 months with a
+// click-to-expand drill-down -- rather than having to piece this
+// together across three separate screens (Team Compliance, Pulse
+// Check's manage tab, Observations) one month at a time.
 type OpsMonthStats = {
+  month: string
   complianceRate: number | null
   complianceRequired: number
   complianceAcked: number
@@ -3662,18 +3706,21 @@ type OpsMonthStats = {
   obsCount: number
 }
 function OpsDashboard({ employees }: { employees: Employee[] }) {
-  // Last 12 real calendar months (most recent first) in the same
-  // "Month Year" label format used by kpi_records/observations, so the
-  // pickers only ever offer months that actually line up with existing data.
-  const monthOptions = Array.from({length: 12}, (_, i) => {
-    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i)
+  // Current month + the 2 before it, oldest first, in the same
+  // "Month Year" label format used by kpi_records/observations.
+  const rollingMonths = Array.from({length: 3}, (_, i) => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (2 - i))
     return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
   })
-  const [monthA, setMonthA] = useState(monthOptions[0])
-  const [monthB, setMonthB] = useState(monthOptions[1])
-  const [statsA, setStatsA] = useState<OpsMonthStats | null>(null)
-  const [statsB, setStatsB] = useState<OpsMonthStats | null>(null)
+  const currentMonth = rollingMonths[rollingMonths.length - 1]
+  const [stats, setStats] = useState<OpsMonthStats[] | null>(null)
   const [loading, setLoading] = useState(true)
+  const [expandedCard, setExpandedCard] = useState<'compliance'|'pulse'|'obs'|null>(null)
+  const [drillMonth, setDrillMonth] = useState(currentMonth)
+  const [complianceDetail, setComplianceDetail] = useState<Awaited<ReturnType<typeof getCompanyComplianceSummary>> | null>(null)
+  const [pulseDetail, setPulseDetail] = useState<Awaited<ReturnType<typeof getPulseMonthDetail>> | null>(null)
+  const [obsDetail, setObsDetail] = useState<Awaited<ReturnType<typeof getObsMonthDetail>> | null>(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
 
   async function loadMonthStats(monthLabel: string): Promise<OpsMonthStats> {
     const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
@@ -3689,6 +3736,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     const pulseAvg = pulseRows.length ? pulseRows.reduce((sum: number, r: any) => sum + ratedKeys.reduce((s, k) => s + (r[k] || 0), 0) / ratedKeys.length, 0) / pulseRows.length : null
     const pulseFlagged = pulseRows.filter((r: any) => pulseIsAtRisk(r)).length
     return {
+      month: monthLabel,
       complianceRate: compliance.rate, complianceRequired: compliance.totalRequired, complianceAcked: compliance.totalAcked,
       pulseAvg: pulseAvg !== null ? Math.round(pulseAvg * 100) / 100 : null, pulseFlagged, pulseSubmitted: pulseRows.length,
       obsCount: obsRes.count || 0,
@@ -3699,45 +3747,80 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     if (employees.length === 0) return
     let cancelled = false
     setLoading(true)
-    Promise.all([loadMonthStats(monthA), loadMonthStats(monthB)]).then(([a, b]) => {
+    Promise.all(rollingMonths.map(loadMonthStats)).then(results => {
       if (cancelled) return
-      setStatsA(a); setStatsB(b); setLoading(false)
+      setStats(results); setLoading(false)
     })
     return () => { cancelled = true }
-  }, [monthA, monthB, employees.length])
+  }, [employees.length, currentMonth])
 
-  // higherIsBetter=true colors an increase green (e.g. compliance, pulse
-  // avg); false colors an increase red (e.g. flagged count) -- observation
-  // count intentionally passes neither since more/fewer logged isn't
-  // inherently good or bad, just informational.
-  function Delta({ a, b, higherIsBetter, suffix = '' }: { a: number | null, b: number | null, higherIsBetter?: boolean, suffix?: string }) {
-    if (a === null || b === null) return <span className="text-gray-300 text-xs">—</span>
-    const diff = a - b
-    if (Math.abs(diff) < 0.005) return <span className="text-gray-400 text-xs">No change</span>
+  // Detail is fetched lazily, only for whichever card is expanded and
+  // whichever of the 3 months is currently selected inside it -- no need
+  // to pull category breakdowns / flagged lists / per-employee counts
+  // for months nobody's actually looking at.
+  useEffect(() => {
+    if (!expandedCard) return
+    let cancelled = false
+    setLoadingDetail(true)
+    ;(async () => {
+      if (expandedCard === 'compliance') {
+        const d = await getCompanyComplianceSummary(employees, drillMonth)
+        if (!cancelled) setComplianceDetail(d)
+      } else if (expandedCard === 'pulse') {
+        const d = await getPulseMonthDetail(drillMonth)
+        if (!cancelled) setPulseDetail(d)
+      } else if (expandedCard === 'obs') {
+        const d = await getObsMonthDetail(drillMonth)
+        if (!cancelled) setObsDetail(d)
+      }
+      if (!cancelled) setLoadingDetail(false)
+    })()
+    return () => { cancelled = true }
+  }, [expandedCard, drillMonth, employees.length])
+
+  function toggleCard(card: 'compliance'|'pulse'|'obs') {
+    if (expandedCard === card) { setExpandedCard(null); return }
+    setExpandedCard(card)
+    setDrillMonth(currentMonth)
+  }
+
+  const shortMonth = (m: string) => new Date(`${m} 1`).toLocaleDateString('en-PH', {month:'short'})
+
+  function TrendMini({ data, dataKey, color, isPercent, domain }: { data: OpsMonthStats[], dataKey: keyof OpsMonthStats, color: string, isPercent?: boolean, domain?: [number,number] }) {
+    const chartData = data.map(d => ({ month: shortMonth(d.month), value: d[dataKey] === null ? null : (isPercent ? (d[dataKey] as number) * 100 : d[dataKey]) }))
+    return (
+      <ResponsiveContainer width="100%" height={70}>
+        <LineChart data={chartData}>
+          <XAxis dataKey="month" tick={{fontSize:10}} axisLine={false} tickLine={false} />
+          <YAxis hide domain={domain || ['auto','auto']} />
+          <Tooltip formatter={(v:any) => [v === null ? '—' : (isPercent ? `${(v as number).toFixed(0)}%` : v), '']} labelFormatter={() => ''} />
+          <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{r:3}} connectNulls />
+        </LineChart>
+      </ResponsiveContainer>
+    )
+  }
+  function TrendMiniBars({ data, dataKey, color }: { data: OpsMonthStats[], dataKey: keyof OpsMonthStats, color: string }) {
+    const chartData = data.map(d => ({ month: shortMonth(d.month), value: d[dataKey] }))
+    return (
+      <ResponsiveContainer width="100%" height={70}>
+        <BarChart data={chartData}>
+          <XAxis dataKey="month" tick={{fontSize:10}} axisLine={false} tickLine={false} />
+          <YAxis hide />
+          <Tooltip />
+          <Bar dataKey="value" fill={color} radius={[3,3,0,0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    )
+  }
+
+  function deltaLabel(latest: number | null, prev: number | null, higherIsBetter: boolean | undefined, suffix = '') {
+    if (latest === null || prev === null) return <span className="text-gray-300 text-xs">—</span>
+    const diff = latest - prev
+    if (Math.abs(diff) < 0.005) return <span className="text-gray-400 text-xs">No change vs {shortMonth(rollingMonths[1])}</span>
     const isUp = diff > 0
     const good = higherIsBetter === undefined ? null : (higherIsBetter ? isUp : !isUp)
     const color = good === null ? 'text-gray-500' : good ? 'text-emerald-600' : 'text-red-600'
-    return <span className={`text-xs font-medium ${color}`}>{isUp ? '▲' : '▼'} {Math.abs(diff).toFixed(2)}{suffix} vs {monthB}</span>
-  }
-
-  function MetricCard({ title, valueA, valueB, delta, sub }: { title: string, valueA: React.ReactNode, valueB: React.ReactNode, delta: React.ReactNode, sub?: string }) {
-    return (
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{title}</p>
-        <div className="flex items-end gap-4">
-          <div>
-            <p className="text-2xl font-bold text-blue-900">{valueA}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{monthA}</p>
-          </div>
-          <div className="pb-1">
-            <p className="text-sm text-gray-400">{valueB}</p>
-            <p className="text-xs text-gray-300">{monthB}</p>
-          </div>
-        </div>
-        <div className="mt-2">{delta}</div>
-        {sub && <p className="text-xs text-gray-400 mt-2">{sub}</p>}
-      </div>
-    )
+    return <span className={`text-xs font-medium ${color}`}>{isUp ? '▲' : '▼'} {Math.abs(diff).toFixed(diff < 1 ? 2 : 0)}{suffix} vs {shortMonth(rollingMonths[1])}</span>
   }
 
   return (
@@ -3746,52 +3829,134 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
         <BarChart2 className="w-6 h-6 text-blue-800" />
         <div>
           <h2 className="text-xl font-bold text-blue-900">Ops Dashboard</h2>
-          <p className="text-sm text-gray-500">Month-over-month view of Coaching Compliance, Weekly Pulse Check, and Observations.</p>
+          <p className="text-sm text-gray-500">Rolling 3-month view of Coaching Compliance, Weekly Pulse Check, and Observations. Click a card to drill in.</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
-        <label className="text-sm text-gray-600">Compare</label>
-        <select value={monthA} onChange={e => setMonthA(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-          {monthOptions.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <label className="text-sm text-gray-600">against</label>
-        <select value={monthB} onChange={e => setMonthB(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
-          {monthOptions.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        {monthA === monthB && <span className="text-xs text-amber-600">Pick two different months to see a real comparison.</span>}
-      </div>
-
-      {loading || !statsA || !statsB ? (
+      {loading || !stats ? (
         <div className="text-center py-12 text-gray-400">Loading...</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <MetricCard
-            title="Coaching Compliance"
-            valueA={statsA.complianceRate !== null ? `${(statsA.complianceRate*100).toFixed(0)}%` : '—'}
-            valueB={statsB.complianceRate !== null ? `${(statsB.complianceRate*100).toFixed(0)}%` : '—'}
-            delta={<Delta a={statsA.complianceRate !== null ? statsA.complianceRate*100 : null} b={statsB.complianceRate !== null ? statsB.complianceRate*100 : null} higherIsBetter suffix="pts" />}
-            sub={`${statsA.complianceAcked}/${statsA.complianceRequired} items completed company-wide in ${monthA}`}
-          />
-          <MetricCard
-            title="Weekly Pulse Check — Avg Score"
-            valueA={statsA.pulseAvg !== null ? `${statsA.pulseAvg.toFixed(2)}/5` : '—'}
-            valueB={statsB.pulseAvg !== null ? `${statsB.pulseAvg.toFixed(2)}/5` : '—'}
-            delta={<Delta a={statsA.pulseAvg} b={statsB.pulseAvg} higherIsBetter />}
-            sub={`${statsA.pulseSubmitted} submissions, ${statsA.pulseFlagged} flagged at-risk in ${monthA}`}
-          />
-          <MetricCard
-            title="Observations Logged"
-            valueA={statsA.obsCount}
-            valueB={statsB.obsCount}
-            delta={<Delta a={statsA.obsCount} b={statsB.obsCount} />}
-            sub="Informational only -- more or fewer isn't inherently good or bad."
-          />
+          {/* Coaching Compliance */}
+          <div onClick={() => toggleCard('compliance')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='compliance' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Coaching Compliance</p>
+              <span className="text-gray-400 text-xs">{expandedCard==='compliance' ? '▲' : '▼'}</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].complianceRate !== null ? `${(stats[2].complianceRate*100).toFixed(0)}%` : '—'}</p>
+            {deltaLabel(stats[2].complianceRate !== null ? stats[2].complianceRate*100 : null, stats[1].complianceRate !== null ? stats[1].complianceRate*100 : null, true, 'pts')}
+            <div className="mt-2"><TrendMini data={stats} dataKey="complianceRate" color="#1e3a8a" isPercent domain={[0,100]} /></div>
+            <p className="text-xs text-gray-400 mt-1">{stats[2].complianceAcked}/{stats[2].complianceRequired} items completed in {currentMonth}</p>
+          </div>
+
+          {/* Weekly Pulse Check */}
+          <div onClick={() => toggleCard('pulse')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='pulse' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Weekly Pulse Check — Avg Score</p>
+              <span className="text-gray-400 text-xs">{expandedCard==='pulse' ? '▲' : '▼'}</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].pulseAvg !== null ? `${stats[2].pulseAvg.toFixed(2)}/5` : '—'}</p>
+            {deltaLabel(stats[2].pulseAvg, stats[1].pulseAvg, true)}
+            <div className="mt-2"><TrendMini data={stats} dataKey="pulseAvg" color="#059669" domain={[1,5]} /></div>
+            <p className="text-xs text-gray-400 mt-1">{stats[2].pulseSubmitted} submissions, {stats[2].pulseFlagged} flagged at-risk in {currentMonth}</p>
+          </div>
+
+          {/* Observations */}
+          <div onClick={() => toggleCard('obs')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='obs' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Observations Logged</p>
+              <span className="text-gray-400 text-xs">{expandedCard==='obs' ? '▲' : '▼'}</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].obsCount}</p>
+            {deltaLabel(stats[2].obsCount, stats[1].obsCount, undefined)}
+            <div className="mt-2"><TrendMiniBars data={stats} dataKey="obsCount" color="#7c3aed" /></div>
+            <p className="text-xs text-gray-400 mt-1">Informational only -- more or fewer isn't inherently good or bad.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Drill-down panel */}
+      {expandedCard && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+            <h3 className="text-sm font-semibold text-blue-900">
+              {expandedCard==='compliance' ? 'Coaching Compliance Breakdown' : expandedCard==='pulse' ? 'Pulse Check Detail' : 'Observations Detail'}
+            </h3>
+            <div className="flex gap-1.5">
+              {rollingMonths.map(m => (
+                <button key={m} onClick={() => setDrillMonth(m)} className={`text-xs px-3 py-1.5 rounded-lg border transition ${drillMonth===m ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>{m}</button>
+              ))}
+            </div>
+          </div>
+
+          {loadingDetail ? <div className="text-center py-8 text-gray-400 text-sm">Loading...</div> : (
+            <>
+              {expandedCard === 'compliance' && complianceDetail && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    ['Coaching Acknowledgments', complianceDetail.coachAcked, complianceDetail.coachTotal],
+                    ['Announcement Acknowledgments', complianceDetail.annAcked, complianceDetail.annTotal],
+                    ['Task Completion', complianceDetail.taskDone, complianceDetail.taskTotal],
+                    ['Pulse Check Submissions', complianceDetail.pulseSubmitted, complianceDetail.pulseTotal],
+                  ].map(([label, done, total]: any) => (
+                    <div key={label} className="bg-gray-50 border border-gray-100 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">{label}</p>
+                      <p className="text-lg font-semibold text-blue-900">{done}/{total}</p>
+                      <p className="text-xs text-gray-400">{total > 0 ? `${((done/total)*100).toFixed(0)}%` : '—'}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {expandedCard === 'pulse' && pulseDetail && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Category Averages</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {pulseDetail.categoryAverages.map(c => (
+                        <div key={c.key} className="bg-gray-50 border border-gray-100 rounded-lg p-3">
+                          <p className="text-xs text-gray-500 mb-1">{c.label}</p>
+                          <p className="text-lg font-semibold text-blue-900">{c.avg.toFixed(2)}/5</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Flagged At-Risk ({pulseDetail.flagged.length})</p>
+                    {pulseDetail.flagged.length === 0 ? <p className="text-sm text-gray-400">Nobody flagged this month.</p> : (
+                      <div className="flex flex-wrap gap-2">
+                        {pulseDetail.flagged.map((f,i) => (
+                          <span key={i} className="text-xs bg-red-50 border border-red-200 text-red-700 px-2.5 py-1 rounded-full">{f.name} · Avg {f.avg?.toFixed(1) ?? '—'} · Retention {f.retention}/5</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {expandedCard === 'obs' && obsDetail && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">Most Observations Logged Against</p>
+                  {obsDetail.byEmployee.length === 0 ? <p className="text-sm text-gray-400">No observations logged in {drillMonth}.</p> : (
+                    <div className="space-y-1.5">
+                      {obsDetail.byEmployee.map(e => (
+                        <div key={e.name} className="flex items-center justify-between text-sm bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                          <span className="text-gray-700">{e.name}</span>
+                          <span className="font-medium text-blue-900">{e.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
   )
 }
+
 
 
 function KPIEntry({ employees, records, onSaved, showToast, currentUser, userRole }:
