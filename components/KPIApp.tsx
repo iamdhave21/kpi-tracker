@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord, NteRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1616,9 +1616,10 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* OPERATIONS */}
-      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp'].includes(view)} />
+      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp','ops-dashboard'].includes(view)} />
       {!collapsed.ops && (
         <div className="px-2 pb-1 space-y-0.5">
+          {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="ops-dashboard" label="Ops Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>}
           <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
           <NavItem id="tasks" label="Tasks" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingTaskCount} dotColor="bg-orange-400"/>
           <NavItem id="bcp" label="BCP" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
@@ -2185,6 +2186,8 @@ export default function KPIApp() {
             {view === 'hris-invoice' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'opex' && effectiveRole === 'super_admin' && <OpexPanel currentUser={effectiveUser} showToast={showToast} />}
             {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'ops-dashboard' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <OpsDashboard employees={employees} />}
+            {view === 'ops-dashboard' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
             {/* Agents CAN reach this view -- see note inside OperatingCadence
                 about restricting them to the Team Huddle tab only. */}
@@ -3627,7 +3630,170 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   )
 }
 
-// -- KPI Entry ---------------------------------------------------------------
+// Company-wide compliance summary for a given month -- reuses the exact
+// same per-employee getComplianceBreakdown logic used everywhere else
+// (KPI Entry auto-fill, HRIS compliance, Team Compliance), just summed
+// across every active employee with an email, rather than introducing a
+// second, potentially-diverging aggregate formula. Fine to run as
+// Promise.all across the whole roster since this only loads on an
+// Admin/Super Admin dashboard someone opens occasionally, not a hot path.
+async function getCompanyComplianceSummary(employees: Employee[], monthLabel: string): Promise<{ rate: number | null, totalRequired: number, totalAcked: number, employeeCount: number }> {
+  const active = employees.filter(e => e.active && e.email)
+  if (active.length === 0) return { rate: null, totalRequired: 0, totalAcked: 0, employeeCount: 0 }
+  const results = await Promise.all(active.map(e => getComplianceBreakdown(e.email, monthLabel)))
+  const totalRequired = results.reduce((s, r) => s + r.totalRequired, 0)
+  const totalAcked = results.reduce((s, r) => s + r.totalAcked, 0)
+  return { rate: totalRequired > 0 ? totalAcked / totalRequired : null, totalRequired, totalAcked, employeeCount: active.length }
+}
+
+// -- Ops Dashboard -------------------------------------------------------
+// Month-over-month view for Admin/Super Admin: pick two months and see,
+// side by side, how Coaching Compliance, the Weekly Pulse Check pulse,
+// and Observation volume moved between them -- rather than having to
+// piece this together across three separate screens (Team Compliance,
+// Pulse Check's manage tab, Observations) one month at a time.
+type OpsMonthStats = {
+  complianceRate: number | null
+  complianceRequired: number
+  complianceAcked: number
+  pulseAvg: number | null
+  pulseFlagged: number
+  pulseSubmitted: number
+  obsCount: number
+}
+function OpsDashboard({ employees }: { employees: Employee[] }) {
+  // Last 12 real calendar months (most recent first) in the same
+  // "Month Year" label format used by kpi_records/observations, so the
+  // pickers only ever offer months that actually line up with existing data.
+  const monthOptions = Array.from({length: 12}, (_, i) => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i)
+    return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+  })
+  const [monthA, setMonthA] = useState(monthOptions[0])
+  const [monthB, setMonthB] = useState(monthOptions[1])
+  const [statsA, setStatsA] = useState<OpsMonthStats | null>(null)
+  const [statsB, setStatsB] = useState<OpsMonthStats | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  async function loadMonthStats(monthLabel: string): Promise<OpsMonthStats> {
+    const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
+    const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
+    const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+    const [compliance, pulseRes, obsRes] = await Promise.all([
+      getCompanyComplianceSummary(employees, monthLabel),
+      supabase.from('pulse_surveys').select('*').gte('week_start', start).lt('week_start', end),
+      supabase.from('observations').select('id', { count: 'exact', head: true }).eq('month_label', monthLabel),
+    ])
+    const pulseRows = pulseRes.data || []
+    const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
+    const pulseAvg = pulseRows.length ? pulseRows.reduce((sum: number, r: any) => sum + ratedKeys.reduce((s, k) => s + (r[k] || 0), 0) / ratedKeys.length, 0) / pulseRows.length : null
+    const pulseFlagged = pulseRows.filter((r: any) => pulseIsAtRisk(r)).length
+    return {
+      complianceRate: compliance.rate, complianceRequired: compliance.totalRequired, complianceAcked: compliance.totalAcked,
+      pulseAvg: pulseAvg !== null ? Math.round(pulseAvg * 100) / 100 : null, pulseFlagged, pulseSubmitted: pulseRows.length,
+      obsCount: obsRes.count || 0,
+    }
+  }
+
+  useEffect(() => {
+    if (employees.length === 0) return
+    let cancelled = false
+    setLoading(true)
+    Promise.all([loadMonthStats(monthA), loadMonthStats(monthB)]).then(([a, b]) => {
+      if (cancelled) return
+      setStatsA(a); setStatsB(b); setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [monthA, monthB, employees.length])
+
+  // higherIsBetter=true colors an increase green (e.g. compliance, pulse
+  // avg); false colors an increase red (e.g. flagged count) -- observation
+  // count intentionally passes neither since more/fewer logged isn't
+  // inherently good or bad, just informational.
+  function Delta({ a, b, higherIsBetter, suffix = '' }: { a: number | null, b: number | null, higherIsBetter?: boolean, suffix?: string }) {
+    if (a === null || b === null) return <span className="text-gray-300 text-xs">—</span>
+    const diff = a - b
+    if (Math.abs(diff) < 0.005) return <span className="text-gray-400 text-xs">No change</span>
+    const isUp = diff > 0
+    const good = higherIsBetter === undefined ? null : (higherIsBetter ? isUp : !isUp)
+    const color = good === null ? 'text-gray-500' : good ? 'text-emerald-600' : 'text-red-600'
+    return <span className={`text-xs font-medium ${color}`}>{isUp ? '▲' : '▼'} {Math.abs(diff).toFixed(2)}{suffix} vs {monthB}</span>
+  }
+
+  function MetricCard({ title, valueA, valueB, delta, sub }: { title: string, valueA: React.ReactNode, valueB: React.ReactNode, delta: React.ReactNode, sub?: string }) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{title}</p>
+        <div className="flex items-end gap-4">
+          <div>
+            <p className="text-2xl font-bold text-blue-900">{valueA}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{monthA}</p>
+          </div>
+          <div className="pb-1">
+            <p className="text-sm text-gray-400">{valueB}</p>
+            <p className="text-xs text-gray-300">{monthB}</p>
+          </div>
+        </div>
+        <div className="mt-2">{delta}</div>
+        {sub && <p className="text-xs text-gray-400 mt-2">{sub}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-[1600px] mx-auto space-y-6">
+      <div className="flex items-center gap-3">
+        <BarChart2 className="w-6 h-6 text-blue-800" />
+        <div>
+          <h2 className="text-xl font-bold text-blue-900">Ops Dashboard</h2>
+          <p className="text-sm text-gray-500">Month-over-month view of Coaching Compliance, Weekly Pulse Check, and Observations.</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+        <label className="text-sm text-gray-600">Compare</label>
+        <select value={monthA} onChange={e => setMonthA(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+          {monthOptions.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <label className="text-sm text-gray-600">against</label>
+        <select value={monthB} onChange={e => setMonthB(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
+          {monthOptions.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        {monthA === monthB && <span className="text-xs text-amber-600">Pick two different months to see a real comparison.</span>}
+      </div>
+
+      {loading || !statsA || !statsB ? (
+        <div className="text-center py-12 text-gray-400">Loading...</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <MetricCard
+            title="Coaching Compliance"
+            valueA={statsA.complianceRate !== null ? `${(statsA.complianceRate*100).toFixed(0)}%` : '—'}
+            valueB={statsB.complianceRate !== null ? `${(statsB.complianceRate*100).toFixed(0)}%` : '—'}
+            delta={<Delta a={statsA.complianceRate !== null ? statsA.complianceRate*100 : null} b={statsB.complianceRate !== null ? statsB.complianceRate*100 : null} higherIsBetter suffix="pts" />}
+            sub={`${statsA.complianceAcked}/${statsA.complianceRequired} items completed company-wide in ${monthA}`}
+          />
+          <MetricCard
+            title="Weekly Pulse Check — Avg Score"
+            valueA={statsA.pulseAvg !== null ? `${statsA.pulseAvg.toFixed(2)}/5` : '—'}
+            valueB={statsB.pulseAvg !== null ? `${statsB.pulseAvg.toFixed(2)}/5` : '—'}
+            delta={<Delta a={statsA.pulseAvg} b={statsB.pulseAvg} higherIsBetter />}
+            sub={`${statsA.pulseSubmitted} submissions, ${statsA.pulseFlagged} flagged at-risk in ${monthA}`}
+          />
+          <MetricCard
+            title="Observations Logged"
+            valueA={statsA.obsCount}
+            valueB={statsB.obsCount}
+            delta={<Delta a={statsA.obsCount} b={statsB.obsCount} />}
+            sub="Informational only -- more or fewer isn't inherently good or bad."
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function KPIEntry({ employees, records, onSaved, showToast, currentUser, userRole }:
   { employees: Employee[], records: KpiRecord[], onSaved: () => void, showToast: (m: string, t?: 'success'|'error') => void, currentUser: string, userRole: string }) {
   const [empId, setEmpId] = useState('')
