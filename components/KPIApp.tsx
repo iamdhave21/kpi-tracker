@@ -3687,27 +3687,30 @@ async function getCoachingMonthStats(scopedEmployees: Employee[], monthLabel: st
   rate: number | null, totalScoped: number, compliantCount: number,
   notCoached: {name: string, email: string}[],
   pendingAck: {name: string, email: string, pendingCount: number}[],
+  coached: {name: string, email: string, sessions: {date: string, type: string, coached_by: string, discussion: string, action_items: string, agent_acknowledged: boolean, requires_acknowledgment: boolean, status: string}[]}[],
 }> {
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
   const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
-  const { data } = await supabase.from('coaching_logs').select('employee_email, agent_acknowledged, requires_acknowledgment, status').gte('date', start).lt('date', end)
+  const { data } = await supabase.from('coaching_logs').select('employee_email, agent_acknowledged, requires_acknowledgment, status, date, type, coached_by, discussion, action_items').gte('date', start).lt('date', end).order('date', { ascending: false })
   const rows = data || []
   const byEmail: Record<string, any[]> = {}
   rows.forEach((r: any) => { const k = (r.employee_email||'').toLowerCase(); (byEmail[k] ||= []).push(r) })
   const active = scopedEmployees.filter(e => e.active && e.email)
   const notCoached: {name: string, email: string}[] = []
   const pendingAck: {name: string, email: string, pendingCount: number}[] = []
+  const coached: {name: string, email: string, sessions: any[]}[] = []
   active.forEach(e => {
     const sessions = byEmail[(e.email||'').toLowerCase()] || []
     if (sessions.length === 0) { notCoached.push({ name: e.name, email: e.email! }); return }
+    coached.push({ name: e.name, email: e.email!, sessions })
     const required = sessions.filter(s => s.requires_acknowledgment && s.status === 'Final')
     const pending = required.filter(s => !s.agent_acknowledged)
     if (pending.length > 0) pendingAck.push({ name: e.name, email: e.email!, pendingCount: pending.length })
   })
   const totalScoped = active.length
   const compliantCount = totalScoped - notCoached.length - pendingAck.length
-  return { rate: totalScoped > 0 ? compliantCount / totalScoped : null, totalScoped, compliantCount, notCoached, pendingAck }
+  return { rate: totalScoped > 0 ? compliantCount / totalScoped : null, totalScoped, compliantCount, notCoached, pendingAck, coached }
 }
 
 // Per-month drill-down for Announcement Acknowledgement: which scoped
@@ -3876,7 +3879,37 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
   const [pulseDetail, setPulseDetail] = useState<Awaited<ReturnType<typeof getPulseMonthDetail>> | null>(null)
   const [obsDetail, setObsDetail] = useState<Awaited<ReturnType<typeof getObsMonthDetail>> | null>(null)
   const [perfDetail, setPerfDetail] = useState<Awaited<ReturnType<typeof getPerfMonthDetail>> | null>(null)
+  const [coachedPreviewEmail, setCoachedPreviewEmail] = useState<string | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+
+  // Card order -- personal display preference, drag-to-reorder same
+  // convention as the sidebar's Favorites reordering. Persisted in
+  // localStorage (per-browser) rather than a new app_users column,
+  // since this doesn't need to follow someone across devices the way
+  // Favorites does -- happy to move it to a real per-account column
+  // later if that turns out to matter.
+  const DEFAULT_CARD_ORDER = ['coaching','ann','task','pulse','obs','perf']
+  const [cardOrder, setCardOrder] = useState<string[]>(DEFAULT_CARD_ORDER)
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('ops_dashboard_card_order') || 'null')
+      if (Array.isArray(saved) && DEFAULT_CARD_ORDER.every(id => saved.includes(id)) && saved.length === DEFAULT_CARD_ORDER.length) {
+        setCardOrder(saved)
+      }
+    } catch {}
+  }, [])
+  const [dragCardId, setDragCardId] = useState<string | null>(null)
+  function handleCardDrop(targetId: string) {
+    if (!dragCardId || dragCardId === targetId) { setDragCardId(null); return }
+    const next = [...cardOrder]
+    const fromIdx = next.indexOf(dragCardId)
+    const toIdx = next.indexOf(targetId)
+    next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, dragCardId)
+    setCardOrder(next)
+    localStorage.setItem('ops_dashboard_card_order', JSON.stringify(next))
+    setDragCardId(null)
+  }
 
   // Coaching Compliance target -- a real, durable setting (stored in
   // app_settings, same pattern as the announcement background image)
@@ -3977,6 +4010,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     if (expandedCard === card) { setExpandedCard(null); return }
     setExpandedCard(card)
     setDrillMonth(currentMonth)
+    setCoachedPreviewEmail(null)
   }
 
   const shortMonth = (m: string) => new Date(`${m} 1`).toLocaleDateString('en-PH', {month:'short'})
@@ -4065,107 +4099,130 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
           {teamsList.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
         {filterActive && <button onClick={() => { setClientFilter('all'); setTeamFilter('all') }} className="text-xs text-blue-600 hover:underline">Clear filters</button>}
+        <span className="text-xs text-gray-400 ml-auto flex items-center gap-2">
+          Drag a card to reorder
+          {JSON.stringify(cardOrder) !== JSON.stringify(DEFAULT_CARD_ORDER) && (
+            <button onClick={() => { setCardOrder(DEFAULT_CARD_ORDER); localStorage.removeItem('ops_dashboard_card_order') }} className="text-blue-600 hover:underline">Reset order</button>
+          )}
+        </span>
       </div>
 
       {loading || !stats ? (
         <div className="text-center py-12 text-gray-400">Loading...</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Coaching Compliance */}
-          <div onClick={() => toggleCard('coaching')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='coaching' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Coaching Compliance</p>
-              <span className="text-gray-400 text-xs">{expandedCard==='coaching' ? '▲' : '▼'}</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].coachRate !== null ? `${(stats[2].coachRate*100).toFixed(0)}%` : '—'}</p>
-            {deltaLabel(stats[2].coachRate !== null ? stats[2].coachRate*100 : null, stats[1].coachRate !== null ? stats[1].coachRate*100 : null, true, 'pts')}
-            <div onClick={e => e.stopPropagation()} className="flex items-center gap-1.5 mt-1.5">
-              {editingTarget ? (
-                <>
-                  <input type="number" min={0} max={100} value={targetDraft} onChange={e => setTargetDraft(e.target.value)} className="w-14 border border-gray-300 rounded px-1.5 py-0.5 text-xs" autoFocus />
-                  <button onClick={saveTarget} className="text-xs text-blue-600 hover:underline">Save</button>
-                  <button onClick={() => { setEditingTarget(false); setTargetDraft(String(complianceTarget)) }} className="text-xs text-gray-400 hover:underline">Cancel</button>
-                </>
-              ) : (
-                <>
-                  <span className={`text-xs font-medium ${stats[2].coachRate !== null && stats[2].coachRate*100 >= complianceTarget ? 'text-emerald-600' : 'text-amber-600'}`}>
-                    Target: {complianceTarget}%{stats[2].coachRate !== null ? ` (${stats[2].coachRate*100 >= complianceTarget ? '+' : ''}${(stats[2].coachRate*100 - complianceTarget).toFixed(0)} pts)` : ''}
-                  </span>
-                  <button onClick={() => setEditingTarget(true)} className="text-xs text-gray-400 hover:text-blue-600 hover:underline">Edit</button>
-                </>
-              )}
-            </div>
-            <div className="mt-2"><TrendMini data={stats} dataKey="coachRate" color="#1e3a8a" isPercent domain={[0,100]} referenceValue={complianceTarget} /></div>
-            <p className="text-xs text-gray-400 mt-1">{stats[2].coachCompliantCount}/{stats[2].coachTotalScoped} employees coached & acknowledged in {currentMonth}</p>
-          </div>
+          {cardOrder.map(id => {
+            const dragProps = {
+              draggable: true,
+              onDragStart: () => setDragCardId(id),
+              onDragOver: (e: React.DragEvent) => e.preventDefault(),
+              onDrop: () => handleCardDrop(id),
+            }
+            const wrapperClass = `bg-white rounded-xl border p-5 cursor-pointer transition ${dragCardId===id ? 'opacity-40' : ''}`
 
-          {/* Announcement Acknowledgement */}
-          <div onClick={() => toggleCard('ann')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='ann' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Announcement Acknowledgement</p>
-              <span className="text-gray-400 text-xs">{expandedCard==='ann' ? '▲' : '▼'}</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].annRate !== null ? `${(stats[2].annRate*100).toFixed(0)}%` : '—'}</p>
-            {deltaLabel(stats[2].annRate !== null ? stats[2].annRate*100 : null, stats[1].annRate !== null ? stats[1].annRate*100 : null, true, 'pts')}
-            <div className="mt-2"><TrendMini data={stats} dataKey="annRate" color="#0e7490" isPercent domain={[0,100]} /></div>
-            <p className="text-xs text-gray-400 mt-1">{stats[2].annAcked}/{stats[2].annTotal} acknowledgements completed in {currentMonth}</p>
-          </div>
+            if (id === 'coaching') return (
+              <div key={id} {...dragProps} onClick={() => toggleCard('coaching')} className={`${wrapperClass} ${expandedCard==='coaching' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Coaching Compliance</p>
+                  <span className="text-gray-400 text-xs">{expandedCard==='coaching' ? '▲' : '▼'}</span>
+                </div>
+                <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].coachRate !== null ? `${(stats[2].coachRate*100).toFixed(0)}%` : '—'}</p>
+                {deltaLabel(stats[2].coachRate !== null ? stats[2].coachRate*100 : null, stats[1].coachRate !== null ? stats[1].coachRate*100 : null, true, 'pts')}
+                <div onClick={e => e.stopPropagation()} className="flex items-center gap-1.5 mt-1.5">
+                  {editingTarget ? (
+                    <>
+                      <input type="number" min={0} max={100} value={targetDraft} onChange={e => setTargetDraft(e.target.value)} className="w-14 border border-gray-300 rounded px-1.5 py-0.5 text-xs" autoFocus />
+                      <button onClick={saveTarget} className="text-xs text-blue-600 hover:underline">Save</button>
+                      <button onClick={() => { setEditingTarget(false); setTargetDraft(String(complianceTarget)) }} className="text-xs text-gray-400 hover:underline">Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <span className={`text-xs font-medium ${stats[2].coachRate !== null && stats[2].coachRate*100 >= complianceTarget ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        Target: {complianceTarget}%{stats[2].coachRate !== null ? ` (${stats[2].coachRate*100 >= complianceTarget ? '+' : ''}${(stats[2].coachRate*100 - complianceTarget).toFixed(0)} pts)` : ''}
+                      </span>
+                      <button onClick={() => setEditingTarget(true)} className="text-xs text-gray-400 hover:text-blue-600 hover:underline">Edit</button>
+                    </>
+                  )}
+                </div>
+                <div className="mt-2"><TrendMini data={stats} dataKey="coachRate" color="#1e3a8a" isPercent domain={[0,100]} referenceValue={complianceTarget} /></div>
+                <p className="text-xs text-gray-400 mt-1">{stats[2].coachCompliantCount}/{stats[2].coachTotalScoped} employees coached & acknowledged in {currentMonth}</p>
+              </div>
+            )
 
-          {/* Task Completion */}
-          <div onClick={() => toggleCard('task')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='task' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Task Completion</p>
-              <span className="text-gray-400 text-xs">{expandedCard==='task' ? '▲' : '▼'}</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].taskRate !== null ? `${(stats[2].taskRate*100).toFixed(0)}%` : '—'}</p>
-            {deltaLabel(stats[2].taskRate !== null ? stats[2].taskRate*100 : null, stats[1].taskRate !== null ? stats[1].taskRate*100 : null, true, 'pts')}
-            <div className="mt-2"><TrendMini data={stats} dataKey="taskRate" color="#7c2d12" isPercent domain={[0,100]} /></div>
-            <p className="text-xs text-gray-400 mt-1">{stats[2].taskDone}/{stats[2].taskTotal} tasks completed in {currentMonth}</p>
-          </div>
+            if (id === 'ann') return (
+              <div key={id} {...dragProps} onClick={() => toggleCard('ann')} className={`${wrapperClass} ${expandedCard==='ann' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Announcement Acknowledgement</p>
+                  <span className="text-gray-400 text-xs">{expandedCard==='ann' ? '▲' : '▼'}</span>
+                </div>
+                <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].annRate !== null ? `${(stats[2].annRate*100).toFixed(0)}%` : '—'}</p>
+                {deltaLabel(stats[2].annRate !== null ? stats[2].annRate*100 : null, stats[1].annRate !== null ? stats[1].annRate*100 : null, true, 'pts')}
+                <div className="mt-2"><TrendMini data={stats} dataKey="annRate" color="#0e7490" isPercent domain={[0,100]} /></div>
+                <p className="text-xs text-gray-400 mt-1">{stats[2].annAcked}/{stats[2].annTotal} acknowledgements completed in {currentMonth}</p>
+              </div>
+            )
 
-          {/* Weekly Pulse Check */}
-          <div onClick={() => toggleCard('pulse')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='pulse' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Weekly Pulse Check — Avg Score</p>
-              <span className="text-gray-400 text-xs">{expandedCard==='pulse' ? '▲' : '▼'}</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].pulseAvg !== null ? `${stats[2].pulseAvg.toFixed(2)}/5` : '—'}</p>
-            {deltaLabel(stats[2].pulseAvg, stats[1].pulseAvg, true)}
-            <div className="mt-2"><TrendMini data={stats} dataKey="pulseAvg" color="#059669" domain={[1,5]} /></div>
-            <p className="text-xs text-gray-400 mt-1">{stats[2].pulseSubmitted} submissions, {stats[2].pulseFlagged} flagged at-risk in {currentMonth}</p>
-          </div>
+            if (id === 'task') return (
+              <div key={id} {...dragProps} onClick={() => toggleCard('task')} className={`${wrapperClass} ${expandedCard==='task' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Task Completion</p>
+                  <span className="text-gray-400 text-xs">{expandedCard==='task' ? '▲' : '▼'}</span>
+                </div>
+                <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].taskRate !== null ? `${(stats[2].taskRate*100).toFixed(0)}%` : '—'}</p>
+                {deltaLabel(stats[2].taskRate !== null ? stats[2].taskRate*100 : null, stats[1].taskRate !== null ? stats[1].taskRate*100 : null, true, 'pts')}
+                <div className="mt-2"><TrendMini data={stats} dataKey="taskRate" color="#7c2d12" isPercent domain={[0,100]} /></div>
+                <p className="text-xs text-gray-400 mt-1">{stats[2].taskDone}/{stats[2].taskTotal} tasks completed in {currentMonth}</p>
+              </div>
+            )
 
-          {/* Observations */}
-          <div onClick={() => toggleCard('obs')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='obs' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Observations Logged</p>
-              <span className="text-gray-400 text-xs">{expandedCard==='obs' ? '▲' : '▼'}</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].obsCount}</p>
-            {deltaLabel(stats[2].obsCount, stats[1].obsCount, undefined)}
-            <div className="mt-2"><TrendMiniBars data={stats} dataKey="obsCount" color="#7c3aed" /></div>
-            <p className="text-xs text-gray-400 mt-1">Informational only -- more or fewer isn't inherently good or bad.</p>
-          </div>
+            if (id === 'pulse') return (
+              <div key={id} {...dragProps} onClick={() => toggleCard('pulse')} className={`${wrapperClass} ${expandedCard==='pulse' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Weekly Pulse Check — Avg Score</p>
+                  <span className="text-gray-400 text-xs">{expandedCard==='pulse' ? '▲' : '▼'}</span>
+                </div>
+                <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].pulseAvg !== null ? `${stats[2].pulseAvg.toFixed(2)}/5` : '—'}</p>
+                {deltaLabel(stats[2].pulseAvg, stats[1].pulseAvg, true)}
+                <div className="mt-2"><TrendMini data={stats} dataKey="pulseAvg" color="#059669" domain={[1,5]} /></div>
+                <p className="text-xs text-gray-400 mt-1">{stats[2].pulseSubmitted} submissions, {stats[2].pulseFlagged} flagged at-risk in {currentMonth}</p>
+              </div>
+            )
 
-          {/* Attendance / Accuracy / Efficiency */}
-          <div onClick={() => toggleCard('perf')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='perf' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Attendance / Accuracy / Efficiency</p>
-              <span className="text-gray-400 text-xs">{expandedCard==='perf' ? '▲' : '▼'}</span>
-            </div>
-            <div className="flex items-baseline gap-3 mt-1">
-              <span className="text-sm"><span className="font-bold text-cyan-700">{stats[2].attendanceAvg !== null ? `${(stats[2].attendanceAvg*100).toFixed(0)}%` : '—'}</span></span>
-              <span className="text-sm"><span className="font-bold text-yellow-700">{stats[2].accuracyAvg !== null ? `${(stats[2].accuracyAvg*100).toFixed(0)}%` : '—'}</span></span>
-              <span className="text-sm"><span className="font-bold text-red-700">{stats[2].efficiencyAvg !== null ? `${(stats[2].efficiencyAvg*100).toFixed(0)}%` : '—'}</span></span>
-            </div>
-            <div className="flex items-center gap-2.5 mt-1 flex-wrap">
-              <span className="text-[10px] text-cyan-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-600 inline-block"/>Attendance</span>
-              <span className="text-[10px] text-yellow-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-600 inline-block"/>Accuracy</span>
-              <span className="text-[10px] text-red-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600 inline-block"/>Efficiency</span>
-            </div>
-            <div className="mt-2"><TrendMiniPerf data={stats} /></div>
-            <p className="text-xs text-gray-400 mt-1">{stats[2].perfRecordCount} KPI records in {currentMonth}</p>
-          </div>
+            if (id === 'obs') return (
+              <div key={id} {...dragProps} onClick={() => toggleCard('obs')} className={`${wrapperClass} ${expandedCard==='obs' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Observations Logged</p>
+                  <span className="text-gray-400 text-xs">{expandedCard==='obs' ? '▲' : '▼'}</span>
+                </div>
+                <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].obsCount}</p>
+                {deltaLabel(stats[2].obsCount, stats[1].obsCount, undefined)}
+                <div className="mt-2"><TrendMiniBars data={stats} dataKey="obsCount" color="#7c3aed" /></div>
+                <p className="text-xs text-gray-400 mt-1">Informational only -- more or fewer isn't inherently good or bad.</p>
+              </div>
+            )
+
+            // 'perf'
+            return (
+              <div key={id} {...dragProps} onClick={() => toggleCard('perf')} className={`${wrapperClass} ${expandedCard==='perf' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Attendance / Accuracy / Efficiency</p>
+                  <span className="text-gray-400 text-xs">{expandedCard==='perf' ? '▲' : '▼'}</span>
+                </div>
+                <div className="flex items-baseline gap-3 mt-1">
+                  <span className="text-sm"><span className="font-bold text-cyan-700">{stats[2].attendanceAvg !== null ? `${(stats[2].attendanceAvg*100).toFixed(0)}%` : '—'}</span></span>
+                  <span className="text-sm"><span className="font-bold text-yellow-700">{stats[2].accuracyAvg !== null ? `${(stats[2].accuracyAvg*100).toFixed(0)}%` : '—'}</span></span>
+                  <span className="text-sm"><span className="font-bold text-red-700">{stats[2].efficiencyAvg !== null ? `${(stats[2].efficiencyAvg*100).toFixed(0)}%` : '—'}</span></span>
+                </div>
+                <div className="flex items-center gap-2.5 mt-1 flex-wrap">
+                  <span className="text-[10px] text-cyan-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-600 inline-block"/>Attendance</span>
+                  <span className="text-[10px] text-yellow-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-600 inline-block"/>Accuracy</span>
+                  <span className="text-[10px] text-red-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600 inline-block"/>Efficiency</span>
+                </div>
+                <div className="mt-2"><TrendMiniPerf data={stats} /></div>
+                <p className="text-xs text-gray-400 mt-1">{stats[2].perfRecordCount} KPI records in {currentMonth}</p>
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -4178,7 +4235,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
             </h3>
             <div className="flex gap-1.5">
               {rollingMonths.map(m => (
-                <button key={m} onClick={() => setDrillMonth(m)} className={`text-xs px-3 py-1.5 rounded-lg border transition ${drillMonth===m ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>{m}</button>
+                <button key={m} onClick={() => { setDrillMonth(m); setCoachedPreviewEmail(null) }} className={`text-xs px-3 py-1.5 rounded-lg border transition ${drillMonth===m ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>{m}</button>
               ))}
             </div>
           </div>
@@ -4200,6 +4257,40 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
                     {coachingDetail.pendingAck.length === 0 ? <p className="text-sm text-gray-400">No pending acknowledgments.</p> : (
                       <div className="flex flex-wrap gap-2">
                         {coachingDetail.pendingAck.map(e => <span key={e.email} className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 rounded-full">{e.name} · {e.pendingCount} pending</span>)}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Coached This Month ({coachingDetail.coached.length}) — click a name to preview</p>
+                    {coachingDetail.coached.length === 0 ? <p className="text-sm text-gray-400">Nobody in scope was coached this month.</p> : (
+                      <div className="space-y-1.5">
+                        {coachingDetail.coached.map(e => {
+                          const open = coachedPreviewEmail === e.email
+                          return (
+                            <div key={e.email} className="border border-gray-200 rounded-lg">
+                              <button onClick={() => setCoachedPreviewEmail(open ? null : e.email)} className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50 transition">
+                                <span className="font-medium text-gray-800">{e.name}</span>
+                                <span className="flex items-center gap-2 text-gray-500 text-xs">{e.sessions.length} session{e.sessions.length===1?'':'s'}{open ? <ChevronUp className="w-3.5 h-3.5"/> : <ChevronDown className="w-3.5 h-3.5"/>}</span>
+                              </button>
+                              {open && (
+                                <div className="px-3 pb-3 space-y-2 border-t border-gray-100 pt-2">
+                                  {e.sessions.map((s, i) => (
+                                    <div key={i} className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-sm">
+                                      <div className="flex items-center justify-between flex-wrap gap-2 mb-1.5">
+                                        <span className="text-xs text-gray-500">📅 {new Date(s.date).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})} · {s.type} · by {s.coached_by?.split('@')[0]}</span>
+                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.status==='Draft' ? 'bg-gray-200 text-gray-600' : s.agent_acknowledged ? 'bg-emerald-100 text-emerald-700' : s.requires_acknowledgment ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                                          {s.status==='Draft' ? 'Draft' : s.agent_acknowledged ? 'Acknowledged' : s.requires_acknowledgment ? 'Pending Ack' : 'No ack required'}
+                                        </span>
+                                      </div>
+                                      {s.discussion && <p className="text-gray-700 mb-1"><span className="font-medium text-gray-500">Discussion: </span>{s.discussion}</p>}
+                                      {s.action_items && <p className="text-gray-700"><span className="font-medium text-gray-500">Action Items: </span>{s.action_items}</p>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
