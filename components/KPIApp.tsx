@@ -3634,12 +3634,10 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 // same per-employee getComplianceBreakdown logic used everywhere else
 // (KPI Entry auto-fill, HRIS compliance, Team Compliance), just summed
 // across every active employee with an email, rather than introducing a
-// second, potentially-diverging aggregate formula. Also returns the
-// per-category totals (coaching/announcement/task/pulse) so the Ops
-// Dashboard drill-down can show what's actually driving the rate, not
-// just the single percentage. Fine to run as Promise.all across the
-// whole roster since this only loads on an Admin/Super Admin dashboard
-// someone opens occasionally, not a hot path.
+// second, potentially-diverging aggregate formula. Returns per-category
+// totals (coaching/announcement/task/pulse) so the Ops Dashboard can
+// show each one as its own honest number instead of one blended rate
+// that hides which category is actually driving it.
 async function getCompanyComplianceSummary(employees: Employee[], monthLabel: string): Promise<{
   rate: number | null, totalRequired: number, totalAcked: number, employeeCount: number,
   coachTotal: number, coachAcked: number, annTotal: number, annAcked: number,
@@ -3656,6 +3654,75 @@ async function getCompanyComplianceSummary(employees: Employee[], monthLabel: st
     coachTotal: sum('coachTotal'), coachAcked: sum('coachAcked'), annTotal: sum('annTotal'), annAcked: sum('annAcked'),
     taskTotal: sum('taskTotal'), taskDone: sum('taskDone'), pulseTotal: sum('pulseTotal'), pulseSubmitted: sum('pulseSubmitted'),
   }
+}
+
+// Per-month drill-down specifically for coaching: who wasn't coached at
+// all this month (zero coaching_logs rows, regardless of status), and
+// who was coached but hasn't acknowledged yet -- these are the two
+// concrete, actionable things a manager actually wants to know, not
+// just a single acknowledgment percentage.
+async function getCoachingMonthDetail(scopedEmployees: Employee[], monthLabel: string): Promise<{
+  notCoached: {name: string, email: string}[],
+  pendingAck: {name: string, email: string, pendingCount: number}[],
+}> {
+  const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
+  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
+  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  const { data } = await supabase.from('coaching_logs').select('employee_email, agent_acknowledged, requires_acknowledgment, status').gte('date', start).lt('date', end)
+  const rows = data || []
+  const byEmail: Record<string, any[]> = {}
+  rows.forEach((r: any) => { const k = (r.employee_email||'').toLowerCase(); (byEmail[k] ||= []).push(r) })
+  const active = scopedEmployees.filter(e => e.active && e.email)
+  const notCoached: {name: string, email: string}[] = []
+  const pendingAck: {name: string, email: string, pendingCount: number}[] = []
+  active.forEach(e => {
+    const sessions = byEmail[(e.email||'').toLowerCase()] || []
+    if (sessions.length === 0) { notCoached.push({ name: e.name, email: e.email! }); return }
+    const required = sessions.filter(s => s.requires_acknowledgment && s.status === 'Final')
+    const pending = required.filter(s => !s.agent_acknowledged)
+    if (pending.length > 0) pendingAck.push({ name: e.name, email: e.email!, pendingCount: pending.length })
+  })
+  return { notCoached, pendingAck }
+}
+
+// Per-month drill-down for Announcement Acknowledgement: which scoped
+// employees still haven't acknowledged one or more of the month's
+// announcements. One bulk query for all acks against this month's
+// announcement ids, then diffed per employee client-side, rather than
+// a query per employee.
+async function getAnnMonthDetail(scopedEmployees: Employee[], monthLabel: string): Promise<{ notAcked: {name: string, missingCount: number}[], annTotal: number }> {
+  const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
+  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
+  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  const { data: anns } = await supabase.from('announcements').select('id').gte('created_at', start).lt('created_at', end)
+  const annIds = (anns || []).map((a: any) => a.id)
+  if (annIds.length === 0) return { notAcked: [], annTotal: 0 }
+  const { data: acks } = await supabase.from('announcement_acknowledgements').select('announcement_id, user_email').in('announcement_id', annIds)
+  const ackedByEmail: Record<string, Set<string>> = {}
+  ;(acks || []).forEach((a: any) => { const k = (a.user_email||'').toLowerCase(); (ackedByEmail[k] ||= new Set()).add(a.announcement_id) })
+  const active = scopedEmployees.filter(e => e.active && e.email)
+  const notAcked = active.map(e => {
+    const acked = ackedByEmail[(e.email||'').toLowerCase()] || new Set()
+    const missingCount = annIds.filter(id => !acked.has(id)).length
+    return { name: e.name, missingCount }
+  }).filter(r => r.missingCount > 0)
+  return { notAcked, annTotal: annIds.length }
+}
+
+// Per-month drill-down for Task Completion: scoped employees with
+// incomplete tasks assigned that month, and how many.
+async function getTaskMonthDetail(scopedEmployees: Employee[], monthLabel: string): Promise<{ incomplete: {name: string, incompleteCount: number}[] }> {
+  const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
+  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
+  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  const active = scopedEmployees.filter(e => e.active && e.email)
+  const emails = active.map(e => e.email!.toLowerCase())
+  if (emails.length === 0) return { incomplete: [] }
+  const { data } = await supabase.from('tasks').select('assigned_to, is_done').gte('created_at', start).lt('created_at', end).in('assigned_to', emails)
+  const counts: Record<string, number> = {}
+  ;(data || []).forEach((t: any) => { if (!t.is_done) counts[(t.assigned_to||'').toLowerCase()] = (counts[(t.assigned_to||'').toLowerCase()] || 0) + 1 })
+  const incomplete = active.map(e => ({ name: e.name, incompleteCount: counts[(e.email||'').toLowerCase()] || 0 })).filter(r => r.incompleteCount > 0)
+  return { incomplete }
 }
 
 // Per-month detail for the Pulse Check drill-down: category sub-averages
@@ -3693,7 +3760,7 @@ async function getObsMonthDetail(monthLabel: string, employeeIdFilter?: Set<stri
 // the company (or scoped) averages alone don't say who actually needs
 // attention, so this surfaces the lowest-scoring individuals that
 // month -- same "make the raw number actionable" convention as the
-// Pulse Check and Observations drill-downs above.
+// other drill-downs.
 async function getPerfMonthDetail(monthLabel: string, employeeIdFilter?: Set<string> | null): Promise<{ lowest: {name: string, attendance: number|null, accuracy: number|null, efficiency: number|null}[] }> {
   const { data } = await supabase.from('kpi_records').select('employee_id, employee_name, attendance, accuracy, efficiency').eq('month_label', monthLabel)
   const rows = (data || []).filter((r: any) => !employeeIdFilter || employeeIdFilter.has(r.employee_id))
@@ -3708,16 +3775,23 @@ async function getPerfMonthDetail(monthLabel: string, employeeIdFilter?: Set<str
 
 // -- Ops Dashboard -------------------------------------------------------
 // Fixed 3-month rolling window (current month + the 2 before it) for
-// Admin/Super Admin: Coaching Compliance, Weekly Pulse Check, and
-// Observation volume, each as a small trend across the 3 months with a
-// click-to-expand drill-down -- rather than having to piece this
-// together across three separate screens (Team Compliance, Pulse
-// Check's manage tab, Observations) one month at a time.
+// Admin/Super Admin. Coaching, Announcements, and Tasks are broken out
+// into their own honest cards (previously blended into one "Compliance"
+// rate that hid which category was actually driving it); Weekly Pulse
+// Check keeps its own dedicated card rather than also being folded into
+// a blended number; Observations and Attendance/Accuracy/Efficiency
+// round it out. Every card expands into a drill-down.
 type OpsMonthStats = {
   month: string
-  complianceRate: number | null
-  complianceRequired: number
-  complianceAcked: number
+  coachRate: number | null
+  coachTotal: number
+  coachAcked: number
+  annRate: number | null
+  annTotal: number
+  annAcked: number
+  taskRate: number | null
+  taskTotal: number
+  taskDone: number
   pulseAvg: number | null
   pulseFlagged: number
   pulseSubmitted: number
@@ -3740,10 +3814,6 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
   // dashboard aggregates, not an access-control change (Admin/Super
   // Admin already see everyone; this just lets them zoom into one
   // client or team instead of only ever seeing the whole company).
-  // Client list comes straight off the employees roster (primary
-  // `client` field, same convention as other client-scoped screens
-  // like Links/Org Chart); Team list + membership comes from
-  // teams/team_members, same pattern as Pulse Check's manage tab.
   const [clientFilter, setClientFilter] = useState<string>('all')
   const [teamFilter, setTeamFilter] = useState<string>('all')
   const [teamsList, setTeamsList] = useState<{id: string, name: string}[]>([])
@@ -3758,7 +3828,12 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     })()
   }, [])
   const clientOptions = Array.from(new Set(employees.map(e => e.client).filter(Boolean))) as string[]
+  // Scoped to active employees matching the client/team filters -- the
+  // active check lives here now (it previously didn't, which is how an
+  // earlier build of this screen ended up showing a scoped count higher
+  // than the active total when "All" was selected).
   const scopedEmployees = employees.filter(e => {
+    if (!e.active) return false
     if (clientFilter !== 'all' && e.client !== clientFilter && !(e.clients_supported||[]).includes(clientFilter)) return false
     if (teamFilter !== 'all' && !teamMembersList.some(m => m.team_id === teamFilter && m.employee_id === e.id)) return false
     return true
@@ -3768,9 +3843,11 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
 
   const [stats, setStats] = useState<OpsMonthStats[] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [expandedCard, setExpandedCard] = useState<'compliance'|'pulse'|'obs'|'perf'|null>(null)
+  const [expandedCard, setExpandedCard] = useState<'coaching'|'ann'|'task'|'pulse'|'obs'|'perf'|null>(null)
   const [drillMonth, setDrillMonth] = useState(currentMonth)
-  const [complianceDetail, setComplianceDetail] = useState<Awaited<ReturnType<typeof getCompanyComplianceSummary>> | null>(null)
+  const [coachingDetail, setCoachingDetail] = useState<Awaited<ReturnType<typeof getCoachingMonthDetail>> | null>(null)
+  const [annDetail, setAnnDetail] = useState<Awaited<ReturnType<typeof getAnnMonthDetail>> | null>(null)
+  const [taskDetail, setTaskDetail] = useState<Awaited<ReturnType<typeof getTaskMonthDetail>> | null>(null)
   const [pulseDetail, setPulseDetail] = useState<Awaited<ReturnType<typeof getPulseMonthDetail>> | null>(null)
   const [obsDetail, setObsDetail] = useState<Awaited<ReturnType<typeof getObsMonthDetail>> | null>(null)
   const [perfDetail, setPerfDetail] = useState<Awaited<ReturnType<typeof getPerfMonthDetail>> | null>(null)
@@ -3779,8 +3856,9 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
   // Coaching Compliance target -- a real, durable setting (stored in
   // app_settings, same pattern as the announcement background image)
   // rather than a hardcoded number, so it can be adjusted later without
-  // a code change. Defaults to 100% (the actual expectation) until
-  // someone changes it.
+  // a code change. Set to 100% (the real expectation) per explicit
+  // decision -- this is coaching-acknowledgment-specific now, not a
+  // blended compliance target.
   const [complianceTarget, setComplianceTarget] = useState(100)
   const [editingTarget, setEditingTarget] = useState(false)
   const [targetDraft, setTargetDraft] = useState('100')
@@ -3817,7 +3895,9 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     }
     return {
       month: monthLabel,
-      complianceRate: compliance.rate, complianceRequired: compliance.totalRequired, complianceAcked: compliance.totalAcked,
+      coachRate: compliance.coachTotal > 0 ? compliance.coachAcked / compliance.coachTotal : null, coachTotal: compliance.coachTotal, coachAcked: compliance.coachAcked,
+      annRate: compliance.annTotal > 0 ? compliance.annAcked / compliance.annTotal : null, annTotal: compliance.annTotal, annAcked: compliance.annAcked,
+      taskRate: compliance.taskTotal > 0 ? compliance.taskDone / compliance.taskTotal : null, taskTotal: compliance.taskTotal, taskDone: compliance.taskDone,
       pulseAvg: pulseAvg !== null ? Math.round(pulseAvg * 100) / 100 : null, pulseFlagged, pulseSubmitted: pulseRows.length,
       obsCount: obsRows.length,
       attendanceAvg: avgOfField('attendance'), accuracyAvg: avgOfField('accuracy'), efficiencyAvg: avgOfField('efficiency'),
@@ -3837,17 +3917,21 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
   }, [employees.length, currentMonth, clientFilter, teamFilter, teamMembersList.length])
 
   // Detail is fetched lazily, only for whichever card is expanded and
-  // whichever of the 3 months is currently selected inside it -- no need
-  // to pull category breakdowns / flagged lists / per-employee counts
-  // for months nobody's actually looking at.
+  // whichever of the 3 months is currently selected inside it.
   useEffect(() => {
     if (!expandedCard) return
     let cancelled = false
     setLoadingDetail(true)
     ;(async () => {
-      if (expandedCard === 'compliance') {
-        const d = await getCompanyComplianceSummary(scopedEmployees, drillMonth)
-        if (!cancelled) setComplianceDetail(d)
+      if (expandedCard === 'coaching') {
+        const d = await getCoachingMonthDetail(scopedEmployees, drillMonth)
+        if (!cancelled) setCoachingDetail(d)
+      } else if (expandedCard === 'ann') {
+        const d = await getAnnMonthDetail(scopedEmployees, drillMonth)
+        if (!cancelled) setAnnDetail(d)
+      } else if (expandedCard === 'task') {
+        const d = await getTaskMonthDetail(scopedEmployees, drillMonth)
+        if (!cancelled) setTaskDetail(d)
       } else if (expandedCard === 'pulse') {
         const d = await getPulseMonthDetail(drillMonth, filterActive ? scopedEmployeeIds : null)
         if (!cancelled) setPulseDetail(d)
@@ -3863,7 +3947,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     return () => { cancelled = true }
   }, [expandedCard, drillMonth, employees.length])
 
-  function toggleCard(card: 'compliance'|'pulse'|'obs'|'perf') {
+  function toggleCard(card: 'coaching'|'ann'|'task'|'pulse'|'obs'|'perf') {
     if (expandedCard === card) { setExpandedCard(null); return }
     setExpandedCard(card)
     setDrillMonth(currentMonth)
@@ -3939,7 +4023,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
         <BarChart2 className="w-6 h-6 text-blue-800" />
         <div>
           <h2 className="text-xl font-bold text-blue-900">Ops Dashboard</h2>
-          <p className="text-sm text-gray-500">Rolling 3-month view of Coaching Compliance, Weekly Pulse Check, and Observations. Click a card to drill in.</p>
+          <p className="text-sm text-gray-500">Rolling 3-month view of Coaching, Announcements, Tasks, Pulse Check, Observations, and Attendance/Accuracy/Efficiency. Click a card to drill in.</p>
         </div>
       </div>
 
@@ -3955,21 +4039,20 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
           {teamsList.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
         {filterActive && <button onClick={() => { setClientFilter('all'); setTeamFilter('all') }} className="text-xs text-blue-600 hover:underline">Clear filters</button>}
-        <span className="text-xs text-gray-400 ml-auto">{scopedEmployees.length} of {employees.filter(e=>e.active).length} active employees in scope</span>
       </div>
 
       {loading || !stats ? (
         <div className="text-center py-12 text-gray-400">Loading...</div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Coaching Compliance */}
-          <div onClick={() => toggleCard('compliance')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='compliance' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+          <div onClick={() => toggleCard('coaching')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='coaching' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Coaching Compliance</p>
-              <span className="text-gray-400 text-xs">{expandedCard==='compliance' ? '▲' : '▼'}</span>
+              <span className="text-gray-400 text-xs">{expandedCard==='coaching' ? '▲' : '▼'}</span>
             </div>
-            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].complianceRate !== null ? `${(stats[2].complianceRate*100).toFixed(0)}%` : '—'}</p>
-            {deltaLabel(stats[2].complianceRate !== null ? stats[2].complianceRate*100 : null, stats[1].complianceRate !== null ? stats[1].complianceRate*100 : null, true, 'pts')}
+            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].coachRate !== null ? `${(stats[2].coachRate*100).toFixed(0)}%` : '—'}</p>
+            {deltaLabel(stats[2].coachRate !== null ? stats[2].coachRate*100 : null, stats[1].coachRate !== null ? stats[1].coachRate*100 : null, true, 'pts')}
             <div onClick={e => e.stopPropagation()} className="flex items-center gap-1.5 mt-1.5">
               {editingTarget ? (
                 <>
@@ -3979,15 +4062,39 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
                 </>
               ) : (
                 <>
-                  <span className={`text-xs font-medium ${stats[2].complianceRate !== null && stats[2].complianceRate*100 >= complianceTarget ? 'text-emerald-600' : 'text-amber-600'}`}>
-                    Target: {complianceTarget}%{stats[2].complianceRate !== null ? ` (${stats[2].complianceRate*100 >= complianceTarget ? '+' : ''}${(stats[2].complianceRate*100 - complianceTarget).toFixed(0)} pts)` : ''}
+                  <span className={`text-xs font-medium ${stats[2].coachRate !== null && stats[2].coachRate*100 >= complianceTarget ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    Target: {complianceTarget}%{stats[2].coachRate !== null ? ` (${stats[2].coachRate*100 >= complianceTarget ? '+' : ''}${(stats[2].coachRate*100 - complianceTarget).toFixed(0)} pts)` : ''}
                   </span>
                   <button onClick={() => setEditingTarget(true)} className="text-xs text-gray-400 hover:text-blue-600 hover:underline">Edit</button>
                 </>
               )}
             </div>
-            <div className="mt-2"><TrendMini data={stats} dataKey="complianceRate" color="#1e3a8a" isPercent domain={[0,100]} referenceValue={complianceTarget} /></div>
-            <p className="text-xs text-gray-400 mt-1">{stats[2].complianceAcked}/{stats[2].complianceRequired} items completed in {currentMonth}</p>
+            <div className="mt-2"><TrendMini data={stats} dataKey="coachRate" color="#1e3a8a" isPercent domain={[0,100]} referenceValue={complianceTarget} /></div>
+            <p className="text-xs text-gray-400 mt-1">{stats[2].coachAcked}/{stats[2].coachTotal} coaching sign-offs acknowledged in {currentMonth}</p>
+          </div>
+
+          {/* Announcement Acknowledgement */}
+          <div onClick={() => toggleCard('ann')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='ann' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Announcement Acknowledgement</p>
+              <span className="text-gray-400 text-xs">{expandedCard==='ann' ? '▲' : '▼'}</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].annRate !== null ? `${(stats[2].annRate*100).toFixed(0)}%` : '—'}</p>
+            {deltaLabel(stats[2].annRate !== null ? stats[2].annRate*100 : null, stats[1].annRate !== null ? stats[1].annRate*100 : null, true, 'pts')}
+            <div className="mt-2"><TrendMini data={stats} dataKey="annRate" color="#0e7490" isPercent domain={[0,100]} /></div>
+            <p className="text-xs text-gray-400 mt-1">{stats[2].annAcked}/{stats[2].annTotal} acknowledgements completed in {currentMonth}</p>
+          </div>
+
+          {/* Task Completion */}
+          <div onClick={() => toggleCard('task')} className={`bg-white rounded-xl border p-5 cursor-pointer transition ${expandedCard==='task' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Task Completion</p>
+              <span className="text-gray-400 text-xs">{expandedCard==='task' ? '▲' : '▼'}</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].taskRate !== null ? `${(stats[2].taskRate*100).toFixed(0)}%` : '—'}</p>
+            {deltaLabel(stats[2].taskRate !== null ? stats[2].taskRate*100 : null, stats[1].taskRate !== null ? stats[1].taskRate*100 : null, true, 'pts')}
+            <div className="mt-2"><TrendMini data={stats} dataKey="taskRate" color="#7c2d12" isPercent domain={[0,100]} /></div>
+            <p className="text-xs text-gray-400 mt-1">{stats[2].taskDone}/{stats[2].taskTotal} tasks completed in {currentMonth}</p>
           </div>
 
           {/* Weekly Pulse Check */}
@@ -4041,7 +4148,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
             <h3 className="text-sm font-semibold text-blue-900">
-              {expandedCard==='compliance' ? 'Coaching Compliance Breakdown' : expandedCard==='pulse' ? 'Pulse Check Detail' : expandedCard==='obs' ? 'Observations Detail' : 'Attendance / Accuracy / Efficiency Detail'}
+              {expandedCard==='coaching' ? 'Coaching Compliance Detail' : expandedCard==='ann' ? 'Announcement Acknowledgement Detail' : expandedCard==='task' ? 'Task Completion Detail' : expandedCard==='pulse' ? 'Pulse Check Detail' : expandedCard==='obs' ? 'Observations Detail' : 'Attendance / Accuracy / Efficiency Detail'}
             </h3>
             <div className="flex gap-1.5">
               {rollingMonths.map(m => (
@@ -4052,20 +4159,46 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
 
           {loadingDetail ? <div className="text-center py-8 text-gray-400 text-sm">Loading...</div> : (
             <>
-              {expandedCard === 'compliance' && complianceDetail && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    ['Coaching Acknowledgments', complianceDetail.coachAcked, complianceDetail.coachTotal],
-                    ['Announcement Acknowledgments', complianceDetail.annAcked, complianceDetail.annTotal],
-                    ['Task Completion', complianceDetail.taskDone, complianceDetail.taskTotal],
-                    ['Pulse Check Submissions', complianceDetail.pulseSubmitted, complianceDetail.pulseTotal],
-                  ].map(([label, done, total]: any) => (
-                    <div key={label} className="bg-gray-50 border border-gray-100 rounded-lg p-3">
-                      <p className="text-xs text-gray-500 mb-1">{label}</p>
-                      <p className="text-lg font-semibold text-blue-900">{done}/{total}</p>
-                      <p className="text-xs text-gray-400">{total > 0 ? `${((done/total)*100).toFixed(0)}%` : '—'}</p>
+              {expandedCard === 'coaching' && coachingDetail && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Not Coached This Month ({coachingDetail.notCoached.length})</p>
+                    {coachingDetail.notCoached.length === 0 ? <p className="text-sm text-gray-400">Everyone in scope had at least one coaching session logged.</p> : (
+                      <div className="flex flex-wrap gap-2">
+                        {coachingDetail.notCoached.map(e => <span key={e.email} className="text-xs bg-red-50 border border-red-200 text-red-700 px-2.5 py-1 rounded-full">{e.name}</span>)}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Coached but Not Yet Acknowledged ({coachingDetail.pendingAck.length})</p>
+                    {coachingDetail.pendingAck.length === 0 ? <p className="text-sm text-gray-400">No pending acknowledgments.</p> : (
+                      <div className="flex flex-wrap gap-2">
+                        {coachingDetail.pendingAck.map(e => <span key={e.email} className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 rounded-full">{e.name} · {e.pendingCount} pending</span>)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {expandedCard === 'ann' && annDetail && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">Haven't Acknowledged All Announcements ({annDetail.notAcked.length} of {scopedEmployees.length} in scope, {annDetail.annTotal} announcement{annDetail.annTotal===1?'':'s'} this month)</p>
+                  {annDetail.notAcked.length === 0 ? <p className="text-sm text-gray-400">{annDetail.annTotal === 0 ? 'No announcements posted this month.' : 'Everyone in scope has acknowledged all of them.'}</p> : (
+                    <div className="flex flex-wrap gap-2">
+                      {annDetail.notAcked.map(e => <span key={e.name} className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 rounded-full">{e.name} · {e.missingCount} missing</span>)}
                     </div>
-                  ))}
+                  )}
+                </div>
+              )}
+
+              {expandedCard === 'task' && taskDetail && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">Have Incomplete Tasks ({taskDetail.incomplete.length})</p>
+                  {taskDetail.incomplete.length === 0 ? <p className="text-sm text-gray-400">No incomplete tasks in scope.</p> : (
+                    <div className="flex flex-wrap gap-2">
+                      {taskDetail.incomplete.map(e => <span key={e.name} className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 rounded-full">{e.name} · {e.incompleteCount} incomplete</span>)}
+                    </div>
+                  )}
                 </div>
               )}
 
