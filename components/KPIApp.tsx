@@ -63,6 +63,29 @@ function generateDesignation(empType: string, client: string, existingForPerson:
   while (taken.has(`${base} (${n})`)) n++
   return `${base} (${n})`
 }
+// Client-scoping decision: "a team's client" is defined by
+// clients_supported, not by adding a new column to `teams` or inferring
+// anything from team membership. An employee's own clients_supported
+// (falling back to the older single `client` field for anyone who
+// hasn't been migrated to the newer multi-client array, same
+// convention already used elsewhere in the app) is compared directly
+// against the viewer's own clients_supported -- if they share at least
+// one client, the viewer can see them in a Team-Lead-facing picker.
+// A viewer with no clients_supported/client set at all is NOT scoped
+// (sees everyone) rather than silently scoped to nothing, since an
+// empty client list on the viewer's own record is far more likely to
+// be missing data than an intentional "supports zero clients."
+function empClientList(e: Employee | undefined | null): string[] {
+  if (!e) return []
+  if (e.clients_supported && e.clients_supported.length > 0) return e.clients_supported
+  return e.client ? [e.client] : []
+}
+function inClientScope(viewer: Employee | undefined | null, target: Employee): boolean {
+  const viewerClients = empClientList(viewer)
+  if (viewerClients.length === 0) return true
+  const targetClients = empClientList(target)
+  return targetClients.some(c => viewerClients.includes(c))
+}
 function Avatar({ name, avatarUrl, size = 'md' }: { name: string, avatarUrl?: string | null, size?: 'sm'|'md'|'lg' }) {
   const sizes = { sm: 'w-7 h-7 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-14 h-14 text-xl' }
   const initial = name?.charAt(0)?.toUpperCase() || '?'
@@ -4476,28 +4499,16 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser, userRol
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string|null>(null)
 
-  // KPI Entry previously had no team scoping at all -- a Team Lead's
+  // KPI Entry previously had no client scoping at all -- a Team Lead's
   // Employee dropdown listed every active employee company-wide, meaning
-  // they could enter scores for anyone, not just their own team. Admin/
-  // Super Admin remain unrestricted; a Team Lead now only sees their own
-  // team's active members here.
-  const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
+  // they could enter scores for anyone, not just people within their own
+  // Client(s) Supported. Admin/Super Admin remain unrestricted; a Team
+  // Lead now only sees active employees who share at least one client
+  // with them, per explicit decision (Client(s) Supported overlap, not
+  // team_members roster membership).
   const isTL = userRole === 'Team Lead'
-  useEffect(() => {
-    if (!isTL || !currentUser) { setMyTeamEmpIds(null); return }
-    let cancelled = false
-    ;(async () => {
-      const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
-      if (!myEmp) { if (!cancelled) setMyTeamEmpIds(new Set()); return }
-      const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
-      const ledTeamIds = (teamsData || []).filter((t: any) => t.team_lead_id === myEmp.id).map((t: any) => t.id)
-      const { data: memberData } = await supabase.from('team_members').select('employee_id, team_id').in('team_id', ledTeamIds)
-      if (!cancelled) setMyTeamEmpIds(new Set((memberData || []).map((m: any) => m.employee_id)))
-    })()
-    return () => { cancelled = true }
-  }, [isTL, currentUser, employees.length])
-
-  const eligibleEmployees = employees.filter(e => e.active && (!isTL || myTeamEmpIds === null || myTeamEmpIds.has(e.id)))
+  const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase())
+  const eligibleEmployees = employees.filter(e => e.active && (!isTL || inClientScope(myEmp, e)))
 
   useEffect(() => {
     if (eligibleEmployees.length > 0 && (!empId || !eligibleEmployees.some(e => e.id === empId))) setEmpId(eligibleEmployees[0].id)
@@ -4561,7 +4572,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser, userRol
       {editId && <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><Edit2 className="w-4 h-4"/>Editing existing record for {selEmp?.name}</div>}
       <form onSubmit={handleSave} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Employee</label><select value={empId} onChange={e=>setEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{eligibleEmployees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>{isTL && myTeamEmpIds && myTeamEmpIds.size === 0 && <p className="text-xs text-amber-600 mt-1">No team members found under your account.</p>}</div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Employee</label><select value={empId} onChange={e=>setEmpId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{eligibleEmployees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>{isTL && eligibleEmployees.length === 0 && <p className="text-xs text-amber-600 mt-1">No employees found within your supported client(s).</p>}</div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Month</label><select value={monthLabel} onChange={e=>setMonthLabel(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{allMonths.map(m=><option key={m}>{m}</option>)}</select></div>
         </div>
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Designation</label><input value={designation} onChange={e=>setDesignation(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. FSCM, AR B2B"/></div>
@@ -8689,7 +8700,6 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
   const [saving, setSaving] = useState(false)
   const [filterEmp, setFilterEmp] = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
-  const [myTeamEmployeeIds, setMyTeamEmployeeIds] = useState<string[] | null>(null)
 
   const allMonths = ['2024','2025','2026','2027'].flatMap(y => MONTHS.map(m => `${m} ${y}`))
   // For the Add Observation form specifically: 3 months back through 6
@@ -8701,68 +8711,60 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
     return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
   })
 
-  // Employees visible to the current viewer in dropdowns/filters. Placed
-  // above the default-selection effect below on purpose -- that effect
-  // depends on activeVisibleEmployees, and previously used the raw,
-  // unfiltered `employees` array instead, which could silently select
-  // an inactive employee's id (e.g. whoever happened to sort first)
-  // even though that person was never actually rendered as a selectable
-  // option in the dropdown. Because the browser's <select> has no
-  // matching option for an id that isn't in its list, it visually falls
-  // back to showing the first available option instead -- so the screen
-  // could show one person selected while the real underlying value used
-  // on Save was someone else entirely. This is exactly how an
-  // observation about one person got saved against a different,
-  // unrelated inactive employee.
-  const visibleEmployees = myTeamEmployeeIds === null
-    ? employees
-    : employees.filter(e => myTeamEmployeeIds.includes(e.id))
+  // Employees visible to the current viewer in dropdowns/filters, and
+  // which observation rows this viewer's own list query is scoped to.
+  // Scoped by Client(s) Supported overlap with the Team Lead's own
+  // record, per explicit decision -- not by team_members roster
+  // membership. Admin/Super Admin remain unrestricted, unchanged.
+  const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase())
+  const visibleEmployees = userRole === 'Team Lead'
+    ? employees.filter(e => inClientScope(myEmp, e))
+    : employees
+  // Placed above the default-selection effect below on purpose -- that
+  // effect depends on activeVisibleEmployees, and previously used the
+  // raw, unfiltered `employees` array instead, which could silently
+  // select an inactive employee's id (e.g. whoever happened to sort
+  // first) even though that person was never actually rendered as a
+  // selectable option in the dropdown. Because the browser's <select>
+  // has no matching option for an id that isn't in its list, it
+  // visually falls back to showing the first available option instead
+  // -- so the screen could show one person selected while the real
+  // underlying value used on Save was someone else entirely. This is
+  // exactly how an observation about one person got saved against a
+  // different, unrelated inactive employee.
   const activeVisibleEmployees = visibleEmployees.filter(e => e.active)
 
   useEffect(() => {
     // Also self-corrects if the currently selected employee ever becomes
     // invalid for this dropdown (deactivated, or scoped out by a Team
-    // Lead's team changing) -- same safety check KPI Entry already uses,
-    // so a stale selEmp can't silently persist and get used on Save.
+    // Lead's client scope changing) -- same safety check KPI Entry
+    // already uses, so a stale selEmp can't silently persist and get
+    // used on Save.
     if (activeVisibleEmployees.length > 0 && (!selEmp || !activeVisibleEmployees.some(e => e.id === selEmp))) {
       setSelEmp(activeVisibleEmployees[0].id)
     }
   }, [activeVisibleEmployees.map(e => e.id).join(',')])
-
-  // Team Leads only see observations for employees on teams they lead.
-  // Manager/Super Admin see everyone (no scoping applied).
-  useEffect(() => {
-    async function loadMyTeamScope() {
-      if (userRole !== 'Team Lead' || !currentUser) { setMyTeamEmployeeIds(null); return }
-      const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
-      if (!myEmp) { setMyTeamEmployeeIds([]); return }
-      const { data: myTeams } = await supabase.from('teams').select('id').eq('team_lead_id', myEmp.id)
-      const teamIds = (myTeams || []).map(t => t.id)
-      if (teamIds.length === 0) { setMyTeamEmployeeIds([]); return }
-      const { data: members } = await supabase.from('team_members').select('employee_id').in('team_id', teamIds)
-      setMyTeamEmployeeIds((members || []).map(m => m.employee_id))
-    }
-    loadMyTeamScope()
-  }, [userRole, currentUser, employees])
 
   async function loadObs() {
     setLoading(true)
     let q = supabase.from('observations').select('*').order('created_at', { ascending: false }).limit(200)
     if (filterEmp !== 'all') q = q.eq('employee_id', filterEmp)
     if (filterMonth !== 'all') q = q.eq('month_label', filterMonth)
-    // Team Leads are scoped to their own team's employees only -- this is
-    // a real query filter, not just hiding rows after the fact, so a
-    // Team Lead never receives another team's observation data at all.
-    if (myTeamEmployeeIds !== null) {
-      if (myTeamEmployeeIds.length === 0) { setObs([]); setLoading(false); return }
-      q = q.in('employee_id', myTeamEmployeeIds)
+    // Team Leads are scoped to employees within their own Client(s)
+    // Supported only -- this is a real query filter, not just hiding
+    // rows after the fact, so a Team Lead never receives another
+    // client's observation data at all.
+    if (userRole === 'Team Lead') {
+      const scopedIds = visibleEmployees.map(e => e.id)
+      if (scopedIds.length === 0) { setObs([]); setLoading(false); return }
+      q = q.in('employee_id', scopedIds)
     }
     const { data } = await q
     setObs(data || [])
     setLoading(false)
   }
 
-  useEffect(() => { loadObs() }, [filterEmp, filterMonth, myTeamEmployeeIds])
+  useEffect(() => { loadObs() }, [filterEmp, filterMonth, userRole, visibleEmployees.length])
 
   async function saveObs(e: React.FormEvent) {
     e.preventDefault()
@@ -10362,6 +10364,17 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
   const [empObs, setEmpObs] = useState<any[]>([])
   const [loadingEmpObs, setLoadingEmpObs] = useState(false)
 
+  // Employees eligible to appear in this Team Lead's own pickers (the
+  // Employee filter above the sessions list, and the employee dropdown
+  // in the New Coaching Session form) -- scoped by Client(s) Supported
+  // overlap with the Team Lead's own record, per explicit decision, not
+  // by literal team_members roster membership. This is separate from
+  // tlTeamEmails below, which scopes which SESSIONS already show in the
+  // list -- this scopes who a Team Lead can even search for/select in
+  // the first place. Admin/Super Admin remain unrestricted, unchanged.
+  const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser?.toLowerCase())
+  const pickerEmployees = employees.filter(e => e.active && (userRole !== 'Team Lead' || inClientScope(myEmp, e)))
+
   // Team Leads: resolve which employee emails belong to teams they lead, so
   // the coaching log list below can be scoped to just their own team instead
   // of showing every team's sessions.
@@ -10572,7 +10585,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
               <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)}
                 className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-900">
                 <option value="">All Employees</option>
-                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                {pickerEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </div>
           )}
@@ -10637,7 +10650,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
               <select value={form.employee_id} onChange={e => setForm({...form, employee_id: e.target.value})}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">
                 <option value="">Select employee…</option>
-                {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                {pickerEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </div>
             <div>
@@ -11887,7 +11900,6 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   const canManage = userRole === 'super_admin' || userRole === 'admin'
   const isTL = userRole === 'Team Lead'
   const isViewer = userRole === 'agent'
-  const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
   const [tab, setTab] = useState<'compliance'|'upload'|'my-docs'>('compliance')
   const [allDocs, setAllDocs] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
@@ -11902,29 +11914,15 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
 
   useEffect(() => { loadData() }, [])
 
-  // Team Leads: resolve which employee ids belong to teams they lead, so
-  // private document visibility/compliance scope can be limited to their
-  // own team instead of every employee.
-  useEffect(() => {
-    if (!isTL || !currentUser) { setMyTeamEmpIds(null); return }
-    let cancelled = false
-    ;(async () => {
-      const { data: empData } = await supabase.from('employees').select('id').eq('email', currentUser).single()
-      if (!empData) { if (!cancelled) setMyTeamEmpIds(new Set()); return }
-      const { data: teamsData } = await supabase.from('teams').select('id, team_lead_id')
-      const ledTeamIds = (teamsData || []).filter((t:any) => t.team_lead_id === empData.id).map((t:any) => t.id)
-      if (ledTeamIds.length === 0) { if (!cancelled) setMyTeamEmpIds(new Set()); return }
-      const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
-      // Include the Team Lead's own employee id too -- otherwise they never
-      // see their own row in this table at all, only their team members',
-      // meaning their own document/pulse compliance was invisible even to
-      // themselves.
-      const ids = new Set((memberData || []).map((m:any) => m.employee_id))
-      ids.add(empData.id)
-      if (!cancelled) setMyTeamEmpIds(ids)
-    })()
-    return () => { cancelled = true }
-  }, [isTL, currentUser])
+  // Team Leads: document/compliance visibility is scoped by Client(s)
+  // Supported overlap with the Team Lead's own record, per explicit
+  // decision -- not by team_members roster membership. Includes the
+  // Team Lead's own id, otherwise they'd never see their own row in
+  // this table, only their scoped colleagues'.
+  const myEmp = employees.find((e:any) => e.email?.toLowerCase() === currentUser?.toLowerCase())
+  const myScopedEmpIds = new Set(
+    isTL ? employees.filter((e:any) => inClientScope(myEmp, e) || e.id === myEmp?.id).map((e:any) => e.id) : []
+  )
 
   const [pulseSubmittedIds, setPulseSubmittedIds] = useState<Set<string>>(new Set())
   async function loadData() {
@@ -11932,7 +11930,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
     const currentWeek = getWeekStart()
     const [{ data: docs }, { data: emps }, { data: pulses }] = await Promise.all([
       supabase.from('hris_documents').select('*').order('employee_name'),
-      supabase.from('employees').select('id, name, employee_id, email, active').order('name'),
+      supabase.from('employees').select('id, name, employee_id, email, active, client, clients_supported').order('name'),
       // Weekly Pulse Check compliance -- RLS on pulse_surveys already scopes
       // this correctly per viewer (self / own team / everyone), so no extra
       // client-side filtering is needed here the way it is for hris_documents.
@@ -11990,7 +11988,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   // Compliance: docs visible to HR (non-private only), or private docs
   // belonging to a Team Lead's own team -- governs which actual
   // files/links people can see, not who counts toward compliance
-  const hrDocs = allDocs.filter(d => !d.is_private || canManage || (isTL && d.employee_id && myTeamEmpIds?.has(d.employee_id)))
+  const hrDocs = allDocs.filter(d => !d.is_private || canManage || (isTL && d.employee_id && myScopedEmpIds.has(d.employee_id)))
   // My docs: only mine
   const myDocs = allDocs.filter(d => d.is_private && d.owner_email === currentUser)
 
@@ -12018,7 +12016,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   })
 
   // All employees from DB, scoped by active/inactive toggle
-  const scopedEmployees = employees.filter(e => (statusFilter === 'active' ? e.active : !e.active) && (!isTL || myTeamEmpIds?.has(e.id)))
+  const scopedEmployees = employees.filter(e => (statusFilter === 'active' ? e.active : !e.active) && (!isTL || myScopedEmpIds.has(e.id)))
   const filteredEmployees = scopedEmployees.filter(e => !searchQ || e.name.toLowerCase().includes(searchQ.toLowerCase()))
 
   // Count how many are complete
