@@ -327,7 +327,11 @@ function AnnouncementsPanel({ userEmail, userRole, showToast, onBgChange }: { us
       setAnnouncements(data)
       const ids = data.map((a:any) => a.id)
       if (ids.length > 0) {
-        const { data: myAcks } = await supabase.from('announcement_acknowledgements').select('announcement_id').eq('user_email', userEmail).in('announcement_id', ids)
+        // .ilike() not .eq(): same case-sensitivity family as the
+        // coaching_logs fixes -- user_email reflects whatever casing was
+        // typed/returned at whatever login this person used, which can
+        // differ from what a later read compares against.
+        const { data: myAcks } = await supabase.from('announcement_acknowledgements').select('announcement_id').ilike('user_email', userEmail).in('announcement_id', ids)
         const ackMap: Record<string,boolean> = {}
         myAcks?.forEach((a:any) => { ackMap[a.announcement_id] = true })
         setAcks(ackMap)
@@ -711,7 +715,11 @@ function GameOfMonth({ userEmail, userName, onScoreSaved }: { userEmail: string,
 
   async function checkTodaySubmission() {
     const today = new Date().toISOString().split('T')[0]
-    const { data } = await supabase.from('game_score_submissions').select('id').eq('user_email', userEmail).gte('submitted_at', today).limit(1)
+    // .ilike() not .eq(): same case-sensitivity reason as elsewhere --
+    // without it, someone could submit today, then this check silently
+    // fail to find that submission if the stored casing ever differs,
+    // letting them submit again same-day.
+    const { data } = await supabase.from('game_score_submissions').select('id').ilike('user_email', userEmail).gte('submitted_at', today).limit(1)
     if (data && data.length > 0) setTodaySubmitted(true)
   }
 
@@ -1983,8 +1991,11 @@ export default function KPIApp() {
     if (!user) return
     async function loadPendingTasks() {
       let q = supabase.from('tasks').select('id').eq('is_done', false)
-      if (userRole === 'agent') q = q.eq('assigned_to', user!.toLowerCase())
-      else if (userRole === 'Team Lead' || userRole === 'admin') q = q.or(`assigned_to.eq.${user!.toLowerCase()},assigned_by.eq.${user}`)
+      // .ilike() not .eq()/.or(...eq...): same case-sensitivity family
+      // as the coaching_logs and announcement fixes -- assigned_to/
+      // assigned_by can be stored with mixed case.
+      if (userRole === 'agent') q = q.ilike('assigned_to', user!.toLowerCase())
+      else if (userRole === 'Team Lead' || userRole === 'admin') q = q.or(`assigned_to.ilike.${user!.toLowerCase()},assigned_by.ilike.${user}`)
       const { data } = await q
       setPendingTaskCount((data || []).length)
     }
@@ -7205,10 +7216,13 @@ function TasksPanel({ employees, currentUser, userRole, showToast, onTasksChange
     // (for Team Lead/Admin) tasks they personally assigned to others so
     // they can track completion. Only Super Admin sees everyone's tasks.
     if (!canSeeAll) {
+      // .ilike() not .eq()/.or(...eq...): same case-sensitivity reason
+      // as elsewhere -- assigned_to/assigned_by can be stored with
+      // mixed case.
       if (userRole === 'Team Lead' || userRole === 'admin') {
-        q = q.or(`assigned_to.eq.${currentUser.toLowerCase()},assigned_by.eq.${currentUser}`)
+        q = q.or(`assigned_to.ilike.${currentUser.toLowerCase()},assigned_by.ilike.${currentUser}`)
       } else {
-        q = q.eq('assigned_to', currentUser.toLowerCase())
+        q = q.ilike('assigned_to', currentUser.toLowerCase())
       }
     }
     const { data, error } = await q
