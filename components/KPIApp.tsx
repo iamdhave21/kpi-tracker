@@ -4,7 +4,7 @@ import { supabase, Employee, KpiRecord, NteRecord } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1064,7 +1064,7 @@ function TodaysCadenceWidget({ currentUser, onNavigate }: { currentUser: string,
     let cancelled = false
     ;(async () => {
       setLoading(true)
-      const { data: items } = await supabase.from('cadence_items').select('id').eq('frequency', 'daily').is('retired_at', null)
+      const { data: items } = await supabase.from('cadence_items').select('id').eq('frequency', 'daily').eq('role_scope', 'team_lead').is('retired_at', null)
       const itemIds = (items || []).map((i: any) => i.id)
       if (itemIds.length === 0) { if (!cancelled) { setTotal(0); setDone(0); setLoading(false) } ; return }
       const periodKey = currentPeriodKey('daily')
@@ -1710,13 +1710,14 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           are shared, self-scoping screens that already show the right
           data for whoever's viewing). */}
       <>
-        <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check'].includes(view as string)} />
+        <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check','manager-cadence'].includes(view as string)} />
         {!collapsed.mgrtools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-scorecard" label="Team Lead Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-blue-400"/>
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+            <NavItem id="manager-cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
           </div>
         )}
       </>
@@ -2264,7 +2265,9 @@ export default function KPIApp() {
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
             {/* Agents CAN reach this view -- see note inside OperatingCadence
                 about restricting them to the Team Huddle tab only. */}
-            {view === 'cadence' && <OperatingCadence key={cadenceTabRequest?.ts || 'default'} initialTab={cadenceTabRequest?.tab as any} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'cadence' && <OperatingCadence key={cadenceTabRequest?.ts || 'default'} initialTab={cadenceTabRequest?.tab as any} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} scope="team_lead" />}
+            {view === 'manager-cadence' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <OperatingCadence currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} scope="manager" />}
+            {view === 'manager-cadence' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'resources' && <ResourcesPanel userRole={effectiveRole} showToast={showToast} />}
           </>
         )}
@@ -5962,7 +5965,7 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
 // -- Operating Cadence: checklist items with stable IDs per frequency.
 // Used by both the tracker UI and the compliance calculation, so this
 // is the single source of truth for what counts as a cadence item.
-type CadenceItem = { id: string, frequency: 'daily' | 'weekly' | 'monthly', label: string }
+type CadenceItem = { id: string, frequency: 'daily' | 'weekly' | 'monthly', label: string, role_scope?: 'team_lead' | 'manager' }
 
 const CADENCE_ITEMS: CadenceItem[] = [
   // Daily
@@ -5984,6 +5987,31 @@ const CADENCE_ITEMS: CadenceItem[] = [
   { id: 'm-review', frequency: 'monthly', label: 'Monthly Performance Review completed' },
   { id: 'm-talent', frequency: 'monthly', label: 'Talent Review completed' },
   { id: 'm-process', frequency: 'monthly', label: 'Process Improvement Review completed' },
+]
+
+// Manager-level Operating Cadence -- separate checklist content from the
+// Team Lead cadence above, distinguished by role_scope on the same
+// cadence_items table (rather than a whole separate table), per explicit
+// selection out of a suggested list. Reference/seed only, same as
+// CADENCE_ITEMS above -- the real, live items are managed via the
+// Manage tab and stored in the DB with role_scope='manager'.
+const MANAGER_CADENCE_ITEMS: CadenceItem[] = [
+  // Daily
+  { id: 'md-escalations', frequency: 'daily', label: 'Review flagged/escalated issues raised by Team Leads', role_scope: 'manager' },
+  { id: 'md-staffing', frequency: 'daily', label: 'Check staffing/attendance gaps across all teams', role_scope: 'manager' },
+  { id: 'md-sla', frequency: 'daily', label: 'Scan for SLA-at-risk tickets or clients', role_scope: 'manager' },
+  { id: 'md-opsdash', frequency: 'daily', label: 'Review Ops Dashboard for any compliance/pulse anomalies since yesterday', role_scope: 'manager' },
+  // Weekly
+  { id: 'mw-tlsync', frequency: 'weekly', label: 'Weekly sync/huddle with Team Leads', role_scope: 'manager' },
+  { id: 'mw-tlcompliance', frequency: 'weekly', label: "Review each Team Lead's weekly compliance completion (coaching, announcements, tasks)", role_scope: 'manager' },
+  { id: 'mw-workload', frequency: 'weekly', label: 'Cross-team workload/staffing balance check', role_scope: 'manager' },
+  { id: 'mw-clienthealth', frequency: 'weekly', label: 'Client health check-in -- any client-specific concerns raised this week', role_scope: 'manager' },
+  { id: 'mw-kpitrend', frequency: 'weekly', label: 'Weekly KPI trend review across teams', role_scope: 'manager' },
+  // Monthly
+  { id: 'mm-tlreview', frequency: 'monthly', label: 'Monthly performance review with each Team Lead', role_scope: 'manager' },
+  { id: 'mm-opsdashtrend', frequency: 'monthly', label: 'Review Ops Dashboard month-over-month trend (compliance, pulse, attendance/accuracy/efficiency)', role_scope: 'manager' },
+  { id: 'mm-talent', frequency: 'monthly', label: 'Talent/succession review across teams', role_scope: 'manager' },
+  { id: 'mm-process', frequency: 'monthly', label: 'Department-level process improvement review', role_scope: 'manager' },
 ]
 
 // Returns the period key for "today" at a given frequency, so a Daily
@@ -6029,7 +6057,7 @@ function historicalPeriodKeys(frequency: 'daily' | 'weekly' | 'monthly', count: 
   return out
 }
 
-function OperatingCadence({ currentUser, userRole, showToast, initialTab }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, initialTab?: 'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle' }) {
+function OperatingCadence({ currentUser, userRole, showToast, initialTab, scope = 'team_lead' }: { currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, initialTab?: 'daily'|'weekly'|'monthly'|'deliverables'|'compliance'|'manage'|'huddle', scope?: 'team_lead' | 'manager' }) {
   // Agents can be listed participants in a Team Huddle and need to
   // acknowledge it, but everything else on this screen (daily/weekly/
   // monthly checklists, compliance, manage tasks) is Team Lead+ only --
@@ -6050,7 +6078,7 @@ function OperatingCadence({ currentUser, userRole, showToast, initialTab }: { cu
   const [addSaving, setAddSaving] = useState(false)
 
   async function loadCadenceItems() {
-    const { data } = await supabase.from('cadence_items').select('*').is('retired_at', null).order('frequency').order('sort_order')
+    const { data } = await supabase.from('cadence_items').select('*').eq('role_scope', scope).is('retired_at', null).order('frequency').order('sort_order')
     setCadenceItems((data || []) as CadenceItem[])
     return data || []
   }
@@ -6114,7 +6142,7 @@ function OperatingCadence({ currentUser, userRole, showToast, initialTab }: { cu
     const id = `${addForm.frequency.charAt(0)}-${addForm.label.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').slice(0,30)}-${Date.now()}`
     const maxOrder = cadenceItems.filter(i => i.frequency === addForm.frequency).length + 1
     const { error } = await supabase.from('cadence_items').insert({
-      id, frequency: addForm.frequency, label: addForm.label.trim(), sort_order: maxOrder
+      id, frequency: addForm.frequency, label: addForm.label.trim(), sort_order: maxOrder, role_scope: scope
     })
     if (error) { showToast(error.message, 'error') }
     else {
@@ -9549,7 +9577,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
     const periods = ['daily','weekly','monthly']
     let cadenceTotal = 0
     for (const freq of periods) {
-      const { data: items } = await supabase.from('cadence_items').select('id').is('retired_at',null).eq('frequency',freq)
+      const { data: items } = await supabase.from('cadence_items').select('id').is('retired_at',null).eq('frequency',freq).eq('role_scope','team_lead')
       const totalItems = (items||[]).length
       if (totalItems === 0) { cadenceTotal += 100; continue }
       const { data: completions } = await supabase.from('cadence_completions')
@@ -9706,7 +9734,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
     const freqs: ('daily'|'weekly'|'monthly')[] = ['daily','weekly','monthly']
     const result: {freq:string, periods:{key:string, label:string, doneItems:string[], missingItems:string[]}[]}[] = []
     for (const freq of freqs) {
-      const { data: items } = await supabase.from('cadence_items').select('id,label').is('retired_at',null).eq('frequency',freq)
+      const { data: items } = await supabase.from('cadence_items').select('id,label').is('retired_at',null).eq('frequency',freq).eq('role_scope','team_lead')
       const itemList = items || []
       if (itemList.length === 0) { result.push({ freq, periods: [] }); continue }
       const { data: completions } = await supabase.from('cadence_completions')
