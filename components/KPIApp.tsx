@@ -157,9 +157,20 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
   const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
   const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
 
+  // .ilike() (not .eq()) on every email match below -- Postgres text
+  // comparison is case-sensitive by default, and employee_email/
+  // user_email/assigned_to can be stored with mixed case depending on
+  // how the email was typed when the record was created. This is the
+  // same recurring case-sensitivity gotcha already fixed for login/
+  // forgot-password in July, just not yet caught here -- confirmed a
+  // real instance of it live: a Team Lead's genuinely-saved, correctly-
+  // attributed coaching session for an agent was silently excluded from
+  // every compliance calculation that runs through this shared
+  // function, because the stored email's casing didn't exactly match a
+  // lowercased comparison value.
   const { data: coaching } = await supabase.from('coaching_logs')
     .select('agent_acknowledged')
-    .eq('employee_email', employeeEmail)
+    .ilike('employee_email', employeeEmail)
     .eq('requires_acknowledgment', true)
     .eq('status', 'Final')
     .gte('date', start).lt('date', end)
@@ -172,18 +183,18 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
   let annAcked = 0
   if (annIds.length) {
     const { data: acks } = await supabase.from('announcement_acknowledgements')
-      .select('announcement_id').eq('user_email', employeeEmail).in('announcement_id', annIds)
+      .select('announcement_id').ilike('user_email', employeeEmail).in('announcement_id', annIds)
     annAcked = (acks || []).length
   }
 
   const { data: taskData } = await supabase.from('tasks')
     .select('is_done')
-    .eq('assigned_to', employeeEmail.toLowerCase())
+    .ilike('assigned_to', employeeEmail)
     .gte('created_at', start).lt('created_at', end)
 
   const { data: pulseData } = await supabase.from('pulse_surveys')
     .select('week_start')
-    .eq('employee_email', employeeEmail)
+    .ilike('employee_email', employeeEmail)
     .gte('week_start', start).lt('week_start', end)
 
   const coachTotal = (coaching || []).length
@@ -1346,15 +1357,19 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
       // 1. Coaching sessions where I'm the one being coached and haven't
       //    signed off yet -- applies regardless of role, since a Team
       //    Lead or Admin can also be someone else's coachee.
+      //    .ilike() not .eq(): employee_email can be stored with mixed
+      //    case, same recurring gotcha found elsewhere today -- an .eq()
+      //    here would silently hide someone's own pending coaching item
+      //    from this banner if their stored casing didn't exactly match.
       const { data: coachingData } = await supabase.from('coaching_logs')
-        .select('id').eq('employee_email', emailLower).eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
+        .select('id').ilike('employee_email', emailLower).eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
       if (coachingData && coachingData.length > 0) results.push({ label: `${coachingData.length} coaching session${coachingData.length===1?'':'s'} to acknowledge`, count: coachingData.length, view: 'tl-tools' })
 
       // 2. Team Huddles I'm a listed participant in and haven't signed off.
       const { data: huddleData } = await supabase.from('huddle_notes').select('id, participants')
       const myHuddleIds = (huddleData || []).filter((h: any) => (h.participants||[]).some((p: string) => p.toLowerCase() === emailLower)).map((h: any) => h.id)
       if (myHuddleIds.length > 0) {
-        const { data: hackData } = await supabase.from('huddle_acknowledgements').select('huddle_id').eq('employee_email', emailLower).in('huddle_id', myHuddleIds)
+        const { data: hackData } = await supabase.from('huddle_acknowledgements').select('huddle_id').ilike('employee_email', emailLower).in('huddle_id', myHuddleIds)
         const ackedIds = new Set((hackData || []).map((a: any) => a.huddle_id))
         const pending = myHuddleIds.filter(id => !ackedIds.has(id))
         if (pending.length > 0) results.push({ label: `${pending.length} team huddle note${pending.length===1?'':'s'} to acknowledge`, count: pending.length, view: 'cadence', subTab: 'huddle' })
@@ -1915,9 +1930,11 @@ export default function KPIApp() {
     async function loadPending() {
       if (effectiveRole === 'agent') {
         // Agents: count sessions assigned to them requiring acknowledgment
+        // .ilike() not .eq(): employee_email can be stored with mixed
+        // case (documented recurring gotcha, confirmed again today).
         const { data } = await supabase.from('coaching_logs')
           .select('id')
-          .eq('employee_email', effectiveUser!.toLowerCase())
+          .ilike('employee_email', effectiveUser!.toLowerCase())
           .eq('requires_acknowledgment', true)
           .eq('agent_acknowledged', false)
         setPendingCoachingCount((data || []).length)
@@ -1932,14 +1949,19 @@ export default function KPIApp() {
         if (ledTeamIds.length === 0) { setPendingCoachingCount(0); return }
         const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
         const memberIds = new Set((memberData || []).map((m: any) => m.employee_id))
-        const teamEmails = employees.filter(e => memberIds.has(e.id) && e.email).map(e => e.email!.toLowerCase())
-        if (teamEmails.length === 0) { setPendingCoachingCount(0); return }
+        const teamEmails = new Set(employees.filter(e => memberIds.has(e.id) && e.email).map(e => e.email!.toLowerCase()))
+        if (teamEmails.size === 0) { setPendingCoachingCount(0); return }
+        // Filtered client-side (not a Postgres .in()) so the email
+        // comparison can be case-insensitive -- same reason as the
+        // Coaching Log panel's own fix; keeping this badge on the same
+        // matching logic as the panel it's a badge FOR avoids the two
+        // silently disagreeing with each other.
         const { data } = await supabase.from('coaching_logs')
-          .select('id')
-          .in('employee_email', teamEmails)
+          .select('id, employee_email')
           .eq('requires_acknowledgment', true)
           .eq('agent_acknowledged', false)
-        setPendingCoachingCount((data || []).length)
+        const count = (data || []).filter((r: any) => teamEmails.has((r.employee_email||'').toLowerCase())).length
+        setPendingCoachingCount(count)
       } else {
         // Admins/Super Admins: intentionally unscoped -- they see every
         // team's sessions in the panel, so the badge should match.
@@ -2163,7 +2185,7 @@ export default function KPIApp() {
               // stays consistent with whatever's actually on screen.
               if (effectiveRole === 'agent') {
                 const { data } = await supabase.from('coaching_logs').select('id')
-                  .eq('employee_email', effectiveUser!.toLowerCase())
+                  .ilike('employee_email', effectiveUser!.toLowerCase())
                   .eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
                 setPendingCoachingCount((data || []).length)
               } else if (effectiveRole === 'Team Lead') {
@@ -2174,12 +2196,11 @@ export default function KPIApp() {
                 if (ledTeamIds.length === 0) { setPendingCoachingCount(0); return }
                 const { data: memberData } = await supabase.from('team_members').select('employee_id').in('team_id', ledTeamIds)
                 const memberIds = new Set((memberData || []).map((m: any) => m.employee_id))
-                const teamEmails = employees.filter(e => memberIds.has(e.id) && e.email).map(e => e.email!.toLowerCase())
-                if (teamEmails.length === 0) { setPendingCoachingCount(0); return }
-                const { data } = await supabase.from('coaching_logs').select('id')
-                  .in('employee_email', teamEmails)
+                const teamEmails = new Set(employees.filter(e => memberIds.has(e.id) && e.email).map(e => e.email!.toLowerCase()))
+                if (teamEmails.size === 0) { setPendingCoachingCount(0); return }
+                const { data } = await supabase.from('coaching_logs').select('id, employee_email')
                   .eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
-                setPendingCoachingCount((data || []).length)
+                setPendingCoachingCount((data || []).filter((r: any) => teamEmails.has((r.employee_email||'').toLowerCase())).length)
               } else {
                 const { data } = await supabase.from('coaching_logs').select('id')
                   .eq('requires_acknowledgment', true).eq('agent_acknowledged', false)
@@ -9361,7 +9382,7 @@ function ViewerCoachingBanner({ currentUser }: { currentUser: string | null }) {
     if (!currentUser) return
     supabase.from('coaching_logs')
       .select('id, date, type, discussion, coached_by')
-      .eq('employee_email', currentUser.toLowerCase())
+      .ilike('employee_email', currentUser.toLowerCase())
       .eq('requires_acknowledgment', true)
       .eq('agent_acknowledged', false)
       .order('date', { ascending: false })
@@ -9972,9 +9993,12 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
   const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
   const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
 
+  // Same case-insensitive .ilike() fix as getComplianceBreakdown above,
+  // for the same reason -- employee_email/user_email/assigned_to can be
+  // stored with mixed case.
   const { data: coaching } = await supabase.from('coaching_logs')
     .select('agent_acknowledged, date, type')
-    .eq('employee_email', employeeEmail)
+    .ilike('employee_email', employeeEmail)
     .eq('requires_acknowledgment', true)
     .eq('status', 'Final')
     .gte('date', start).lt('date', end)
@@ -9987,18 +10011,18 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
   let ackedIds: string[] = []
   if (annIds.length) {
     const { data: acks } = await supabase.from('announcement_acknowledgements')
-      .select('announcement_id').eq('user_email', employeeEmail).in('announcement_id', annIds)
+      .select('announcement_id').ilike('user_email', employeeEmail).in('announcement_id', annIds)
     ackedIds = (acks || []).map((a:any) => a.announcement_id)
   }
 
   const { data: taskData } = await supabase.from('tasks')
     .select('title, is_done')
-    .eq('assigned_to', employeeEmail.toLowerCase())
+    .ilike('assigned_to', employeeEmail)
     .gte('created_at', start).lt('created_at', end)
 
   const { data: pulseData } = await supabase.from('pulse_surveys')
     .select('week_start')
-    .eq('employee_email', employeeEmail)
+    .ilike('employee_email', employeeEmail)
     .gte('week_start', start).lt('week_start', end)
 
   const coachTotal = (coaching || []).length
@@ -10355,20 +10379,33 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
     if (userRole === 'Team Lead' && tlTeamEmails === null) return
     setLoading(true)
     let query = supabase.from('coaching_logs').select('*').order('date', { ascending: false })
+    // Case-insensitive on purpose: employee_email can be stored with
+    // mixed case (e.g. 'paulamae.Suing@...') depending on how it was
+    // typed when the employee record was created, same recurring gotcha
+    // documented elsewhere in this app. .eq()/.in() are case-sensitive
+    // in Postgres, so a real coaching session could silently disappear
+    // from both an agent's own view and their Team Lead's view if the
+    // stored casing didn't exactly match a lowercased comparison value
+    // -- confirmed this exact thing happening for Paula Suing's coaching
+    // log under Team Lead Precilla Cornel's view.
     if (userRole === 'agent' && currentUser) {
-      query = query.eq('employee_email', currentUser.toLowerCase())
-    } else if (userRole === 'Team Lead') {
+      query = query.ilike('employee_email', currentUser)
+    }
+    const { data } = await query
+    let rows = data || []
+    if (userRole === 'Team Lead') {
       // Include the TL's own email alongside their team's, so sessions
       // where the TL themself is the one being coached (e.g. by a Manager
       // or another TL) also show up here -- previously only sessions about
       // their team members were fetched, so a TL could never see coaching
-      // logged for them personally.
-      const scope = new Set(tlTeamEmails || [])
+      // logged for them personally. Filtered client-side (not via a
+      // Postgres .in()) specifically so the comparison can be
+      // case-insensitive -- see note above.
+      const scope = new Set(Array.from(tlTeamEmails || []).map(e => e.toLowerCase()))
       if (currentUser) scope.add(currentUser.toLowerCase())
-      query = query.in('employee_email', Array.from(scope))
+      rows = rows.filter((r: any) => scope.has((r.employee_email || '').toLowerCase()))
     }
-    const { data } = await query
-    setLogs(data || [])
+    setLogs(rows)
     setLoading(false)
   }
 
