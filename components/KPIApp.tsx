@@ -1710,13 +1710,14 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           are shared, self-scoping screens that already show the right
           data for whoever's viewing). */}
       <>
-        <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check','manager-cadence'].includes(view as string)} />
+        <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check','manager-cadence','observations'].includes(view as string)} />
         {!collapsed.mgrtools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-scorecard" label="Team Lead Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-blue-400"/>
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+            <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="manager-cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
           </div>
         )}
@@ -8726,6 +8727,8 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
   const [selMonth, setSelMonth] = useState<string>('')
   const [text, setText] = useState('')
   const [saving, setSaving] = useState(false)
+  const [attachments, setAttachments] = useState<{name:string,url:string,type:string}[]>([])
+  const [uploading, setUploading] = useState(false)
   const [filterEmp, setFilterEmp] = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
 
@@ -8794,6 +8797,18 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
 
   useEffect(() => { loadObs() }, [filterEmp, filterMonth, userRole, visibleEmployees.length])
 
+  async function uploadFile(file: File) {
+    setUploading(true)
+    const path = `observations/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+    if (error) { showToast('Upload failed: ' + error.message, 'error'); setUploading(false); return }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path)
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const type = file.type.startsWith('image/') ? 'image' : ext === 'pdf' ? 'pdf' : 'doc'
+    setAttachments(prev => [...prev, { name: file.name, url: urlData.publicUrl, type }])
+    setUploading(false)
+  }
+
   async function saveObs(e: React.FormEvent) {
     e.preventDefault()
     if (!text.trim() || !selEmp || !selMonth) return
@@ -8805,9 +8820,10 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
       month_label: selMonth,
       observation: text.trim(),
       observed_by: currentUser || 'unknown',
+      attachments,
     })
     if (error) showToast(error.message, 'error')
-    else { showToast('Observation saved!'); setText(''); loadObs() }
+    else { showToast('Observation saved!'); setText(''); setAttachments([]); loadObs() }
     setSaving(false)
   }
 
@@ -8849,7 +8865,23 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"
               placeholder="e.g. Consistently meets deadlines, needs improvement on accuracy..." />
           </div>
-          <button type="submit" disabled={saving || !text.trim() || !selMonth}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Attachments (screenshots, files)</label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition">
+                <Upload className="w-3.5 h-3.5" />{uploading ? 'Uploading...' : 'Attach file'}
+                <input type="file" className="hidden" disabled={uploading} accept="image/*,.pdf,.doc,.docx"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = '' }} />
+              </label>
+              {attachments.map((a, i) => (
+                <span key={i} className="inline-flex items-center gap-1 text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2 py-1 rounded-full">
+                  {a.type === 'image' ? '🖼️' : a.type === 'pdf' ? '📄' : '📎'} {a.name}
+                  <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-blue-400 hover:text-red-500 ml-0.5">×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+          <button type="submit" disabled={saving || uploading || !text.trim() || !selMonth}
             className="bg-blue-600 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2">
             <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Observation'}
           </button>
@@ -8886,6 +8918,20 @@ function ObservationsPanel({ employees, currentUser, userRole, showToast }:
                       <span className="text-xs text-gray-400">{new Date(o.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
                     </div>
                     <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{o.observation}</p>
+                    {o.attachments && o.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {o.attachments.filter((a:any) => a.type === 'image').map((a:any, i:number) => (
+                          <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" title={a.name}>
+                            <img src={a.url} alt={a.name} className="w-16 h-16 object-cover rounded-lg border border-gray-200 hover:opacity-80 transition" />
+                          </a>
+                        ))}
+                        {o.attachments.filter((a:any) => a.type !== 'image').map((a:any, i:number) => (
+                          <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs bg-gray-50 border border-gray-200 text-gray-700 px-2 py-1 rounded-full hover:bg-gray-100 transition">
+                            {a.type === 'pdf' ? '📄' : '📎'} {a.name}
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => deleteObs(o.id)} className="text-gray-400 hover:text-red-600 p-1 flex-shrink-0 transition"><Trash2 className="w-4 h-4"/></button>
                 </div>
