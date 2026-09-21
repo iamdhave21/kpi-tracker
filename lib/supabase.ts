@@ -43,6 +43,23 @@ export type NteRecord = {
   created_at: string
 }
 
+// Weekly antivirus scan compliance. Screenshots live in the PRIVATE
+// `av-scans` storage bucket (not the app's usual public `attachments`
+// bucket) and are deleted after 90 days by app/api/cron/av-scan-cleanup --
+// this row survives that deletion so a year of compliance history is
+// never lost, it just stops being able to show the picture itself.
+export type AvScanSubmission = {
+  id: string
+  employee_id: string
+  employee_name: string | null
+  employee_email: string
+  week_start: string
+  scan_type: 'quick' | 'full'
+  storage_path: string
+  submitted_at: string
+  screenshot_deleted_at: string | null
+}
+
 export type KpiRecord = {
   id: string
   employee_id: string

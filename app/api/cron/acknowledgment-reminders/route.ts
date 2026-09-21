@@ -9,10 +9,29 @@ function getSupabase() {
   )
 }
 
+// Weekly Pulse Check / employee weekly week_start, matching the app's own
+// Monday-based convention (KPIApp.tsx getWeekStart) without importing
+// client component code into a server route.
+function getWeekStart(d: Date = new Date()): string {
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const monday = new Date(d)
+  monday.setDate(d.getDate() + diff)
+  monday.setHours(0, 0, 0, 0)
+  return monday.toISOString().split('T')[0]
+}
+
+// Same exemption rule as the AV Scan feature itself (KPIApp.tsx
+// PULSE_CHECK_EXEMPT_EMAILS / AV_SCAN_REQUIRED_FROM) -- kept in sync by
+// hand since this route can't import from the client component file.
+const AV_SCAN_EXEMPT_EMAILS = ['operations@ab-businesssupport.com', 'andrealiz@ab-businesssupport.com']
+const AV_SCAN_REQUIRED_FROM = new Date('2026-09-21')
+
 // Runs once daily via Vercel Cron (see vercel.json). Emails every active
 // employee a digest of anything they still haven't acknowledged/completed:
-// coaching sessions requiring acknowledgment, announcements, and incomplete
-// tasks. Skips anyone with nothing pending -- no email if they're all caught up.
+// coaching sessions requiring acknowledgment, announcements, incomplete
+// tasks, and this week's missing antivirus scan(s) (quick/full). Skips
+// anyone with nothing pending -- no email if they're all caught up.
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -29,12 +48,24 @@ export async function GET(req: NextRequest) {
   if (empErr) return NextResponse.json({ error: empErr.message }, { status: 500 })
   if (!employees || employees.length === 0) return NextResponse.json({ success: true, sent: 0 })
 
-  const [{ data: allCoaching }, { data: allAnnouncements }, { data: allAcks }, { data: allTasks }] = await Promise.all([
+  const currentWeek = getWeekStart()
+  const pastAvScanLaunch = new Date() >= AV_SCAN_REQUIRED_FROM
+
+  const [{ data: allCoaching }, { data: allAnnouncements }, { data: allAcks }, { data: allTasks }, { data: appUsers }, { data: avSubs }] = await Promise.all([
     supabase.from('coaching_logs').select('employee_email, date, type').eq('requires_acknowledgment', true).eq('agent_acknowledged', false).eq('status', 'Final'),
     supabase.from('announcements').select('id, title').eq('active', true),
     supabase.from('announcement_acknowledgements').select('announcement_id, user_email'),
     supabase.from('tasks').select('assigned_to, title, due_date').eq('is_done', false),
+    pastAvScanLaunch ? supabase.from('app_users').select('email, role') : Promise.resolve({ data: [] as any[] }),
+    pastAvScanLaunch ? supabase.from('av_scan_submissions').select('employee_id, scan_type').eq('week_start', currentWeek) : Promise.resolve({ data: [] as any[] }),
   ])
+  const roleByEmail = new Map((appUsers || []).map((u: any) => [u.email?.toLowerCase(), u.role]))
+  const avByEmployee = new Map<string, Set<string>>()
+  ;(avSubs || []).forEach((s: any) => {
+    const set = avByEmployee.get(s.employee_id) || new Set<string>()
+    set.add(s.scan_type)
+    avByEmployee.set(s.employee_id, set)
+  })
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -50,13 +81,28 @@ export async function GET(req: NextRequest) {
     const missingAnnouncements = (allAnnouncements || []).filter((a:any) => !ackedIds.has(a.id))
     const missingTasks = (allTasks || []).filter((t:any) => t.assigned_to?.toLowerCase() === email)
 
-    const totalPending = missingCoaching.length + missingAnnouncements.length + missingTasks.length
+    // Same population/exemption as the AV Scan feature itself: no role
+    // recognised for this email (no app_users row) means not exempt by
+    // default, same fail-open-to-included reasoning as everything else
+    // that checks role in this app -- an unrecognised value should not
+    // silently drop someone out of a compliance reminder.
+    const role = roleByEmail.get(email)
+    const avExempt = role === 'super_admin' || AV_SCAN_EXEMPT_EMAILS.includes(email)
+    const submittedTypes = avByEmployee.get(emp.id) || new Set<string>()
+    const missingAvScans: string[] = []
+    if (pastAvScanLaunch && !avExempt) {
+      if (!submittedTypes.has('quick')) missingAvScans.push('Quick Scan')
+      if (!submittedTypes.has('full')) missingAvScans.push('Full Scan')
+    }
+
+    const totalPending = missingCoaching.length + missingAnnouncements.length + missingTasks.length + missingAvScans.length
     if (totalPending === 0) continue
 
     const rows = [
       ...missingCoaching.map((c:any) => `<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6;">📋 Coaching session</td><td style="padding:8px;border-bottom:1px solid #f3f4f6;">${c.type || 'Coaching session'} (${new Date(c.date).toLocaleDateString('en-US',{month:'short',day:'numeric'})})</td></tr>`),
       ...missingAnnouncements.map((a:any) => `<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6;">📢 Announcement</td><td style="padding:8px;border-bottom:1px solid #f3f4f6;">${a.title}</td></tr>`),
       ...missingTasks.map((t:any) => `<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6;">✅ Task</td><td style="padding:8px;border-bottom:1px solid #f3f4f6;">${t.title}${t.due_date ? ' (due ' + new Date(t.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ')' : ''}</td></tr>`),
+      ...missingAvScans.map((label:string) => `<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6;">🛡️ AV Scan</td><td style="padding:8px;border-bottom:1px solid #f3f4f6;">This week's ${label}</td></tr>`),
     ].join('')
 
     try {

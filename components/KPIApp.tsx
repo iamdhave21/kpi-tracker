@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
-import { supabase, Employee, KpiRecord, NteRecord } from '@/lib/supabase'
+import { supabase, Employee, KpiRecord, NteRecord, AvScanSubmission } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan'
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -153,6 +153,15 @@ const PULSE_CHECK_EXEMPT_EMAILS = ['operations@ab-businesssupport.com', 'andreal
 function isPulseCheckExempt(email: string | null | undefined): boolean {
   return !!email && PULSE_CHECK_EXEMPT_EMAILS.includes(email.toLowerCase())
 }
+
+// Weekly Antivirus Scan Compliance -- same population and exemption rule
+// as Weekly Pulse Check (isPulseCheckExempt reused directly rather than a
+// parallel exemption list; split it into its own constant later if the
+// two populations ever need to diverge). Same rollout-cutoff reasoning as
+// PULSE_CHECK_REQUIRED_FROM above: don't flag anyone as delinquent for a
+// week before the feature was actually announced to staff. Adjust this
+// date to match the real internal announcement before relying on it.
+const AV_SCAN_REQUIRED_FROM = new Date('2026-09-21')
 
 function countMondaysInRange(start: Date, end: Date): number {
   let count = 0
@@ -1428,6 +1437,16 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
         if (!pulseData) results.push({ label: `Your Weekly Pulse Check is due`, count: 1, view: 'pulse-check' })
       }
 
+      // 5. This week's antivirus scan screenshots (quick + full), same
+      //    exemption rule and rollout cutoff as Pulse Check above.
+      if (myEmployee && userRole !== 'super_admin' && !isPulseCheckExempt(currentUser) && new Date() >= AV_SCAN_REQUIRED_FROM) {
+        const week = getWeekStart()
+        const { data: avData } = await supabase.from('av_scan_submissions').select('scan_type').eq('employee_id', myEmployee.id).eq('week_start', week)
+        const submittedTypes = new Set((avData || []).map((r: any) => r.scan_type))
+        if (!submittedTypes.has('quick')) results.push({ label: `Your Quick Scan is due`, count: 1, view: 'av-scan' })
+        if (!submittedTypes.has('full')) results.push({ label: `Your Full Scan is due`, count: 1, view: 'av-scan' })
+      }
+
       if (!cancelled) setItems(results)
     })()
     return () => { cancelled = true }
@@ -1710,13 +1729,14 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           are shared, self-scoping screens that already show the right
           data for whoever's viewing). */}
       <>
-        <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check','manager-cadence','observations'].includes(view as string)} />
+        <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check','manager-cadence','observations','av-scan'].includes(view as string)} />
         {!collapsed.mgrtools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-scorecard" label="Team Lead Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="tl-tools" label="Coaching & 1-on-1" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-amber-500" dotColor="bg-blue-400"/>
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
+            <NavItem id="av-scan" label="AV Scan" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="observations" label="Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
             <NavItem id="manager-cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
           </div>
@@ -1726,7 +1746,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {/* TEAM LEAD TOOLS -- visible to everyone; KPI Entry, Observations,
           and Operating Cadence hard-block below Team Lead. */}
       <>
-        <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check'].includes(view as string)} />
+        <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check','av-scan'].includes(view as string)} />
         {!collapsed.tltools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
@@ -1735,6 +1755,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
             <NavItem id="cadence" label="Operating Cadence" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="tl-scorecard" label="TL Scorecard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            <NavItem id="av-scan" label="AV Scan" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
           </div>
         )}
       </>
@@ -1742,7 +1763,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {/* AGENT TOOLS -- visible to everyone; every item here is a shared,
           self-scoping screen, so nothing hard-blocks in this group. */}
       <>
-        <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check','cadence'].includes(view as string)} />
+        <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check','cadence','av-scan'].includes(view as string)} />
         {!collapsed.agenttools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="tl-tools" label="Coaching Logs" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-red-500" dotColor="bg-emerald-400"/>
@@ -1750,6 +1771,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
             <NavItem id="dashboard-team" label="Team Dashboard" icon={<Users className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
             {userRole === 'agent' && <NavItem id="cadence" label="Team Huddle Notes" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>}
             <NavItem id="pulse-check" label="Weekly Pulse Check" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
+            <NavItem id="av-scan" label="AV Scan" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-emerald-400"/>
           </div>
         )}
       </>
@@ -2191,6 +2213,7 @@ export default function KPIApp() {
             {view === 'dashboard-employee' && <EmployeeDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} selEmployee={selEmployee} setSelEmployee={setSelEmployee} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} showToast={showToast} />}
             {view === 'dashboard-team' && <TeamDashboard records={records} employees={employees} activeEmpIds={activeEmpIds} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} onEditRecord={() => loadData()} />}
             {view === 'pulse-check' && <PulseCheckPanel key={effectiveUser || 'self'} employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} isPreviewing={!!previewTarget} />}
+            {view === 'av-scan' && <AVScanPanel key={effectiveUser || 'self'} employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'entry' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <KPIEntry employees={employees} records={records} onSaved={() => { loadData(); showToast('KPI record saved!') }} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
             {view === 'entry' && effectiveRole === 'agent' && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">KPI Entry requires Team Lead access or higher</p></div>}
             {view === 'employees' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <EmployeeManager employees={employees} onChanged={() => { loadData(); showToast('Updated!') }} showToast={showToast} currentUser={effectiveUser} userRole={effectiveRole} />}
@@ -3888,6 +3911,219 @@ type OpsMonthStats = {
   efficiencyAvg: number | null
   perfRecordCount: number
 }
+// -- Weekly Antivirus Scan Compliance ------------------------------------
+// A quick scan submitted early in the week, a full scan by week's end --
+// both screenshot uploads. Unlike every other upload in this app, these
+// go to a PRIVATE storage bucket (`av-scans`) with signed, expiring URLs
+// rather than the usual public-bucket-with-permanent-URL pattern, since
+// the picture is someone's own desktop/installed software. Screenshots
+// are deleted after 90 days by app/api/cron/av-scan-cleanup -- the
+// submission row itself (who, when, which week, quick or full) is kept
+// indefinitely, so a year of compliance history survives even after the
+// picture is gone. See AUDIT.md N33: every other upload path in this app
+// has no retention plan at all; this one is deliberately built with one
+// from day one instead of leaving it as debt.
+// Same population/exemption rule as Weekly Pulse Check (isPulseCheckExempt
+// reused directly -- split it into its own list later if the two
+// populations ever diverge) and the same submit/manage split, but scoping
+// uses the newer empClientList/inClientScope helpers rather than Pulse
+// Check's older, pre-migration team_members-based lookup.
+function AVScanPanel({ employees, currentUser, userRole, showToast }:
+  { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+  const canSubmit = userRole !== 'super_admin' && !isPulseCheckExempt(currentUser)
+  const canManage = ['super_admin','admin','Team Lead'].includes(userRole)
+  const [activeTab, setActiveTab] = useState<'submit'|'manage'>(canSubmit ? 'submit' : 'manage')
+  const currentWeek = getWeekStart()
+  const pastLaunch = new Date() >= AV_SCAN_REQUIRED_FROM
+
+  const myEmployee = employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
+  const [mySubs, setMySubs] = useState<Record<'quick'|'full', AvScanSubmission | null>>({ quick: null, full: null })
+  const [checkingMine, setCheckingMine] = useState(true)
+  const [uploading, setUploading] = useState<'quick'|'full'|null>(null)
+  const quickFileRef = useRef<HTMLInputElement>(null)
+  const fullFileRef = useRef<HTMLInputElement>(null)
+  const fileRefs = { quick: quickFileRef, full: fullFileRef }
+
+  useEffect(() => {
+    if (!canSubmit || !myEmployee) { setCheckingMine(false); return }
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase.from('av_scan_submissions').select('*').eq('employee_id', myEmployee.id).eq('week_start', currentWeek)
+      if (cancelled) return
+      const next: Record<'quick'|'full', AvScanSubmission | null> = { quick: null, full: null }
+      ;(data || []).forEach((r: any) => { next[r.scan_type as 'quick'|'full'] = r })
+      setMySubs(next)
+      setCheckingMine(false)
+    })()
+    return () => { cancelled = true }
+  }, [myEmployee?.id, currentWeek])
+
+  async function handleUpload(scanType: 'quick'|'full', file: File) {
+    if (!myEmployee || !currentUser) { showToast('No employee record found for your account. Contact your admin.', 'error'); return }
+    setUploading(scanType)
+    try {
+      const emailLower = currentUser.toLowerCase()
+      const ext = file.name.split('.').pop()
+      // Stable path (no timestamp) + upsert:true -- a re-submission this
+      // week overwrites the same storage object instead of leaving the
+      // previous one behind as an orphan. Deliberately not the timestamped-
+      // path-per-submission shape used elsewhere in this file (e.g.
+      // GameOfMonth) -- that shape is exactly what AUDIT.md N33 flags.
+      const path = `${emailLower}/${currentWeek}-${scanType}.${ext}`
+      const { error: upErr } = await supabase.storage.from('av-scans').upload(path, file, { upsert: true })
+      if (upErr) { showToast('Upload failed: ' + upErr.message, 'error'); setUploading(null); return }
+      const submittedAt = new Date().toISOString()
+      const { error: dbErr } = await supabase.from('av_scan_submissions').upsert({
+        employee_id: myEmployee.id, employee_name: myEmployee.name, employee_email: myEmployee.email,
+        week_start: currentWeek, scan_type: scanType, storage_path: path, submitted_at: submittedAt,
+        screenshot_deleted_at: null,
+      }, { onConflict: 'employee_email,week_start,scan_type' })
+      if (dbErr) { showToast('Submission failed: ' + dbErr.message, 'error'); setUploading(null); return }
+      setMySubs(prev => ({ ...prev, [scanType]: { ...(prev[scanType]||{}), employee_id: myEmployee.id, week_start: currentWeek, scan_type: scanType, storage_path: path, submitted_at: submittedAt, screenshot_deleted_at: null } as AvScanSubmission }))
+      showToast(`${scanType === 'quick' ? 'Quick' : 'Full'} Scan submitted! ✓`)
+    } catch { showToast('Something went wrong. Please try again.', 'error') }
+    setUploading(null)
+    const ref = fileRefs[scanType].current
+    if (ref) ref.value = ''
+  }
+
+  // A signed URL is generated on demand rather than stored, so it's never
+  // sitting in state (or a browser history entry) longer than it needs to
+  // be, and it naturally expires. See the honest caveat in the PR/plan:
+  // this stops a permanent, publicly-cacheable link from existing at all
+  // (unlike this app's usual public-bucket pattern -- see AUDIT.md C4) but
+  // it does not by itself restrict WHO can request one, since that would
+  // need real per-user storage.objects RLS, which this app doesn't have
+  // for any bucket today (AUDIT.md C2 covers that project-wide).
+  async function viewScreenshot(path: string) {
+    const { data, error } = await supabase.storage.from('av-scans').createSignedUrl(path, 3600)
+    if (error || !data?.signedUrl) { showToast('Could not load screenshot: ' + (error?.message || 'unknown error'), 'error'); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
+  // Manage/review scope: Admin/Super Admin unrestricted, Team Lead scoped
+  // via inClientScope (the current, post-migration convention -- see its
+  // definition above for why this replaced the older team_members lookup
+  // Pulse Check still uses).
+  const isSuper = userRole === 'super_admin'
+  const scopedEmployees = employees.filter(e => e.active && !isPulseCheckExempt(e.email) && (isSuper || inClientScope(myEmployee, e)))
+  const [weekSubs, setWeekSubs] = useState<AvScanSubmission[]>([])
+  const [loadingWeek, setLoadingWeek] = useState(true)
+  useEffect(() => {
+    if (!canManage) return
+    let cancelled = false
+    ;(async () => {
+      setLoadingWeek(true)
+      const { data } = await supabase.from('av_scan_submissions').select('*').eq('week_start', currentWeek)
+      if (!cancelled) { setWeekSubs(data || []); setLoadingWeek(false) }
+    })()
+    return () => { cancelled = true }
+  }, [canManage, currentWeek])
+
+  const subsByEmp = new Map<string, Record<'quick'|'full', AvScanSubmission | undefined>>()
+  weekSubs.forEach(s => {
+    const cur = subsByEmp.get(s.employee_id) || { quick: undefined, full: undefined }
+    cur[s.scan_type] = s
+    subsByEmp.set(s.employee_id, cur)
+  })
+
+  function slotLabel(scanType: 'quick'|'full') { return scanType === 'quick' ? 'Quick Scan' : 'Full Scan' }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-lg font-bold text-gray-800">Antivirus Scan Compliance</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Submit a screenshot of your antivirus scan results each week — a quick scan early in the week, a full scan by week's end. Screenshots are kept for 90 days.</p>
+      </div>
+
+      {canSubmit && canManage && (
+        <div className="flex gap-1 border-b border-gray-200">
+          <button onClick={() => setActiveTab('submit')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${activeTab==='submit' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>Submit</button>
+          <button onClick={() => setActiveTab('manage')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${activeTab==='manage' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>Team Status</button>
+        </div>
+      )}
+
+      {activeTab === 'submit' && canSubmit && (
+        checkingMine ? (
+          <div className="text-sm text-gray-400 py-8 text-center">Loading…</div>
+        ) : !myEmployee ? (
+          <div className="text-sm text-red-600 bg-red-50 rounded-xl p-4">No employee record found for your account. Contact your admin.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {(['quick','full'] as const).map(scanType => {
+              const sub = mySubs[scanType]
+              return (
+                <div key={scanType} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                  <p className="text-sm font-medium text-gray-700">{slotLabel(scanType)}</p>
+                  {sub ? (
+                    <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700 flex items-center justify-between gap-2">
+                      <span>✅ Submitted {new Date(sub.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                      <button onClick={() => viewScreenshot(sub.storage_path)} className="text-green-700 underline hover:text-green-900 flex-shrink-0">View</button>
+                    </div>
+                  ) : (
+                    <>
+                      <button onClick={() => fileRefs[scanType].current?.click()} disabled={uploading === scanType} className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-xl py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-50">
+                        {uploading === scanType ? '⏳ Uploading...' : '📤 Upload screenshot'}
+                      </button>
+                      <input ref={fileRefs[scanType]} type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(scanType, f) }} className="hidden" />
+                    </>
+                  )}
+                  <p className="text-xs text-gray-400">Re-uploading replaces this week's {slotLabel(scanType).toLowerCase()}.</p>
+                </div>
+              )
+            })}
+          </div>
+        )
+      )}
+
+      {activeTab === 'manage' && canManage && (
+        loadingWeek ? (
+          <div className="text-sm text-gray-400 py-8 text-center">Loading…</div>
+        ) : !pastLaunch ? (
+          <div className="text-sm text-gray-500 bg-gray-50 rounded-xl p-4">This feature isn't required yet — nobody will be flagged as missing until {AV_SCAN_REQUIRED_FROM.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-gray-500">
+                  <th className="py-2 pr-4 font-medium">Employee</th>
+                  <th className="py-2 pr-4 font-medium">Quick Scan</th>
+                  <th className="py-2 pr-4 font-medium">Full Scan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scopedEmployees.map(e => {
+                  const subs = subsByEmp.get(e.id) || { quick: undefined, full: undefined }
+                  return (
+                    <tr key={e.id} className="border-b border-gray-100">
+                      <td className="py-2 pr-4 text-gray-700">{e.name}</td>
+                      {(['quick','full'] as const).map(scanType => {
+                        const s = subs[scanType]
+                        return (
+                          <td key={scanType} className="py-2 pr-4">
+                            {s ? (
+                              <button onClick={() => viewScreenshot(s.storage_path)} className="text-green-700 hover:underline">✅ {new Date(s.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</button>
+                            ) : (
+                              <span className="text-red-500">Missing</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+                {scopedEmployees.length === 0 && (
+                  <tr><td colSpan={3} className="text-center py-8 text-gray-400">No employees in scope.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 function OpsDashboard({ employees }: { employees: Employee[] }) {
   // Current month + the 2 before it, oldest first, in the same
   // "Month Year" label format used by kpi_records/observations.
