@@ -1486,7 +1486,7 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
   )
 }
 
-function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, pendingNteCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, pendingNteCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false
   })
@@ -1710,7 +1710,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         <div className="px-2 pb-1 space-y-0.5">
           {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>}
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
-          <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
+          <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingNteCount} badgeColor="bg-red-500" dotColor="bg-pink-400"/>
           <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
         </div>
       )}
@@ -1809,6 +1809,7 @@ export default function KPIApp() {
   const [displayName, setDisplayName] = useState<string>('')
   const [userRole, setUserRole] = useState<string>('agent')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
+  const [pendingNteCount, setPendingNteCount] = useState(0)
   const [pendingTaskCount, setPendingTaskCount] = useState(0)
   const [tasksRefreshKey, setTasksRefreshKey] = useState(0)
   const [favoriteViews, setFavoriteViews] = useState<string[]>([])
@@ -2034,6 +2035,29 @@ export default function KPIApp() {
     loadPending()
   }, [effectiveUser, effectiveRole, employees])
 
+  // Own pending Notice to Explain sign-offs -- same underlying check the
+  // AttentionBanner already does (nte_records where I'm the employee/
+  // contractor party, minus ones I've already acknowledged), just
+  // surfaced as a persistent sidebar badge on "Notice to Explain" too,
+  // matching how the Coaching badge works, rather than only showing up
+  // in the dismissible top banner.
+  useEffect(() => {
+    if (!effectiveUser) { setPendingNteCount(0); return }
+    const myEmployee = employees.find(e => e.email?.toLowerCase() === effectiveUser.toLowerCase())
+    if (!myEmployee) { setPendingNteCount(0); return }
+    let cancelled = false
+    ;(async () => {
+      const { data: nteData } = await supabase.from('nte_records').select('id').eq('employee_id', myEmployee.id)
+      const nteIds = (nteData || []).map((n: any) => n.id)
+      if (nteIds.length === 0) { if (!cancelled) setPendingNteCount(0); return }
+      const { data: nteAckData } = await supabase.from('nte_acknowledgements').select('nte_id').eq('party_role', 'employee').in('nte_id', nteIds)
+      const ackedNteIds = new Set((nteAckData || []).map((a: any) => a.nte_id))
+      const pending = nteIds.filter(id => !ackedNteIds.has(id))
+      if (!cancelled) setPendingNteCount(pending.length)
+    })()
+    return () => { cancelled = true }
+  }, [effectiveUser, employees])
+
   // Load pending tasks count -- matches the same scoping TasksPanel itself
   // uses: Agent sees only their own, Team Lead/Admin see own + assigned by
   // them, Super Admin sees everyone. Also re-runs on tasksRefreshKey so the
@@ -2150,7 +2174,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-64 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} userRole={effectiveRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} pendingNteCount={pendingNteCount} userRole={effectiveRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
 
         </aside>
 
