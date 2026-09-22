@@ -43,17 +43,24 @@ export type NteRecord = {
   created_at: string
 }
 
-// Weekly antivirus scan compliance. Screenshots live in the PRIVATE
-// `av-scans` storage bucket (not the app's usual public `attachments`
-// bucket) and are deleted after 90 days by app/api/cron/av-scan-cleanup --
-// this row survives that deletion so a year of compliance history is
-// never lost, it just stops being able to show the picture itself.
+// Antivirus scan compliance -- quick scan weekly, full scan monthly.
+// Screenshots live in the PRIVATE `av-scans` storage bucket (not the
+// app's usual public `attachments` bucket) and are deleted after 90 days
+// by app/api/cron/av-scan-cleanup -- this row survives that deletion so a
+// year of compliance history is never lost, it just stops being able to
+// show the picture itself.
+// `period_key` is what uniqueness and lookups actually key on -- a Monday
+// date string for `quick` (weekly), a `YYYY-MM` string for `full`
+// (monthly), same convention as this app's existing Operating Cadence
+// period keys. `week_start` is kept only as descriptive "which calendar
+// week did this happen in" context and is no longer load-bearing.
 export type AvScanSubmission = {
   id: string
   employee_id: string
   employee_name: string | null
   employee_email: string
   week_start: string
+  period_key: string
   scan_type: 'quick' | 'full'
   storage_path: string
   submitted_at: string
