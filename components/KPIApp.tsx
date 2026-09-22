@@ -3961,6 +3961,41 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
   const fullFileRef = useRef<HTMLInputElement>(null)
   const fileRefs = { quick: quickFileRef, full: fullFileRef }
 
+  // Preview-before-submit: picking a file no longer uploads immediately --
+  // it's held here, rendered as an actual image, and only reaches the
+  // network once the person confirms it's the right picture. Same flow
+  // whether this is a first submission or a Replace of an existing one.
+  const AV_SCAN_MAX_BYTES = 5 * 1024 * 1024
+  const [preview, setPreview] = useState<Record<'quick'|'full', { file: File, url: string } | null>>({ quick: null, full: null })
+
+  function pickFile(scanType: 'quick'|'full', file: File) {
+    if (file.size > AV_SCAN_MAX_BYTES) { showToast('Screenshot must be under 5MB.', 'error'); return }
+    setPreview(prev => {
+      if (prev[scanType]) URL.revokeObjectURL(prev[scanType]!.url)
+      return { ...prev, [scanType]: { file, url: URL.createObjectURL(file) } }
+    })
+  }
+  function cancelPreview(scanType: 'quick'|'full') {
+    setPreview(prev => {
+      if (prev[scanType]) URL.revokeObjectURL(prev[scanType]!.url)
+      return { ...prev, [scanType]: null }
+    })
+    const ref = fileRefs[scanType].current
+    if (ref) ref.value = ''
+  }
+  async function confirmUpload(scanType: 'quick'|'full') {
+    const p = preview[scanType]
+    if (!p) return
+    // Only clear the preview on success -- if handleUpload fails (network
+    // blip, etc.) the picked file and its preview stay put so "Submit"
+    // can just be retried, instead of forcing the file to be re-picked.
+    const ok = await handleUpload(scanType, p.file)
+    if (ok) {
+      URL.revokeObjectURL(p.url)
+      setPreview(prev => ({ ...prev, [scanType]: null }))
+    }
+  }
+
   useEffect(() => {
     if (!canSubmit || !myEmployee) { setCheckingMine(false); return }
     let cancelled = false
@@ -3978,9 +4013,14 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
     return () => { cancelled = true }
   }, [myEmployee?.id, currentWeekKey, currentMonthKey])
 
-  async function handleUpload(scanType: 'quick'|'full', file: File) {
-    if (!myEmployee || !currentUser) { showToast('No employee record found for your account. Contact your admin.', 'error'); return }
+  async function handleUpload(scanType: 'quick'|'full', file: File): Promise<boolean> {
+    if (!myEmployee || !currentUser) { showToast('No employee record found for your account. Contact your admin.', 'error'); return false }
+    // Captured before the upload/upsert below overwrites it -- this is
+    // what tells writeAuditLog whether this is a first submission or a
+    // Replace of one that already existed this period.
+    const priorSub = mySubs[scanType]
     setUploading(scanType)
+    let ok = false
     try {
       const emailLower = currentUser.toLowerCase()
       const ext = file.name.split('.').pop()
@@ -3990,9 +4030,14 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
       // previous one behind as an orphan. Deliberately not the timestamped-
       // path-per-submission shape used elsewhere in this file (e.g.
       // GameOfMonth) -- that shape is exactly what AUDIT.md N33 flags.
+      // Overwriting also means the PREVIOUS screenshot's pixels are gone
+      // the moment this succeeds -- that's why the writeAuditLog call
+      // below exists: it can't preserve the old image, but it makes sure
+      // "this was replaced, and when, and what it replaced" is recorded
+      // rather than silently lost. See AUDIT.md (the AV Scan section).
       const path = `${emailLower}/${period}-${scanType}.${ext}`
       const { error: upErr } = await supabase.storage.from('av-scans').upload(path, file, { upsert: true })
-      if (upErr) { showToast('Upload failed: ' + upErr.message, 'error'); setUploading(null); return }
+      if (upErr) { showToast('Upload failed: ' + upErr.message, 'error'); setUploading(null); return false }
       const submittedAt = new Date().toISOString()
       // week_start is still recorded (which calendar week this happened
       // in) purely as descriptive context -- period_key is what actually
@@ -4002,13 +4047,24 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
         week_start: currentWeekKey, period_key: period, scan_type: scanType, storage_path: path, submitted_at: submittedAt,
         screenshot_deleted_at: null,
       }, { onConflict: 'employee_email,period_key,scan_type' })
-      if (dbErr) { showToast('Submission failed: ' + dbErr.message, 'error'); setUploading(null); return }
+      if (dbErr) { showToast('Submission failed: ' + dbErr.message, 'error'); setUploading(null); return false }
+      // month_label carries the period_key here (weekly Monday-date or
+      // YYYY-MM), same convention as every other writeAuditLog call in
+      // this file -- it's what the Team Status "replaced Nx" badge below
+      // cross-references against.
+      if (priorSub) {
+        await writeAuditLog('REPLACE_AV_SCAN', currentUser, myEmployee.name, period, slotLabel(scanType), priorSub.submitted_at, submittedAt)
+      } else {
+        await writeAuditLog('SUBMIT_AV_SCAN', currentUser, myEmployee.name, period, slotLabel(scanType), '', submittedAt)
+      }
       setMySubs(prev => ({ ...prev, [scanType]: { ...(prev[scanType]||{}), employee_id: myEmployee.id, week_start: currentWeekKey, period_key: period, scan_type: scanType, storage_path: path, submitted_at: submittedAt, screenshot_deleted_at: null } as AvScanSubmission }))
       showToast(`${scanType === 'quick' ? 'Quick' : 'Full'} Scan submitted! ✓`)
+      ok = true
     } catch { showToast('Something went wrong. Please try again.', 'error') }
     setUploading(null)
     const ref = fileRefs[scanType].current
     if (ref) ref.value = ''
+    return ok
   }
 
   // A signed URL is generated on demand rather than stored, so it's never
@@ -4032,6 +4088,7 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
   const isSuper = userRole === 'super_admin'
   const scopedEmployees = employees.filter(e => e.active && !isPulseCheckExempt(e.email) && (isSuper || inClientScope(myEmployee, e)))
   const [weekSubs, setWeekSubs] = useState<AvScanSubmission[]>([])
+  const [replaceCounts, setReplaceCounts] = useState<Map<string, number>>(new Map())
   const [loadingWeek, setLoadingWeek] = useState(true)
   useEffect(() => {
     if (!canManage) return
@@ -4040,12 +4097,27 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
       setLoadingWeek(true)
       // Two separate period-scoped queries, same reason as the "my
       // submission" lookup above -- quick's current period and full's
-      // current period are not the same value.
-      const [{ data: quickData }, { data: fullData }] = await Promise.all([
+      // current period are not the same value. Third query: how many
+      // times each employee/scan-type was REPLACED this period, from the
+      // writeAuditLog trail handleUpload writes -- makes a quiet swap
+      // visible here instead of only queryable after the fact.
+      const [{ data: quickData }, { data: fullData }, { data: replaceLog }] = await Promise.all([
         supabase.from('av_scan_submissions').select('*').eq('scan_type', 'quick').eq('period_key', currentWeekKey),
         supabase.from('av_scan_submissions').select('*').eq('scan_type', 'full').eq('period_key', currentMonthKey),
+        supabase.from('audit_log').select('employee_name, field_changed').eq('action', 'REPLACE_AV_SCAN').in('month_label', [currentWeekKey, currentMonthKey]),
       ])
-      if (!cancelled) { setWeekSubs([...(quickData || []), ...(fullData || [])]); setLoadingWeek(false) }
+      if (cancelled) return
+      setWeekSubs([...(quickData || []), ...(fullData || [])])
+      // Keyed by "employee_name|Quick Scan" / "employee_name|Full Scan" --
+      // audit_log has no employee_id column at all, so name is the same
+      // correlation key every other audit_log usage in this file relies on.
+      const counts = new Map<string, number>()
+      ;(replaceLog || []).forEach((r: any) => {
+        const key = `${r.employee_name}|${r.field_changed}`
+        counts.set(key, (counts.get(key) || 0) + 1)
+      })
+      setReplaceCounts(counts)
+      setLoadingWeek(false)
     })()
     return () => { cancelled = true }
   }, [canManage, currentWeekKey, currentMonthKey])
@@ -4082,23 +4154,41 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {(['quick','full'] as const).map(scanType => {
               const sub = mySubs[scanType]
+              const p = preview[scanType]
               return (
                 <div key={scanType} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
                   <p className="text-sm font-medium text-gray-700">{slotLabel(scanType)}</p>
-                  {sub ? (
+                  {p ? (
+                    // Confirm step -- nothing has been uploaded yet. The
+                    // picked file is only ever rendered locally
+                    // (URL.createObjectURL), never sent anywhere unless
+                    // "Submit" below is clicked.
+                    <div className="space-y-2">
+                      <img src={p.url} alt="Screenshot preview" className="w-full max-h-48 object-contain rounded-lg border border-gray-200 bg-white" />
+                      <div className="flex gap-2">
+                        <button onClick={() => confirmUpload(scanType)} disabled={uploading === scanType} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg py-2 transition disabled:opacity-50">
+                          {uploading === scanType ? '⏳ Uploading...' : 'Looks good, Submit'}
+                        </button>
+                        <button onClick={() => cancelPreview(scanType)} disabled={uploading === scanType} className="px-3 text-sm text-gray-500 hover:text-gray-700 transition disabled:opacity-50">Choose different file</button>
+                      </div>
+                    </div>
+                  ) : sub ? (
                     <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700 flex items-center justify-between gap-2">
                       <span>✅ Submitted {new Date(sub.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                      <button onClick={() => viewScreenshot(sub.storage_path)} className="text-green-700 underline hover:text-green-900 flex-shrink-0">View</button>
+                      <span className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={() => viewScreenshot(sub.storage_path)} className="text-green-700 underline hover:text-green-900">View</button>
+                        <button onClick={() => fileRefs[scanType].current?.click()} className="text-green-700 underline hover:text-green-900">Replace</button>
+                      </span>
                     </div>
                   ) : (
-                    <>
-                      <button onClick={() => fileRefs[scanType].current?.click()} disabled={uploading === scanType} className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-xl py-4 text-sm text-gray-500 hover:text-blue-600 transition disabled:opacity-50">
-                        {uploading === scanType ? '⏳ Uploading...' : '📤 Upload screenshot'}
-                      </button>
-                      <input ref={fileRefs[scanType]} type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(scanType, f) }} className="hidden" />
-                    </>
+                    <button onClick={() => fileRefs[scanType].current?.click()} className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-xl py-4 text-sm text-gray-500 hover:text-blue-600 transition">
+                      📤 Upload screenshot
+                    </button>
                   )}
-                  <p className="text-xs text-gray-400">Re-uploading replaces {scanType === 'quick' ? "this week's" : "this month's"} {slotLabel(scanType).toLowerCase()}.</p>
+                  {/* Kept mounted regardless of state above so "Replace" can
+                      reopen it -- only the button shown next to it changes. */}
+                  <input ref={fileRefs[scanType]} type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(scanType, f); e.target.value = '' }} className="hidden" />
+                  <p className="text-xs text-gray-400">{p ? 'Review the picture above before submitting.' : `Replacing overwrites ${scanType === 'quick' ? "this week's" : "this month's"} ${slotLabel(scanType).toLowerCase()} — the previous screenshot can't be recovered after.`}</p>
                 </div>
               )
             })}
@@ -4129,10 +4219,14 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
                       <td className="py-2 pr-4 text-gray-700">{e.name}</td>
                       {(['quick','full'] as const).map(scanType => {
                         const s = subs[scanType]
+                        const replaces = s ? (replaceCounts.get(`${e.name}|${slotLabel(scanType)}`) || 0) : 0
                         return (
                           <td key={scanType} className="py-2 pr-4">
                             {s ? (
-                              <button onClick={() => viewScreenshot(s.storage_path)} className="text-green-700 hover:underline">✅ {new Date(s.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</button>
+                              <span className="inline-flex items-center gap-1.5">
+                                <button onClick={() => viewScreenshot(s.storage_path)} className="text-green-700 hover:underline">✅ {new Date(s.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</button>
+                                {replaces > 0 && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">replaced {replaces}×</span>}
+                              </span>
                             ) : (
                               <span className="text-red-500">Missing</span>
                             )}
