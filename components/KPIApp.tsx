@@ -1437,14 +1437,18 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
         if (!pulseData) results.push({ label: `Your Weekly Pulse Check is due`, count: 1, view: 'pulse-check' })
       }
 
-      // 5. This week's antivirus scan screenshots (quick + full), same
-      //    exemption rule and rollout cutoff as Pulse Check above.
+      // 5. Antivirus scan screenshots -- quick weekly, full monthly, each
+      //    checked against its own current period_key (see AVScanPanel /
+      //    currentPeriodKey). Same exemption rule and rollout cutoff as
+      //    Pulse Check above.
       if (myEmployee && userRole !== 'super_admin' && !isPulseCheckExempt(currentUser) && new Date() >= AV_SCAN_REQUIRED_FROM) {
-        const week = getWeekStart()
-        const { data: avData } = await supabase.from('av_scan_submissions').select('scan_type').eq('employee_id', myEmployee.id).eq('week_start', week)
-        const submittedTypes = new Set((avData || []).map((r: any) => r.scan_type))
-        if (!submittedTypes.has('quick')) results.push({ label: `Your Quick Scan is due`, count: 1, view: 'av-scan' })
-        if (!submittedTypes.has('full')) results.push({ label: `Your Full Scan is due`, count: 1, view: 'av-scan' })
+        const weekKey = currentPeriodKey('weekly')
+        const monthKey = currentPeriodKey('monthly')
+        const { data: avData } = await supabase.from('av_scan_submissions').select('scan_type, period_key').eq('employee_id', myEmployee.id).in('period_key', [weekKey, monthKey])
+        const hasQuick = (avData || []).some((r: any) => r.scan_type === 'quick' && r.period_key === weekKey)
+        const hasFull = (avData || []).some((r: any) => r.scan_type === 'full' && r.period_key === monthKey)
+        if (!hasQuick) results.push({ label: `Your Quick Scan is due`, count: 1, view: 'av-scan' })
+        if (!hasFull) results.push({ label: `Your Full Scan is due`, count: 1, view: 'av-scan' })
       }
 
       if (!cancelled) setItems(results)
@@ -3912,13 +3916,13 @@ type OpsMonthStats = {
   perfRecordCount: number
 }
 // -- Weekly Antivirus Scan Compliance ------------------------------------
-// A quick scan submitted early in the week, a full scan by week's end --
-// both screenshot uploads. Unlike every other upload in this app, these
-// go to a PRIVATE storage bucket (`av-scans`) with signed, expiring URLs
-// rather than the usual public-bucket-with-permanent-URL pattern, since
-// the picture is someone's own desktop/installed software. Screenshots
-// are deleted after 90 days by app/api/cron/av-scan-cleanup -- the
-// submission row itself (who, when, which week, quick or full) is kept
+// A quick scan submitted every week, a full scan once a month -- both
+// screenshot uploads. Unlike every other upload in this app, these go to
+// a PRIVATE storage bucket (`av-scans`) with signed, expiring URLs rather
+// than the usual public-bucket-with-permanent-URL pattern, since the
+// picture is someone's own desktop/installed software. Screenshots are
+// deleted after 90 days by app/api/cron/av-scan-cleanup -- the submission
+// row itself (who, when, which period, quick or full) is kept
 // indefinitely, so a year of compliance history survives even after the
 // picture is gone. See AUDIT.md N33: every other upload path in this app
 // has no retention plan at all; this one is deliberately built with one
@@ -3928,12 +3932,25 @@ type OpsMonthStats = {
 // populations ever diverge) and the same submit/manage split, but scoping
 // uses the newer empClientList/inClientScope helpers rather than Pulse
 // Check's older, pre-migration team_members-based lookup.
+// Quick and full run on DIFFERENT period lengths (weekly vs monthly), so
+// each is checked against its own `period_key` via currentPeriodKey() --
+// the same weekly/monthly period-key convention Operating Cadence already
+// uses (see currentPeriodKey above), reused rather than reinvented. This
+// replaced an earlier, since-corrected design where both were keyed on
+// week_start; see ALTER-av-scan-submissions-monthly-full-scan.sql for how
+// the handful of real submissions already made under that design were
+// migrated (full-scan rows reinterpreted as belonging to the month their
+// original week fell in, not lost or reset).
+const AV_SCAN_PERIODS: Record<'quick'|'full', 'weekly'|'monthly'> = { quick: 'weekly', full: 'monthly' }
+
 function AVScanPanel({ employees, currentUser, userRole, showToast }:
   { employees: Employee[], currentUser: string | null, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canSubmit = userRole !== 'super_admin' && !isPulseCheckExempt(currentUser)
   const canManage = ['super_admin','admin','Team Lead'].includes(userRole)
   const [activeTab, setActiveTab] = useState<'submit'|'manage'>(canSubmit ? 'submit' : 'manage')
-  const currentWeek = getWeekStart()
+  const currentWeekKey = currentPeriodKey('weekly')
+  const currentMonthKey = currentPeriodKey('monthly')
+  const periodFor: Record<'quick'|'full', string> = { quick: currentWeekKey, full: currentMonthKey }
   const pastLaunch = new Date() >= AV_SCAN_REQUIRED_FROM
 
   const myEmployee = employees.find(e => e.email?.toLowerCase() === (currentUser||'').toLowerCase())
@@ -3948,15 +3965,18 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
     if (!canSubmit || !myEmployee) { setCheckingMine(false); return }
     let cancelled = false
     ;(async () => {
-      const { data } = await supabase.from('av_scan_submissions').select('*').eq('employee_id', myEmployee.id).eq('week_start', currentWeek)
+      // One query per type since each checks a different period_key --
+      // a single .eq('period_key', ...) can't cover both at once.
+      const [{ data: quickData }, { data: fullData }] = await Promise.all([
+        supabase.from('av_scan_submissions').select('*').eq('employee_id', myEmployee.id).eq('scan_type', 'quick').eq('period_key', currentWeekKey).maybeSingle(),
+        supabase.from('av_scan_submissions').select('*').eq('employee_id', myEmployee.id).eq('scan_type', 'full').eq('period_key', currentMonthKey).maybeSingle(),
+      ])
       if (cancelled) return
-      const next: Record<'quick'|'full', AvScanSubmission | null> = { quick: null, full: null }
-      ;(data || []).forEach((r: any) => { next[r.scan_type as 'quick'|'full'] = r })
-      setMySubs(next)
+      setMySubs({ quick: quickData || null, full: fullData || null })
       setCheckingMine(false)
     })()
     return () => { cancelled = true }
-  }, [myEmployee?.id, currentWeek])
+  }, [myEmployee?.id, currentWeekKey, currentMonthKey])
 
   async function handleUpload(scanType: 'quick'|'full', file: File) {
     if (!myEmployee || !currentUser) { showToast('No employee record found for your account. Contact your admin.', 'error'); return }
@@ -3964,22 +3984,26 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
     try {
       const emailLower = currentUser.toLowerCase()
       const ext = file.name.split('.').pop()
+      const period = periodFor[scanType]
       // Stable path (no timestamp) + upsert:true -- a re-submission this
-      // week overwrites the same storage object instead of leaving the
+      // period overwrites the same storage object instead of leaving the
       // previous one behind as an orphan. Deliberately not the timestamped-
       // path-per-submission shape used elsewhere in this file (e.g.
       // GameOfMonth) -- that shape is exactly what AUDIT.md N33 flags.
-      const path = `${emailLower}/${currentWeek}-${scanType}.${ext}`
+      const path = `${emailLower}/${period}-${scanType}.${ext}`
       const { error: upErr } = await supabase.storage.from('av-scans').upload(path, file, { upsert: true })
       if (upErr) { showToast('Upload failed: ' + upErr.message, 'error'); setUploading(null); return }
       const submittedAt = new Date().toISOString()
+      // week_start is still recorded (which calendar week this happened
+      // in) purely as descriptive context -- period_key is what actually
+      // governs uniqueness and what the app queries against now.
       const { error: dbErr } = await supabase.from('av_scan_submissions').upsert({
         employee_id: myEmployee.id, employee_name: myEmployee.name, employee_email: myEmployee.email,
-        week_start: currentWeek, scan_type: scanType, storage_path: path, submitted_at: submittedAt,
+        week_start: currentWeekKey, period_key: period, scan_type: scanType, storage_path: path, submitted_at: submittedAt,
         screenshot_deleted_at: null,
-      }, { onConflict: 'employee_email,week_start,scan_type' })
+      }, { onConflict: 'employee_email,period_key,scan_type' })
       if (dbErr) { showToast('Submission failed: ' + dbErr.message, 'error'); setUploading(null); return }
-      setMySubs(prev => ({ ...prev, [scanType]: { ...(prev[scanType]||{}), employee_id: myEmployee.id, week_start: currentWeek, scan_type: scanType, storage_path: path, submitted_at: submittedAt, screenshot_deleted_at: null } as AvScanSubmission }))
+      setMySubs(prev => ({ ...prev, [scanType]: { ...(prev[scanType]||{}), employee_id: myEmployee.id, week_start: currentWeekKey, period_key: period, scan_type: scanType, storage_path: path, submitted_at: submittedAt, screenshot_deleted_at: null } as AvScanSubmission }))
       showToast(`${scanType === 'quick' ? 'Quick' : 'Full'} Scan submitted! ✓`)
     } catch { showToast('Something went wrong. Please try again.', 'error') }
     setUploading(null)
@@ -4014,11 +4038,17 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
     let cancelled = false
     ;(async () => {
       setLoadingWeek(true)
-      const { data } = await supabase.from('av_scan_submissions').select('*').eq('week_start', currentWeek)
-      if (!cancelled) { setWeekSubs(data || []); setLoadingWeek(false) }
+      // Two separate period-scoped queries, same reason as the "my
+      // submission" lookup above -- quick's current period and full's
+      // current period are not the same value.
+      const [{ data: quickData }, { data: fullData }] = await Promise.all([
+        supabase.from('av_scan_submissions').select('*').eq('scan_type', 'quick').eq('period_key', currentWeekKey),
+        supabase.from('av_scan_submissions').select('*').eq('scan_type', 'full').eq('period_key', currentMonthKey),
+      ])
+      if (!cancelled) { setWeekSubs([...(quickData || []), ...(fullData || [])]); setLoadingWeek(false) }
     })()
     return () => { cancelled = true }
-  }, [canManage, currentWeek])
+  }, [canManage, currentWeekKey, currentMonthKey])
 
   const subsByEmp = new Map<string, Record<'quick'|'full', AvScanSubmission | undefined>>()
   weekSubs.forEach(s => {
@@ -4033,7 +4063,7 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-lg font-bold text-gray-800">Antivirus Scan Compliance</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Submit a screenshot of your antivirus scan results each week — a quick scan early in the week, a full scan by week's end. Screenshots are kept for 90 days.</p>
+        <p className="text-sm text-gray-500 mt-0.5">Submit a screenshot of your antivirus scan results — a Quick Scan every week, a Full Scan once a month. Screenshots are kept for 90 days.</p>
       </div>
 
       {canSubmit && canManage && (
@@ -4068,7 +4098,7 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
                       <input ref={fileRefs[scanType]} type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(scanType, f) }} className="hidden" />
                     </>
                   )}
-                  <p className="text-xs text-gray-400">Re-uploading replaces this week's {slotLabel(scanType).toLowerCase()}.</p>
+                  <p className="text-xs text-gray-400">Re-uploading replaces {scanType === 'quick' ? "this week's" : "this month's"} {slotLabel(scanType).toLowerCase()}.</p>
                 </div>
               )
             })}
