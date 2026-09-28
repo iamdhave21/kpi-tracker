@@ -2,9 +2,20 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord, NteRecord, AvScanSubmission } from '@/lib/supabase'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
-import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe } from 'lucide-react'
+import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
 
 type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan'
+// Deep-linking: every View is addressable as ?view=<id> (and Operating
+// Cadence sub-tabs as &tab=<tab>), so a link like
+// abbss-ops-portal.vercel.app/?view=ops-dashboard opens that module
+// directly. Access is still enforced by the normal role checks at render
+// time -- a link never grants access the viewer's role doesn't have.
+const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan']
+function readViewFromUrl(): View | null {
+  if (typeof window === 'undefined') return null
+  const v = new URLSearchParams(window.location.search).get('view')
+  return v && (DEEP_LINK_VIEWS as string[]).includes(v) ? (v as View) : null
+}
 
 // Shared department list — used by Employees (tagging), Tickets (routing), Settings (contacts)
 const DEPARTMENTS = ['Payroll', 'IT', 'Operations', 'Management', 'HR', 'Admin', 'Logistics']
@@ -1846,14 +1857,49 @@ export default function KPIApp() {
     }
     loadPreviewableUsers()
   }, [userRole])
-  const [view, setView] = useState<View>('announcements')
+  const [view, setView] = useState<View>(() => readViewFromUrl() || 'announcements')
   // Deep-link request for Operating Cadence's internal tab (e.g. so the
   // AttentionBanner's "team huddle notes to acknowledge" item can land
   // directly on the Team Huddle tab instead of the default Daily tab,
   // where the actual pending item wouldn't be visible at all). The
   // timestamp forces OperatingCadence to remount (via its key prop) even
   // if the person is already on the Operating Cadence screen.
-  const [cadenceTabRequest, setCadenceTabRequest] = useState<{ tab: string, ts: number } | null>(null)
+  const [cadenceTabRequest, setCadenceTabRequest] = useState<{ tab: string, ts: number } | null>(() => {
+    if (typeof window === 'undefined') return null
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get('tab')
+    return params.get('view') === 'cadence' && tab ? { tab, ts: Date.now() } : null
+  })
+  // Keep the address bar in sync with the current module (only once signed
+  // in, so the login/reset-password URL params are left untouched), and let
+  // the browser Back/Forward buttons move between modules.
+  const lastPushedView = useRef<string | null>(null)
+  useEffect(() => {
+    if (!user) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('view') === view) { lastPushedView.current = view; return }
+    params.set('view', view)
+    if (view !== 'cadence') params.delete('tab')
+    const url = `${window.location.pathname}?${params.toString()}`
+    if (lastPushedView.current === null) window.history.replaceState({ view }, '', url)
+    else window.history.pushState({ view }, '', url)
+    lastPushedView.current = view
+  }, [view, user])
+  useEffect(() => {
+    function onPop() {
+      const v = readViewFromUrl()
+      if (v) { lastPushedView.current = v; setView(v) }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  function copyCurrentLink() {
+    const url = `${window.location.origin}${window.location.pathname}?view=${view}`
+    navigator.clipboard?.writeText(url).then(
+      () => showToast('Link to this page copied', 'success'),
+      () => showToast('Could not copy link', 'error')
+    )
+  }
   function navigateToTab(v: View, subTab?: string) {
     setView(v)
     if (v === 'cadence' && subTab) setCadenceTabRequest({ tab: subTab, ts: Date.now() })
@@ -2165,6 +2211,9 @@ export default function KPIApp() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={copyCurrentLink} title="Copy a direct link to this page" className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition font-medium">
+            <Link2 className="w-4 h-4" /><span className="hidden sm:inline">Copy Link</span>
+          </button>
           <button onClick={() => { localStorage.removeItem('kpi_user'); setUser(null) }} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition font-medium">
             <LogOut className="w-4 h-4" /><span className="hidden sm:inline">Log Out</span>
           </button>
