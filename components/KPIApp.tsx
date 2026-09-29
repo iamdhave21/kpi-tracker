@@ -1,16 +1,17 @@
 'use client'
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord, NteRecord, AvScanSubmission } from '@/lib/supabase'
+import ClientPortalAdmin from '@/components/ClientPortalAdmin'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin'
 // Deep-linking: every View is addressable as ?view=<id> (and Operating
 // Cadence sub-tabs as &tab=<tab>), so a link like
 // abbss-ops-portal.vercel.app/?view=ops-dashboard opens that module
 // directly. Access is still enforced by the normal role checks at render
 // time -- a link never grants access the viewer's role doesn't have.
-const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan']
+const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin']
 function readViewFromUrl(): View | null {
   if (typeof window === 'undefined') return null
   const v = new URLSearchParams(window.location.search).get('view')
@@ -1739,6 +1740,21 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </>
       )}
 
+      {/* CLIENT PORTAL -- Admin/Super Admin only. Manages the external,
+          no-internal-login Client Portal (separate app at /client-portal)
+          -- contacts, onboarding checklist progress, and the shared
+          editable checklist template. */}
+      {(userRole === 'super_admin' || userRole === 'admin') && (
+        <>
+          <SectionHeader sectionKey="clientportal" label="Client Portal" hasActive={['client-portal-admin'].includes(view)} />
+          {!collapsed.clientportal && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <NavItem id="client-portal-admin" label="Client Onboarding" icon={<Globe className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            </div>
+          )}
+        </>
+      )}
+
       {/* MANAGER TOOLS -- visible to everyone; content itself is gated by
           role (Dashboard hard-blocks below Admin/Super Admin; the rest
           are shared, self-scoping screens that already show the right
@@ -2361,6 +2377,8 @@ export default function KPIApp() {
             {view === 'hris-invoice' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'opex' && effectiveRole === 'super_admin' && <OpexPanel currentUser={effectiveUser} showToast={showToast} />}
             {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'client-portal-admin' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <ClientPortalAdmin currentUser={effectiveUser} showToast={showToast} />}
+            {view === 'client-portal-admin' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'ops-dashboard' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <OpsDashboard employees={employees} />}
             {view === 'ops-dashboard' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
