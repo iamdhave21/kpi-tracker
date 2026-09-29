@@ -84,9 +84,9 @@ function ContactsTab({ currentUser, showToast }: { currentUser: string | null, s
       </div>
       {showForm && (
         <form onSubmit={addContact} className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <input required placeholder="Contact name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-          <input required type="email" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-          <input required placeholder="Client / account name" value={form.client} onChange={e => setForm({...form, client: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <input required placeholder="Contact name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input required type="email" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input required placeholder="Client / account name" value={form.client} onChange={e => setForm({...form, client: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
           <div className="sm:col-span-3">
             <button type="submit" disabled={saving} className="bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">{saving ? 'Saving...' : 'Save & Send Welcome Email'}</button>
           </div>
@@ -160,10 +160,10 @@ function PacksTab({ currentUser, showToast }: { currentUser: string | null, show
       </div>
       {showForm && (
         <form onSubmit={createPack} className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <input required placeholder="Client name" value={form.client} onChange={e => setForm({...form, client: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-          <input placeholder="Account / process (optional)" value={form.account_name} onChange={e => setForm({...form, account_name: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-          <input type="date" placeholder="Contract start" value={form.contract_start_date} onChange={e => setForm({...form, contract_start_date: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-          <input type="date" placeholder="Target go-live" value={form.target_go_live_date} onChange={e => setForm({...form, target_go_live_date: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <input required placeholder="Client name" value={form.client} onChange={e => setForm({...form, client: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input placeholder="Account / process (optional)" value={form.account_name} onChange={e => setForm({...form, account_name: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input type="date" placeholder="Contract start" value={form.contract_start_date} onChange={e => setForm({...form, contract_start_date: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input type="date" placeholder="Target go-live" value={form.target_go_live_date} onChange={e => setForm({...form, target_go_live_date: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
           <div className="sm:col-span-4">
             <button type="submit" disabled={saving} className="bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">{saving ? 'Creating...' : 'Create Pack'}</button>
           </div>
@@ -282,7 +282,7 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
           <h3 className="text-lg font-bold text-blue-900">{pack.client}</h3>
           <p className="text-sm text-gray-500">{pack.account_name || 'No account name set'} · {receivedCount}/{items.length} items received</p>
         </div>
-        <select value={pack.status} onChange={e => updateStatus(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <select value={pack.status} onChange={e => updateStatus(e.target.value)} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm">
           {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </div>
@@ -320,10 +320,10 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
         </div>
         {showGapForm && (
           <form onSubmit={addGap} className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-3">
-            <input required placeholder="Missing item" value={gapForm.missing_item} onChange={e => setGapForm({...gapForm, missing_item: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs sm:col-span-2" />
-            <input placeholder="Owner" value={gapForm.owner} onChange={e => setGapForm({...gapForm, owner: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs" />
-            <input type="date" value={gapForm.due_date} onChange={e => setGapForm({...gapForm, due_date: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs" />
-            <input placeholder="Impact if not resolved" value={gapForm.impact} onChange={e => setGapForm({...gapForm, impact: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs sm:col-span-3" />
+            <input required placeholder="Missing item" value={gapForm.missing_item} onChange={e => setGapForm({...gapForm, missing_item: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-1.5 text-xs sm:col-span-2" />
+            <input placeholder="Owner" value={gapForm.owner} onChange={e => setGapForm({...gapForm, owner: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-1.5 text-xs" />
+            <input type="date" value={gapForm.due_date} onChange={e => setGapForm({...gapForm, due_date: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-1.5 text-xs" />
+            <input placeholder="Impact if not resolved" value={gapForm.impact} onChange={e => setGapForm({...gapForm, impact: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-1.5 text-xs sm:col-span-3" />
             <button type="submit" className="bg-blue-900 text-white text-xs font-medium px-3 py-1.5 rounded-lg">Add</button>
           </form>
         )}
@@ -398,9 +398,9 @@ function ItemsTab({ showToast }: { showToast: (m: string, t?: 'success'|'error')
       </div>
       {showForm && (
         <form onSubmit={addItem} className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <input required placeholder="Section (e.g. A. Contract & Terms)" value={form.section} onChange={e => setForm({...form, section: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-          <input required placeholder="Item label" value={form.label} onChange={e => setForm({...form, label: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-          <input placeholder="Description (optional)" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <input required placeholder="Section (e.g. A. Contract & Terms)" value={form.section} onChange={e => setForm({...form, section: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input required placeholder="Item label" value={form.label} onChange={e => setForm({...form, label: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input placeholder="Description (optional)" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
           <div className="sm:col-span-3">
             <button type="submit" className="bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Add Item</button>
           </div>
@@ -414,9 +414,9 @@ function ItemsTab({ showToast }: { showToast: (m: string, t?: 'success'|'error')
               <div key={item.id} className="px-4 py-3">
                 {editingId === item.id ? (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <input value={editDraft.section} onChange={e => setEditDraft({...editDraft, section: e.target.value})} className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
-                    <input value={editDraft.label} onChange={e => setEditDraft({...editDraft, label: e.target.value})} className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
-                    <input value={editDraft.description} onChange={e => setEditDraft({...editDraft, description: e.target.value})} className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
+                    <input value={editDraft.section} onChange={e => setEditDraft({...editDraft, section: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-2 py-1 text-xs" />
+                    <input value={editDraft.label} onChange={e => setEditDraft({...editDraft, label: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-2 py-1 text-xs" />
+                    <input value={editDraft.description} onChange={e => setEditDraft({...editDraft, description: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-2 py-1 text-xs" />
                     <div className="sm:col-span-3 flex gap-2">
                       <button onClick={() => saveEdit(item.id)} className="text-xs bg-blue-900 text-white px-3 py-1 rounded-lg">Save</button>
                       <button onClick={() => setEditingId(null)} className="text-xs text-gray-400">Cancel</button>

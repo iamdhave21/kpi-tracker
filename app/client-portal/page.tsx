@@ -94,7 +94,7 @@ function LoginScreen({ initialError }: { initialError: string }) {
         ) : (
           <form onSubmit={requestLink} className="space-y-3">
             <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@yourcompany.com"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" />
+              className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900" />
             {error && <p className="text-xs text-red-600">{error}</p>}
             <button type="submit" disabled={sending} className="w-full bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium py-2.5 rounded-lg transition disabled:opacity-50">
               {sending ? 'Sending...' : 'Send me a sign-in link'}
@@ -258,9 +258,9 @@ function ChecklistRow({ item, submission, open, onToggle, onSaved }: {
           <div className="space-y-2">
             <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs w-full" />
             <input type="url" value={driveLink} onChange={e => setDriveLink(e.target.value)} placeholder="Or paste a Google Drive / file link"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
+              className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
+              className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
             {error && <p className="text-xs text-red-600">{error}</p>}
             <button onClick={submit} disabled={saving} className="bg-blue-900 hover:bg-blue-950 text-white text-xs font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">
               {saving ? 'Submitting...' : submission?.received ? 'Replace submission' : 'Submit'}
