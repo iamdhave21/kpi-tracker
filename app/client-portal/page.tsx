@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 
 // Deliberately its own minimal shell -- no sidebar, no nav to any other
 // module, not even a "restricted" placeholder for one. A client account
@@ -13,6 +14,7 @@ type ChecklistItem = { id: string, section: string, label: string, description: 
 type Submission = { id: string, item_id: string, received: boolean, file_name: string | null, drive_link: string | null, notes: string | null, submitted_at: string | null, received_at: string | null }
 type Gap = { id: string, missing_item: string, impact: string | null, owner: string | null, due_date: string | null, status: string }
 type Pack = { id: string, status: string, account_name: string | null, target_go_live_date: string | null }
+type Readiness = { pct: number, readyCount: number, totalCount: number } | null
 
 const STATUS_LABEL: Record<string,string> = {
   in_progress: 'In Progress', accepted: 'Accepted', accepted_with_gaps: 'Accepted with Logged Gaps', not_accepted: 'Not Yet Accepted',
@@ -111,6 +113,7 @@ function ChecklistScreen({ contact, onLogout }: { contact: Contact, onLogout: ()
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [gaps, setGaps] = useState<Gap[]>([])
+  const [readiness, setReadiness] = useState<Readiness>(null)
   const [loading, setLoading] = useState(true)
   const [openItem, setOpenItem] = useState<string | null>(null)
 
@@ -119,6 +122,7 @@ function ChecklistScreen({ contact, onLogout }: { contact: Contact, onLogout: ()
     const res = await fetch('/api/client-portal/checklist')
     const data = await res.json()
     setPack(data.pack); setItems(data.items || []); setSubmissions(data.submissions || []); setGaps(data.gaps || [])
+    setReadiness(data.readiness || null)
     setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -167,6 +171,30 @@ function ChecklistScreen({ contact, onLogout }: { contact: Contact, onLogout: ()
               </div>
               <p className="text-xs text-gray-400 mt-1.5">{receivedCount} of {items.length} items received ({pct}%)</p>
             </div>
+
+            {readiness && (
+              <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 flex items-center gap-5">
+                <div className="w-24 h-24 flex-shrink-0 relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={[{ value: readiness.readyCount }, { value: readiness.totalCount - readiness.readyCount }]}
+                        dataKey="value" innerRadius={32} outerRadius={44} startAngle={90} endAngle={-270} stroke="none">
+                        <Cell fill="#059669" />
+                        <Cell fill="#e5e7eb" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-lg font-bold text-blue-900">{readiness.pct}%</span>
+                  </div>
+                </div>
+                <div>
+                  <h2 className="font-semibold text-blue-900">Go-Live Readiness</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">{readiness.readyCount} of {readiness.totalCount} critical items ready</p>
+                  <p className="text-xs text-gray-400 mt-1">This reflects our internal go-live checks — no need to check in, we'll keep this updated as we progress.</p>
+                </div>
+              </div>
+            )}
 
             {Object.entries(bySection).map(([section, sectionItems]) => (
               <div key={section} className="mb-5">

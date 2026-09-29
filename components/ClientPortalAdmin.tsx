@@ -7,6 +7,14 @@ type PackItem = { id: string, section: string, label: string, description: strin
 type PackRecord = { id: string, client: string, account_name: string | null, contract_start_date: string | null, target_go_live_date: string | null, status: string, created_at: string }
 type Submission = { id: string, pack_record_id: string, item_id: string, received: boolean, file_path: string | null, file_name: string | null, drive_link: string | null, notes: string | null, submitted_by: string | null, submitted_at: string | null, received_by: string | null, received_at: string | null }
 type Gap = { id: string, pack_record_id: string, missing_item: string, impact: string | null, owner: string | null, due_date: string | null, status: string }
+type ReadinessItem = { id: string, section: string, label: string, done_means: string | null, critical: boolean, sort_order: number, retired_at: string | null }
+type ReadinessStatus = { id: string, pack_record_id: string, item_id: string, status: string, evidence: string | null, owner: string | null, updated_by: string | null, updated_at: string }
+const READINESS_STATUS_OPTIONS = [
+  { value: 'not_ready', label: 'Not Ready', color: 'bg-gray-100 text-gray-500 border-gray-200' },
+  { value: 'in_progress', label: 'In Progress', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  { value: 'ready', label: 'Ready', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  { value: 'n_a', label: 'N/A', color: 'bg-gray-50 text-gray-400 border-gray-100' },
+]
 
 const STATUS_OPTIONS = [
   { value: 'in_progress', label: 'In Progress' },
@@ -16,7 +24,7 @@ const STATUS_OPTIONS = [
 ]
 
 export default function ClientPortalAdmin({ currentUser, showToast }: { currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
-  const [tab, setTab] = useState<'contacts'|'packs'|'items'>('packs')
+  const [tab, setTab] = useState<'contacts'|'packs'|'items'|'readiness-items'>('packs')
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-6">
@@ -25,13 +33,14 @@ export default function ClientPortalAdmin({ currentUser, showToast }: { currentU
         <p className="text-sm text-gray-500">Manages the external Client Portal (abbss-ops-portal.vercel.app/client-portal) — contacts, onboarding progress, and the shared checklist template.</p>
       </div>
       <div className="flex gap-2 border-b border-gray-200">
-        {[['packs','Handover Packs'],['contacts','Client Contacts'],['items','Checklist Items']].map(([id, label]) => (
+        {[['packs','Handover Packs'],['contacts','Client Contacts'],['items','Checklist Items'],['readiness-items','Readiness Items']].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id as any)} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab===id ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>
         ))}
       </div>
       {tab === 'packs' && <PacksTab currentUser={currentUser} showToast={showToast} />}
       {tab === 'contacts' && <ContactsTab currentUser={currentUser} showToast={showToast} />}
       {tab === 'items' && <ItemsTab showToast={showToast} />}
+      {tab === 'readiness-items' && <ReadinessItemsTab showToast={showToast} />}
     </div>
   )
 }
@@ -205,22 +214,36 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
   const [items, setItems] = useState<PackItem[]>([])
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [gaps, setGaps] = useState<Gap[]>([])
+  const [readinessItems, setReadinessItems] = useState<ReadinessItem[]>([])
+  const [readinessStatuses, setReadinessStatuses] = useState<ReadinessStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [gapForm, setGapForm] = useState({ missing_item: '', impact: '', owner: '', due_date: '' })
   const [showGapForm, setShowGapForm] = useState(false)
 
   async function load() {
     setLoading(true)
-    const [{ data: p }, { data: i }, { data: s }, { data: g }] = await Promise.all([
+    const [{ data: p }, { data: i }, { data: s }, { data: g }, { data: ri }, { data: rs }] = await Promise.all([
       supabase.from('handover_pack_records').select('*').eq('id', packId).single(),
       supabase.from('handover_pack_items').select('*').is('retired_at', null).order('sort_order'),
       supabase.from('handover_pack_submissions').select('*').eq('pack_record_id', packId),
       supabase.from('handover_gaps_log').select('*').eq('pack_record_id', packId).order('created_at', { ascending: false }),
+      supabase.from('go_live_readiness_items').select('*').is('retired_at', null).order('sort_order'),
+      supabase.from('go_live_readiness_statuses').select('*').eq('pack_record_id', packId),
     ])
     setPack(p); setItems(i || []); setSubmissions(s || []); setGaps(g || [])
+    setReadinessItems(ri || []); setReadinessStatuses(rs || [])
     setLoading(false)
   }
   useEffect(() => { load() }, [packId])
+
+  async function setReadinessStatus(itemId: string, status: string, existing?: ReadinessStatus) {
+    if (existing) {
+      await supabase.from('go_live_readiness_statuses').update({ status, updated_by: currentUser, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      await supabase.from('go_live_readiness_statuses').insert({ pack_record_id: packId, item_id: itemId, status, updated_by: currentUser })
+    }
+    load()
+  }
 
   async function updateStatus(status: string) {
     await supabase.from('handover_pack_records').update({ status, updated_at: new Date().toISOString() }).eq('id', packId)
@@ -312,6 +335,51 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
           </div>
         </div>
       ))}
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+          <h4 className="text-sm font-semibold text-blue-900">Go-Live Readiness (internal)</h4>
+          {(() => {
+            const criticalItems = readinessItems.filter(i => i.critical)
+            const statusByItem: Record<string, ReadinessStatus> = {}
+            readinessStatuses.forEach(s => { statusByItem[s.item_id] = s })
+            const readyCritical = criticalItems.filter(i => statusByItem[i.id]?.status === 'ready').length
+            return <span className="text-xs text-gray-500">{readyCritical}/{criticalItems.length} critical items ready — this % is what the client sees, nothing else on this list</span>
+          })()}
+        </div>
+        {(() => {
+          const bySection: Record<string, ReadinessItem[]> = {}
+          readinessItems.forEach(i => { (bySection[i.section] ||= []).push(i) })
+          const statusByItem: Record<string, ReadinessStatus> = {}
+          readinessStatuses.forEach(s => { statusByItem[s.item_id] = s })
+          return (
+            <div className="mt-3 space-y-3">
+              {Object.entries(bySection).map(([section, sectionItems]) => (
+                <div key={section}>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{section}</p>
+                  <div className="space-y-1">
+                    {sectionItems.map(item => {
+                      const st = statusByItem[item.id]
+                      const current = st?.status || 'not_ready'
+                      return (
+                        <div key={item.id} className="flex items-center justify-between gap-2 py-1">
+                          <div className="min-w-0 flex items-center gap-2">
+                            {item.critical && <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-1.5 py-0.5 flex-shrink-0">Critical</span>}
+                            <span className="text-sm text-gray-700 truncate">{item.label}</span>
+                          </div>
+                          <select value={current} onChange={e => setReadinessStatus(item.id, e.target.value, st)} className={`text-xs px-2 py-1 rounded-full border flex-shrink-0 ${READINESS_STATUS_OPTIONS.find(o=>o.value===current)?.color}`}>
+                            {READINESS_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
+      </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
@@ -427,6 +495,113 @@ function ItemsTab({ showToast }: { showToast: (m: string, t?: 'success'|'error')
                     <div>
                       <p className="text-sm font-medium text-gray-800">{item.label}</p>
                       {item.description && <p className="text-xs text-gray-400">{item.description}</p>}
+                    </div>
+                    <div className="flex gap-3 flex-shrink-0">
+                      <button onClick={() => startEdit(item)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                      <button onClick={() => retireItem(item.id)} className="text-xs text-red-500 hover:underline">Retire</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// -- Go-Live Readiness Items (shared, editable template) ---------------
+function ReadinessItemsTab({ showToast }: { showToast: (m: string, t?: 'success'|'error') => void }) {
+  const [items, setItems] = useState<ReadinessItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ section: '', label: '', done_means: '', critical: true })
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState({ section: '', label: '', done_means: '', critical: true })
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('go_live_readiness_items').select('*').is('retired_at', null).order('sort_order')
+    setItems(data || [])
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [])
+
+  async function addItem(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.section.trim() || !form.label.trim()) return
+    const id = `custom-${Date.now()}`
+    const maxOrder = Math.max(0, ...items.map(i => i.sort_order)) + 1
+    const { error } = await supabase.from('go_live_readiness_items').insert({
+      id, section: form.section.trim(), label: form.label.trim(), done_means: form.done_means.trim() || null, critical: form.critical, sort_order: maxOrder,
+    })
+    if (error) showToast(error.message, 'error')
+    else { showToast('Item added!'); setForm({ section: '', label: '', done_means: '', critical: true }); setShowForm(false); load() }
+  }
+
+  function startEdit(item: ReadinessItem) {
+    setEditingId(item.id)
+    setEditDraft({ section: item.section, label: item.label, done_means: item.done_means || '', critical: item.critical })
+  }
+  async function saveEdit(id: string) {
+    await supabase.from('go_live_readiness_items').update({
+      section: editDraft.section.trim(), label: editDraft.label.trim(), done_means: editDraft.done_means.trim() || null, critical: editDraft.critical,
+    }).eq('id', id)
+    setEditingId(null); load()
+  }
+  async function retireItem(id: string) {
+    if (!confirm('Retire this item? It will no longer count toward any client\'s readiness %.')) return
+    await supabase.from('go_live_readiness_items').update({ retired_at: new Date().toISOString() }).eq('id', id)
+    load()
+  }
+
+  const bySection: Record<string, ReadinessItem[]> = {}
+  items.forEach(i => { (bySection[i.section] ||= []).push(i) })
+  const criticalCount = items.filter(i => i.critical).length
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-gray-400">Only <strong>Critical</strong> items count toward the readiness % shown to clients. {criticalCount} of {items.length} items are currently marked Critical.</p>
+      <div className="flex justify-end">
+        <button onClick={() => setShowForm(!showForm)} className="bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium px-4 py-2 rounded-lg transition">+ Add Readiness Item</button>
+      </div>
+      {showForm && (
+        <form onSubmit={addItem} className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <input required placeholder="Section (e.g. K. Something New)" value={form.section} onChange={e => setForm({...form, section: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input required placeholder="Item label" value={form.label} onChange={e => setForm({...form, label: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <input placeholder="Done means... (optional)" value={form.done_means} onChange={e => setForm({...form, done_means: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={form.critical} onChange={e => setForm({...form, critical: e.target.checked})} /> Critical</label>
+          <div className="sm:col-span-4">
+            <button type="submit" className="bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Add Item</button>
+          </div>
+        </form>
+      )}
+      {loading ? <p className="text-center py-6 text-gray-400">Loading...</p> : Object.entries(bySection).map(([section, sectionItems]) => (
+        <div key={section} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-2 bg-gray-50 border-b border-gray-100">{section}</p>
+          <div className="divide-y divide-gray-50">
+            {sectionItems.map(item => (
+              <div key={item.id} className="px-4 py-3">
+                {editingId === item.id ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <input value={editDraft.section} onChange={e => setEditDraft({...editDraft, section: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-2 py-1 text-xs" />
+                    <input value={editDraft.label} onChange={e => setEditDraft({...editDraft, label: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-2 py-1 text-xs" />
+                    <input value={editDraft.done_means} onChange={e => setEditDraft({...editDraft, done_means: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-2 py-1 text-xs" />
+                    <label className="flex items-center gap-1.5 text-xs text-gray-700"><input type="checkbox" checked={editDraft.critical} onChange={e => setEditDraft({...editDraft, critical: e.target.checked})} /> Critical</label>
+                    <div className="sm:col-span-4 flex gap-2">
+                      <button onClick={() => saveEdit(item.id)} className="text-xs bg-blue-900 text-white px-3 py-1 rounded-lg">Save</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs text-gray-400">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {item.critical && <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-1.5 py-0.5 flex-shrink-0">Critical</span>}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800">{item.label}</p>
+                        {item.done_means && <p className="text-xs text-gray-400">{item.done_means}</p>}
+                      </div>
                     </div>
                     <div className="flex gap-3 flex-shrink-0">
                       <button onClick={() => startEdit(item)} className="text-xs text-blue-600 hover:underline">Edit</button>

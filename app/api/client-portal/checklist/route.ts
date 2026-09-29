@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
 
   let submissions: any[] = []
   let gaps: any[] = []
+  let readiness: { pct: number, readyCount: number, totalCount: number } | null = null
   if (pack) {
     const { data: subData } = await supabase
       .from('handover_pack_submissions')
@@ -42,7 +43,22 @@ export async function GET(req: NextRequest) {
       .eq('pack_record_id', pack.id)
       .order('created_at', { ascending: false })
     gaps = gapsData || []
+
+    // Go-Live Readiness rollup -- Critical items only, per explicit
+    // decision (the honest number, not a softer all-items average). The
+    // client only ever sees this rolled-up percentage plus a count --
+    // never item names, owners, or evidence notes, which stay internal.
+    const { data: readinessItems } = await supabase.from('go_live_readiness_items').select('id').eq('critical', true).is('retired_at', null)
+    const criticalIds = new Set((readinessItems || []).map((i: any) => i.id))
+    if (criticalIds.size > 0) {
+      const { data: statuses } = await supabase.from('go_live_readiness_statuses').select('item_id, status').eq('pack_record_id', pack.id)
+      const hasAnyStatus = (statuses || []).length > 0
+      if (hasAnyStatus) {
+        const readyCount = (statuses || []).filter((s: any) => criticalIds.has(s.item_id) && s.status === 'ready').length
+        readiness = { pct: Math.round((readyCount / criticalIds.size) * 100), readyCount, totalCount: criticalIds.size }
+      }
+    }
   }
 
-  return NextResponse.json({ contact, pack: pack || null, items: items || [], submissions, gaps })
+  return NextResponse.json({ contact, pack: pack || null, items: items || [], submissions, gaps, readiness })
 }
