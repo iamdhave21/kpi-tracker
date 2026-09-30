@@ -132,31 +132,43 @@ function ContactsTab({ currentUser, showToast }: { currentUser: string | null, s
 // -- Handover Packs (with drill-down detail) ---------------------------
 function PacksTab({ currentUser, showToast }: { currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [packs, setPacks] = useState<PackRecord[]>([])
+  const [contactClients, setContactClients] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ client: '', account_name: '', contract_start_date: '', target_go_live_date: '' })
+  const [form, setForm] = useState({ client: '', customClient: '', account_name: '', contract_start_date: '', target_go_live_date: '' })
   const [saving, setSaving] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('handover_pack_records').select('*').order('created_at', { ascending: false })
-    setPacks(data || [])
+    const [{ data: p }, { data: c }] = await Promise.all([
+      supabase.from('handover_pack_records').select('*').order('created_at', { ascending: false }),
+      supabase.from('client_contacts').select('client'),
+    ])
+    setPacks(p || [])
+    // Distinct client names already registered as a Client Contact -- this
+    // is what the dropdown below is built from, so a pack's `client`
+    // field always matches a contact's `client` field exactly. Free-typed
+    // values previously risked a silent typo/case mismatch that would
+    // leave a client's portal showing "no checklist set up yet" even
+    // though a pack existed for them.
+    setContactClients(Array.from(new Set((c || []).map((r: any) => r.client))).sort())
     setLoading(false)
   }
   useEffect(() => { load() }, [])
 
   async function createPack(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.client.trim()) return
+    const clientValue = form.client === '__other__' ? form.customClient.trim() : form.client
+    if (!clientValue) return
     setSaving(true)
     const { error } = await supabase.from('handover_pack_records').insert({
-      client: form.client.trim(), account_name: form.account_name.trim() || null,
+      client: clientValue, account_name: form.account_name.trim() || null,
       contract_start_date: form.contract_start_date || null, target_go_live_date: form.target_go_live_date || null,
       created_by: currentUser,
     })
     if (error) showToast(error.message, 'error')
-    else { showToast('Handover pack created!'); setForm({ client: '', account_name: '', contract_start_date: '', target_go_live_date: '' }); setShowForm(false); load() }
+    else { showToast('Handover pack created!'); setForm({ client: '', customClient: '', account_name: '', contract_start_date: '', target_go_live_date: '' }); setShowForm(false); load() }
     setSaving(false)
   }
 
@@ -169,7 +181,17 @@ function PacksTab({ currentUser, showToast }: { currentUser: string | null, show
       </div>
       {showForm && (
         <form onSubmit={createPack} className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <input required placeholder="Client name" value={form.client} onChange={e => setForm({...form, client: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <div className="sm:col-span-2">
+            <select required value={form.client} onChange={e => setForm({...form, client: e.target.value})} className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm">
+              <option value="">Select a client contact...</option>
+              {contactClients.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="__other__">Other (type a new client name)...</option>
+            </select>
+            {contactClients.length === 0 && <p className="text-xs text-amber-600 mt-1">No Client Contacts added yet -- add one first on the Client Contacts tab so this list isn't empty.</p>}
+            {form.client === '__other__' && (
+              <input required placeholder="Client name" value={form.customClient} onChange={e => setForm({...form, customClient: e.target.value})} className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm mt-2" />
+            )}
+          </div>
           <input placeholder="Account / process (optional)" value={form.account_name} onChange={e => setForm({...form, account_name: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
           <input type="date" placeholder="Contract start" value={form.contract_start_date} onChange={e => setForm({...form, contract_start_date: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
           <input type="date" placeholder="Target go-live" value={form.target_go_live_date} onChange={e => setForm({...form, target_go_live_date: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
