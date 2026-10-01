@@ -7468,6 +7468,7 @@ const BCP_CATEGORY_COLORS: Record<string, string> = {
 
 function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
+  const [bcpTab, setBcpTab] = useState<'coverage'|'escalation'>('coverage')
   const [tasks, setTasks] = useState<BCPTask[]>([])
   const [coverage, setCoverage] = useState<Record<string, string[]>>({}) // task_id -> employee_ids[]
   const [loading, setLoading] = useState(true)
@@ -7556,11 +7557,17 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
           <h2 className="text-xl font-bold text-blue-900">Business Continuity Plan</h2>
           <p className="text-sm text-gray-500">{tasks.length} task{tasks.length !== 1 ? 's' : ''} tracked{tasksWithNoCoverage > 0 ? ` · ${tasksWithNoCoverage} with no one trained yet` : ''}</p>
         </div>
-        {canManage && (
+        {canManage && bcpTab === 'coverage' && (
           <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ New Task'}</button>
         )}
       </div>
 
+      <div className="flex gap-2 border-b border-gray-200">
+        <button onClick={() => setBcpTab('coverage')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bcpTab==='coverage' ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Coverage Matrix</button>
+        <button onClick={() => setBcpTab('escalation')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bcpTab==='escalation' ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Escalation Matrix</button>
+      </div>
+
+      {bcpTab === 'coverage' && (<>
       {showForm && canManage && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
           <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Task name, e.g. 'Process payroll cutoff'" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
@@ -7652,6 +7659,149 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
           })}
         </div>
       )}
+      </>)}
+
+      {bcpTab === 'escalation' && <EscalationMatrixView />}
+    </div>
+  )
+}
+
+// Escalation Matrix and Procedure (AB-ESC-01) -- a reference view inside
+// BCP, not a new logging feature. Per explicit request: just get the
+// document and its diagrams in front of people so they know how to
+// escalate, nothing built/logged yet. Flagged clearly as a draft
+// pending approval -- several thresholds in the source document are
+// still bracketed placeholders (Section 11 of the original), not
+// finalized policy, so this view says so rather than presenting them
+// as settled.
+function EscalationMatrixView() {
+  const [expanded, setExpanded] = useState<string | null>('start-here')
+  function Section({ id, title, children }: { id: string, title: string, children: React.ReactNode }) {
+    const open = expanded === id
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <button onClick={() => setExpanded(open ? null : id)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition">
+          <span className="text-sm font-semibold text-blue-900">{title}</span>
+          <span className="text-gray-400 text-xs">{open ? '▲' : '▼'}</span>
+        </button>
+        {open && <div className="px-4 pb-4 pt-1 border-t border-gray-100">{children}</div>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2.5">
+        <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-medium text-amber-800">Draft v0.1 — pending approval</p>
+          <p className="text-xs text-amber-700 mt-0.5">Document AB-ESC-01, prepared by the Director of Operations. Several thresholds below (financial amounts, notification windows, named contacts) are still proposed defaults, not finalized policy -- they're shown in brackets exactly as drafted. The process and severity logic itself is accurate and safe to follow today.</p>
+        </div>
+      </div>
+
+      <Section id="start-here" title="🗺️ Start Here — Find Your Situation">
+        <p className="text-xs text-gray-500 mb-3">The fastest way to know what to do: find your situation on the left, then follow the arrows to the sections and figures to read, in order.</p>
+        <img src="/escalation/process-map.png" alt="Process map: from your situation to the sections you need" className="w-full rounded-lg border border-gray-100" />
+      </Section>
+
+      <Section id="principles" title="1. Principles">
+        <ul className="text-sm text-gray-700 space-y-2 list-disc pl-5">
+          <li>Escalate when a trigger is met, not when the issue feels big enough. If unsure, escalate one level up.</li>
+          <li>Any level can raise a severity. Only the level above can lower it.</li>
+          <li>Two tracks run side by side: <strong>Track A</strong> deals with the impact of an incident on the client. <strong>Track B</strong> deals with the people side — why it happened and what we do about it. One incident can trigger both.</li>
+          <li>The Team Lead is the first point of contact for the client on any account issue. The client does not need to know our internal levels.</li>
+          <li><strong>Anyone</strong> may go directly to the Director (or the CEO) with a suspected fraud, data exposure, or ethics concern — without going through their Team Lead.</li>
+        </ul>
+      </Section>
+
+      <Section id="ladder" title="2. Escalation Ladder at a Glance">
+        <img src="/escalation/ladder.png" alt="Figure 1: the four escalation levels" className="w-full rounded-lg border border-gray-100 mb-3" />
+        <p className="text-xs text-gray-500">Figure 1. The four escalation levels. Each level takes over when a trigger is met.</p>
+      </Section>
+
+      <Section id="severity" title="3. Track A: Incident Severity">
+        <p className="text-xs text-gray-500 mb-3">Used when the client, or AB BSS, identifies an error or incident. The client forwards the issue to the Team Lead, who confirms it, assigns a severity, and escalates when a trigger is met.</p>
+        <img src="/escalation/severity-flow.png" alt="Figure 2: which severity decision flow" className="w-full rounded-lg border border-gray-100 mb-4" />
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead><tr className="bg-gray-50 text-left"><th className="p-2 border border-gray-200">Severity</th><th className="p-2 border border-gray-200">Owner</th><th className="p-2 border border-gray-200">Definition</th><th className="p-2 border border-gray-200">Notify within</th><th className="p-2 border border-gray-200">Closure verified by</th></tr></thead>
+            <tbody>
+              <tr><td className="p-2 border border-gray-200 font-medium">S1 — Low</td><td className="p-2 border border-gray-200">Team Lead</td><td className="p-2 border border-gray-200">Error with no financial impact, fixed within SLA.</td><td className="p-2 border border-gray-200">Same shift</td><td className="p-2 border border-gray-200">Team Lead</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">S2 — Moderate</td><td className="p-2 border border-gray-200">Account Manager / Program Manager</td><td className="p-2 border border-gray-200">Financial impact, a repeat of the same error, or a client SLA missed.</td><td className="p-2 border border-gray-200">[4 business hours]</td><td className="p-2 border border-gray-200">Account Manager / Program Manager</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">S3 — High</td><td className="p-2 border border-gray-200">Director of Operations</td><td className="p-2 border border-gray-200">High risk to the client or AB BSS: financial exposure above [amount], penalty triggered, data/security exposure, formal written escalation, client asks for a team member's removal, loss of a single-processor role.</td><td className="p-2 border border-gray-200">[Same business day]</td><td className="p-2 border border-gray-200">Director of Operations</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">S4 — Critical</td><td className="p-2 border border-gray-200">CEO</td><td className="p-2 border border-gray-200">Threat to the account or AB BSS: pull-out notice/threat, suspected or confirmed fraud, confirmed data breach, legal/regulatory/reputational exposure, commercial dispute.</td><td className="p-2 border border-gray-200">[Within 1 hour]</td><td className="p-2 border border-gray-200">CEO</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-gray-400 mt-2 italic">For suspected fraud or a data/security incident, access for the people involved is suspended immediately, in coordination with the Director, while the review runs.</p>
+      </Section>
+
+      <Section id="trackb" title="4. Track B: Process Errors and Conduct">
+        <p className="text-xs text-gray-500 mb-3">Used when a team member's error or behavior caused the issue. Runs in parallel with Track A and never delays the client response.</p>
+        <img src="/escalation/track-b-stages.png" alt="Figure 3: Track B stages" className="w-full rounded-lg border border-gray-100 mb-4" />
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead><tr className="bg-gray-50 text-left"><th className="p-2 border border-gray-200">Stage</th><th className="p-2 border border-gray-200">Trigger</th><th className="p-2 border border-gray-200">Owner</th><th className="p-2 border border-gray-200">Action</th><th className="p-2 border border-gray-200">Recorded in</th></tr></thead>
+            <tbody>
+              <tr><td className="p-2 border border-gray-200 font-medium">B1</td><td className="p-2 border border-gray-200">First isolated error, honest mistake.</td><td className="p-2 border border-gray-200">Team Lead</td><td className="p-2 border border-gray-200">Root-cause conversation and coaching, with a clear correction. Reminder of the procedure.</td><td className="p-2 border border-gray-200">Portal: Coaching & 1-on-1, Observations</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">B2</td><td className="p-2 border border-gray-200">Repeat error, breach of procedure, or an error with financial impact.</td><td className="p-2 border border-gray-200">Team Lead</td><td className="p-2 border border-gray-200">Notice to Explain (NTE) and a SMART coaching plan with a follow-up date. [Account Manager / Program Manager approves the NTE.]</td><td className="p-2 border border-gray-200">Portal: Notice to Explain, Coaching & 1-on-1</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">B3</td><td className="p-2 border border-gray-200">Habitual errors, an NTE or plan that did not work, or gross negligence.</td><td className="p-2 border border-gray-200">Director of Operations</td><td className="p-2 border border-gray-200">Director reviews the case and decides the outcome under the company disciplinary policy.</td><td className="p-2 border border-gray-200">Portal: Notice to Explain; Director decision note</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">B4</td><td className="p-2 border border-gray-200">Suspected fraud, falsification, or dishonesty.</td><td className="p-2 border border-gray-200">Director of Operations and CEO</td><td className="p-2 border border-gray-200">Immediate access suspension, investigation, and decision by the CEO.</td><td className="p-2 border border-gray-200">Escalation Record; Notice to Explain</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-gray-400 mt-2 italic">Before adopting stage B3 or B4, HR or legal counsel should confirm the disciplinary steps and due-process requirements.</p>
+      </Section>
+
+      <Section id="worked" title="5. Worked Example">
+        <p className="text-xs text-gray-500 mb-3">One incident, two tracks: a duplicate refund reported by the client.</p>
+        <img src="/escalation/worked-example.png" alt="Figure 4: worked example, two tracks" className="w-full rounded-lg border border-gray-100" />
+      </Section>
+
+      <Section id="triggers" title="6. Other Triggers by Category">
+        <p className="text-xs text-gray-500 mb-3">Errors are only one reason to escalate. These triggers cover the other situations.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead><tr className="bg-gray-50 text-left"><th className="p-2 border border-gray-200">Category</th><th className="p-2 border border-gray-200">L1 Team Lead</th><th className="p-2 border border-gray-200">L2 Account Mgr / Program Mgr</th><th className="p-2 border border-gray-200">L3 Director</th><th className="p-2 border border-gray-200">L4 CEO</th></tr></thead>
+            <tbody>
+              <tr><td className="p-2 border border-gray-200 font-medium">SLA / TAT</td><td className="p-2 border border-gray-200">Risk of a miss flagged and logged.</td><td className="p-2 border border-gray-200">Any client SLA miss.</td><td className="p-2 border border-gray-200">Repeat miss in the same month, or a penalty triggered.</td><td className="p-2 border border-gray-200">Client threatens termination or disputes penalties.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">KPI / quality</td><td className="p-2 border border-gray-200">Employee KPI between 94% and 97% (portal At Risk flag).</td><td className="p-2 border border-gray-200">Employee KPI below 94%, or below 97% two months running.</td><td className="p-2 border border-gray-200">Team below the client target for [2] consecutive periods.</td><td className="p-2 border border-gray-200">None.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">Backlog / capacity</td><td className="p-2 border border-gray-200">Backlog building within the day.</td><td className="p-2 border border-gray-200">Backlog above [one day's volume] for [2] days, or a capacity deficit.</td><td className="p-2 border border-gray-200">Deficit needing added headcount, or peak-period risk.</td><td className="p-2 border border-gray-200">None.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">People</td><td className="p-2 border border-gray-200">Single absence with a backup available; one pulse flag.</td><td className="p-2 border border-gray-200">Absence with no trained backup; resignation signal; [2] pulse flags in one team.</td><td className="p-2 border border-gray-200">Loss of a single-processor role; client asks for removal of a team member.</td><td className="p-2 border border-gray-200">Multi-account attrition event.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">Security / access</td><td className="p-2 border border-gray-200">None.</td><td className="p-2 border border-gray-200">Lost device or unusual access reported.</td><td className="p-2 border border-gray-200">Suspected data exposure or credential compromise.</td><td className="p-2 border border-gray-200">Confirmed breach, client notification, or legal exposure.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">Client relationship</td><td className="p-2 border border-gray-200">Routine client query.</td><td className="p-2 border border-gray-200">Written client complaint.</td><td className="p-2 border border-gray-200">Formal escalation from the client.</td><td className="p-2 border border-gray-200">Pull-out notice or commercial dispute.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section id="response" title="7. Response and Closure Standards">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead><tr className="bg-gray-50 text-left"><th className="p-2 border border-gray-200">Severity</th><th className="p-2 border border-gray-200">Acknowledge</th><th className="p-2 border border-gray-200">Root cause &amp; action plan</th><th className="p-2 border border-gray-200">Client update</th><th className="p-2 border border-gray-200">Post-incident review</th></tr></thead>
+            <tbody>
+              <tr><td className="p-2 border border-gray-200 font-medium">S1</td><td className="p-2 border border-gray-200">Same shift</td><td className="p-2 border border-gray-200">Within the SLA</td><td className="p-2 border border-gray-200">On resolution</td><td className="p-2 border border-gray-200">Not required</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">S2</td><td className="p-2 border border-gray-200">[4 business hours]</td><td className="p-2 border border-gray-200">[3 business days]</td><td className="p-2 border border-gray-200">[Same day, then on resolution]</td><td className="p-2 border border-gray-200">Team Lead and Account Manager / Program Manager</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">S3</td><td className="p-2 border border-gray-200">[Same business day]</td><td className="p-2 border border-gray-200">[5 business days]</td><td className="p-2 border border-gray-200">[Same day, then daily until resolved]</td><td className="p-2 border border-gray-200">Director, within [10] days</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">S4</td><td className="p-2 border border-gray-200">[Within 1 hour]</td><td className="p-2 border border-gray-200">[Immediate containment; plan within 48 hours]</td><td className="p-2 border border-gray-200">Message set by the CEO</td><td className="p-2 border border-gray-200">CEO and Director, within [10] days</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section id="roles" title="9. Roles and Contacts">
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Not yet filled in on the source document — named people, backups, and after-hours contacts for each level still need to be assigned before this section is complete.</p>
+      </Section>
+
+      <Section id="reporting" title="10. Reporting and Review">
+        <ul className="text-sm text-gray-700 space-y-1.5 list-disc pl-5">
+          <li>Escalations by level, category and account — monthly, owned by the Director of Operations.</li>
+          <li>Acknowledgement and resolution times against Section 7 — monthly, Director of Operations.</li>
+          <li>Repeat rate: the same issue or person escalating again — monthly, Director of Operations.</li>
+          <li>Open escalations older than [x] days — weekly, Account Manager / Program Manager.</li>
+          <li>Review of this matrix and its thresholds — [Quarterly], Director of Operations.</li>
+        </ul>
+      </Section>
     </div>
   )
 }
