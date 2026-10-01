@@ -33,10 +33,22 @@ export async function POST(req: NextRequest) {
   const notes = form.get('notes')?.toString() || null
   const driveLink = form.get('drive_link')?.toString() || null
   const file = form.get('file') as File | null
+  const markNotApplicable = form.get('not_applicable') === 'true'
 
   if (!itemId) return NextResponse.json({ error: 'Missing item' }, { status: 400 })
   const { data: itemRow } = await supabase.from('handover_pack_items').select('id').eq('id', itemId).is('retired_at', null).single()
   if (!itemRow) return NextResponse.json({ error: 'Unknown or retired checklist item' }, { status: 400 })
+
+  // Marking something N/A is its own path -- no file/link required, just
+  // the item and an optional short reason.
+  if (markNotApplicable) {
+    const { error: naError } = await supabase.from('handover_pack_submissions').upsert({
+      pack_record_id: pack.id, item_id: itemId, received: false, not_applicable: true,
+      na_reason: notes, na_by: contact.email, na_at: new Date().toISOString(),
+    }, { onConflict: 'pack_record_id,item_id' })
+    if (naError) return NextResponse.json({ error: naError.message }, { status: 500 })
+    return NextResponse.json({ success: true })
+  }
 
   if (driveLink && !looksLikeUrl(driveLink)) {
     return NextResponse.json({ error: 'That doesn\'t look like a valid link' }, { status: 400 })
@@ -68,7 +80,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { error: upsertError } = await supabase.from('handover_pack_submissions').upsert({
-    pack_record_id: pack.id, item_id: itemId, received: true,
+    pack_record_id: pack.id, item_id: itemId, received: true, not_applicable: false,
     file_path: filePath, file_name: fileName, drive_link: driveLink, notes,
     submitted_by: contact.email, submitted_at: new Date().toISOString(),
   }, { onConflict: 'pack_record_id,item_id' })

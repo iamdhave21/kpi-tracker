@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   if (pack) {
     const { data: subData } = await supabase
       .from('handover_pack_submissions')
-      .select('id, item_id, received, file_name, drive_link, notes, submitted_at, received, received_at')
+      .select('id, item_id, received, file_name, drive_link, notes, submitted_at, received_at, not_applicable, na_reason')
       .eq('pack_record_id', pack.id)
     submissions = subData || []
 

@@ -11,7 +11,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 
 type Contact = { id: string, name: string, email: string, client: string }
 type ChecklistItem = { id: string, section: string, label: string, description: string | null, sort_order: number }
-type Submission = { id: string, item_id: string, received: boolean, file_name: string | null, drive_link: string | null, notes: string | null, submitted_at: string | null, received_at: string | null }
+type Submission = { id: string, item_id: string, received: boolean, file_name: string | null, drive_link: string | null, notes: string | null, submitted_at: string | null, received_at: string | null, not_applicable: boolean, na_reason: string | null }
 type Gap = { id: string, missing_item: string, impact: string | null, owner: string | null, due_date: string | null, status: string }
 type Pack = { id: string, status: string, account_name: string | null, target_go_live_date: string | null }
 type Readiness = { pct: number, readyCount: number, totalCount: number } | null
@@ -137,7 +137,8 @@ function ChecklistScreen({ contact, onLogout }: { contact: Contact, onLogout: ()
   const subByItem: Record<string, Submission> = {}
   submissions.forEach(s => { subByItem[s.item_id] = s })
   const receivedCount = submissions.filter(s => s.received).length
-  const pct = items.length ? Math.round((receivedCount / items.length) * 100) : 0
+  const resolvedCount = submissions.filter(s => s.received || s.not_applicable).length
+  const pct = items.length ? Math.round((resolvedCount / items.length) * 100) : 0
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -169,7 +170,7 @@ function ChecklistScreen({ contact, onLogout }: { contact: Contact, onLogout: ()
               <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
                 <div className="bg-blue-900 h-full transition-all" style={{ width: `${pct}%` }} />
               </div>
-              <p className="text-xs text-gray-400 mt-1.5">{receivedCount} of {items.length} items received ({pct}%)</p>
+              <p className="text-xs text-gray-400 mt-1.5">{receivedCount} of {items.length} items received ({pct}% resolved{submissions.some(s=>s.not_applicable) ? `, including N/A` : ''})</p>
             </div>
 
             {readiness && (
@@ -240,6 +241,8 @@ function ChecklistRow({ item, submission, open, onToggle, onSaved }: {
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [naReason, setNaReason] = useState('')
+  const [showNaForm, setShowNaForm] = useState(false)
 
   async function submit() {
     if (!file && !driveLink.trim()) { setError('Attach a file or a link'); return }
@@ -261,12 +264,32 @@ function ChecklistRow({ item, submission, open, onToggle, onSaved }: {
     setSaving(false)
   }
 
+  async function submitNotApplicable() {
+    setSaving(true); setError('')
+    const form = new FormData()
+    form.append('item_id', item.id)
+    form.append('not_applicable', 'true')
+    if (naReason.trim()) form.append('notes', naReason.trim())
+    try {
+      const res = await fetch('/api/client-portal/submit-item', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not save')
+      setNaReason(''); setShowNaForm(false)
+      onSaved()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save')
+    }
+    setSaving(false)
+  }
+
+  const resolved = submission?.received || submission?.not_applicable
+
   return (
     <div>
       <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-xs ${submission?.received ? 'bg-emerald-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
-            {submission?.received ? '✓' : ''}
+          <span className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-xs ${submission?.received ? 'bg-emerald-500 text-white' : submission?.not_applicable ? 'bg-gray-400 text-white' : 'bg-gray-200 text-gray-400'}`}>
+            {submission?.received ? '✓' : submission?.not_applicable ? '—' : ''}
           </span>
           <span className="text-sm font-medium text-gray-800 truncate">{item.label}</span>
         </div>
@@ -283,17 +306,46 @@ function ChecklistRow({ item, submission, open, onToggle, onSaved }: {
               {submission.received_at && <span className="block mt-0.5 text-emerald-600">Confirmed received by AB BSS on {new Date(submission.received_at).toLocaleDateString()}</span>}
             </div>
           )}
-          <div className="space-y-2">
-            <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs w-full" />
-            <input type="url" value={driveLink} onChange={e => setDriveLink(e.target.value)} placeholder="Or paste a Google Drive / file link"
-              className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2}
-              className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
-            {error && <p className="text-xs text-red-600">{error}</p>}
-            <button onClick={submit} disabled={saving} className="bg-blue-900 hover:bg-blue-950 text-white text-xs font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">
-              {saving ? 'Submitting...' : submission?.received ? 'Replace submission' : 'Submit'}
-            </button>
-          </div>
+          {submission?.not_applicable && (
+            <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-2 mb-3 text-xs text-gray-600">
+              Marked not applicable{submission.na_reason ? ` — "${submission.na_reason}"` : ''}
+            </div>
+          )}
+          {!resolved && (
+            <div className="space-y-2">
+              <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs w-full" />
+              <input type="url" value={driveLink} onChange={e => setDriveLink(e.target.value)} placeholder="Or paste a Google Drive / file link"
+                className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2}
+                className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
+              {error && <p className="text-xs text-red-600">{error}</p>}
+              <div className="flex items-center gap-3 flex-wrap">
+                <button onClick={submit} disabled={saving} className="bg-blue-900 hover:bg-blue-950 text-white text-xs font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">
+                  {saving ? 'Submitting...' : 'Submit'}
+                </button>
+                {!showNaForm ? (
+                  <button onClick={() => setShowNaForm(true)} className="text-xs text-gray-400 hover:text-gray-600 underline">Not applicable to us</button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input value={naReason} onChange={e => setNaReason(e.target.value)} placeholder="Why? (optional)" className="border border-gray-300 rounded-lg text-gray-900 px-2 py-1.5 text-xs" />
+                    <button onClick={submitNotApplicable} disabled={saving} className="text-xs bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50">Confirm N/A</button>
+                    <button onClick={() => setShowNaForm(false)} className="text-xs text-gray-400">Cancel</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {resolved && (
+            <div className="space-y-2">
+              <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs w-full" />
+              <input type="url" value={driveLink} onChange={e => setDriveLink(e.target.value)} placeholder="Replace with a Google Drive / file link"
+                className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
+              {error && <p className="text-xs text-red-600">{error}</p>}
+              <button onClick={submit} disabled={saving || (!file && !driveLink.trim())} className="text-xs text-blue-600 hover:underline disabled:opacity-50">
+                {saving ? 'Submitting...' : 'Replace with a file or link instead'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

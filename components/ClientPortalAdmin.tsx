@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 type Contact = { id: string, name: string, email: string, client: string, active: boolean, created_at: string }
 type PackItem = { id: string, section: string, label: string, description: string | null, sort_order: number, retired_at: string | null }
 type PackRecord = { id: string, client: string, account_name: string | null, contract_start_date: string | null, target_go_live_date: string | null, status: string, created_at: string }
-type Submission = { id: string, pack_record_id: string, item_id: string, received: boolean, file_path: string | null, file_name: string | null, drive_link: string | null, notes: string | null, submitted_by: string | null, submitted_at: string | null, received_by: string | null, received_at: string | null }
+type Submission = { id: string, pack_record_id: string, item_id: string, received: boolean, file_path: string | null, file_name: string | null, drive_link: string | null, notes: string | null, submitted_by: string | null, submitted_at: string | null, received_by: string | null, received_at: string | null, not_applicable: boolean, na_reason: string | null, na_by: string | null, na_at: string | null }
 type Gap = { id: string, pack_record_id: string, missing_item: string, impact: string | null, owner: string | null, due_date: string | null, status: string }
 type ReadinessItem = { id: string, section: string, label: string, done_means: string | null, critical: boolean, sort_order: number, retired_at: string | null }
 type ReadinessStatus = { id: string, pack_record_id: string, item_id: string, status: string, evidence: string | null, owner: string | null, updated_by: string | null, updated_at: string }
@@ -138,14 +138,19 @@ function PacksTab({ currentUser, showToast }: { currentUser: string | null, show
   const [form, setForm] = useState({ client: '', customClient: '', account_name: '', contract_start_date: '', target_go_live_date: '' })
   const [saving, setSaving] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [templateItems, setTemplateItems] = useState<PackItem[]>([])
+  const [showCustomize, setShowCustomize] = useState(false)
+  const [uncheckedIds, setUncheckedIds] = useState<Set<string>>(new Set())
 
   async function load() {
     setLoading(true)
-    const [{ data: p }, { data: c }] = await Promise.all([
+    const [{ data: p }, { data: c }, { data: ti }] = await Promise.all([
       supabase.from('handover_pack_records').select('*').order('created_at', { ascending: false }),
       supabase.from('client_contacts').select('client'),
+      supabase.from('handover_pack_items').select('*').is('retired_at', null).order('sort_order'),
     ])
     setPacks(p || [])
+    setTemplateItems(ti || [])
     // Distinct client names already registered as a Client Contact -- this
     // is what the dropdown below is built from, so a pack's `client`
     // field always matches a contact's `client` field exactly. Free-typed
@@ -162,13 +167,25 @@ function PacksTab({ currentUser, showToast }: { currentUser: string | null, show
     const clientValue = form.client === '__other__' ? form.customClient.trim() : form.client
     if (!clientValue) return
     setSaving(true)
-    const { error } = await supabase.from('handover_pack_records').insert({
+    const { data: newPack, error } = await supabase.from('handover_pack_records').insert({
       client: clientValue, account_name: form.account_name.trim() || null,
       contract_start_date: form.contract_start_date || null, target_go_live_date: form.target_go_live_date || null,
       created_by: currentUser,
-    })
-    if (error) showToast(error.message, 'error')
-    else { showToast('Handover pack created!'); setForm({ client: '', customClient: '', account_name: '', contract_start_date: '', target_go_live_date: '' }); setShowForm(false); load() }
+    }).select().single()
+    if (error) { showToast(error.message, 'error'); setSaving(false); return }
+    // Any item left unchecked in the "customize" step is pre-marked N/A
+    // right away, before the client ever sees it -- per explicit decision
+    // to support both staff pre-curation AND the client's own "not
+    // applicable" option, rather than picking just one.
+    if (uncheckedIds.size > 0 && newPack) {
+      const rows = Array.from(uncheckedIds).map(itemId => ({
+        pack_record_id: newPack.id, item_id: itemId, not_applicable: true, na_by: currentUser, na_at: new Date().toISOString(),
+      }))
+      await supabase.from('handover_pack_submissions').insert(rows)
+    }
+    showToast('Handover pack created!')
+    setForm({ client: '', customClient: '', account_name: '', contract_start_date: '', target_go_live_date: '' })
+    setUncheckedIds(new Set()); setShowCustomize(false); setShowForm(false); load()
     setSaving(false)
   }
 
@@ -195,6 +212,24 @@ function PacksTab({ currentUser, showToast }: { currentUser: string | null, show
           <input placeholder="Account / process (optional)" value={form.account_name} onChange={e => setForm({...form, account_name: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
           <input type="date" placeholder="Contract start" value={form.contract_start_date} onChange={e => setForm({...form, contract_start_date: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
           <input type="date" placeholder="Target go-live" value={form.target_go_live_date} onChange={e => setForm({...form, target_go_live_date: e.target.value})} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm" />
+          <div className="sm:col-span-4">
+            <button type="button" onClick={() => setShowCustomize(!showCustomize)} className="text-xs text-blue-600 hover:underline">
+              {showCustomize ? 'Hide' : 'Customize which items apply'} ({templateItems.length - uncheckedIds.size}/{templateItems.length} selected)
+            </button>
+            {showCustomize && (
+              <div className="mt-2 border border-gray-200 rounded-lg p-3 max-h-64 overflow-y-auto bg-gray-50">
+                <p className="text-xs text-gray-400 mb-2">Uncheck anything that doesn't apply to this client's business -- it'll be pre-marked Not Applicable before they ever see it. Everything's checked (included) by default; the client can also mark N/A themselves later for anything left checked here.</p>
+                {templateItems.map(item => (
+                  <label key={item.id} className="flex items-center gap-2 text-xs text-gray-700 py-0.5">
+                    <input type="checkbox" checked={!uncheckedIds.has(item.id)} onChange={e => {
+                      setUncheckedIds(prev => { const next = new Set(prev); if (e.target.checked) next.delete(item.id); else next.add(item.id); return next })
+                    }} />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="sm:col-span-4">
             <button type="submit" disabled={saving} className="bg-blue-900 hover:bg-blue-950 text-white text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">{saving ? 'Creating...' : 'Create Pack'}</button>
           </div>
@@ -275,11 +310,26 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
   async function toggleReceived(itemId: string, current?: Submission) {
     if (current) {
       await supabase.from('handover_pack_submissions').update({
-        received: !current.received, received_by: !current.received ? currentUser : null, received_at: !current.received ? new Date().toISOString() : null,
+        received: !current.received, not_applicable: false,
+        received_by: !current.received ? currentUser : null, received_at: !current.received ? new Date().toISOString() : null,
       }).eq('id', current.id)
     } else {
       await supabase.from('handover_pack_submissions').insert({
         pack_record_id: packId, item_id: itemId, received: true, received_by: currentUser, received_at: new Date().toISOString(),
+      })
+    }
+    load()
+  }
+
+  async function toggleNotApplicable(itemId: string, current?: Submission) {
+    if (current) {
+      await supabase.from('handover_pack_submissions').update({
+        not_applicable: !current.not_applicable, received: false,
+        na_by: !current.not_applicable ? currentUser : null, na_at: !current.not_applicable ? new Date().toISOString() : null,
+      }).eq('id', current.id)
+    } else {
+      await supabase.from('handover_pack_submissions').insert({
+        pack_record_id: packId, item_id: itemId, not_applicable: true, na_by: currentUser, na_at: new Date().toISOString(),
       })
     }
     load()
@@ -317,6 +367,7 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
   const subByItem: Record<string, Submission> = {}
   submissions.forEach(s => { subByItem[s.item_id] = s })
   const receivedCount = submissions.filter(s => s.received).length
+  const naCount = submissions.filter(s => s.not_applicable).length
 
   return (
     <div className="space-y-5">
@@ -325,7 +376,7 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
       <div className="bg-white border border-gray-200 rounded-xl p-5 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="text-lg font-bold text-blue-900">{pack.client}</h3>
-          <p className="text-sm text-gray-500">{pack.account_name || 'No account name set'} · {receivedCount}/{items.length} items received</p>
+          <p className="text-sm text-gray-500">{pack.account_name || 'No account name set'} · {receivedCount}/{items.length} received{naCount > 0 ? ` · ${naCount} marked N/A` : ''}</p>
         </div>
         <select value={pack.status} onChange={e => updateStatus(e.target.value)} className="border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-sm">
           {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -343,12 +394,16 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-800">{item.label}</p>
                     {sub?.submitted_at && <p className="text-xs text-gray-400 mt-0.5">Submitted by {sub.submitted_by} on {new Date(sub.submitted_at).toLocaleDateString()}{sub.notes ? ` — "${sub.notes}"` : ''}</p>}
+                    {sub?.not_applicable && <p className="text-xs text-gray-400 mt-0.5">Marked N/A{sub.na_by ? ` by ${sub.na_by}` : ''}{sub.na_reason ? ` — "${sub.na_reason}"` : ''}</p>}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {sub?.file_path && <button onClick={() => viewFile(sub)} className="text-xs text-blue-600 hover:underline">View file</button>}
                     {sub?.drive_link && <a href={sub.drive_link} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">Open link</a>}
                     <button onClick={() => toggleReceived(item.id, sub)} className={`text-xs px-2.5 py-1 rounded-full border transition ${sub?.received ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-blue-300'}`}>
                       {sub?.received ? '✓ Received' : 'Mark Received'}
+                    </button>
+                    <button onClick={() => toggleNotApplicable(item.id, sub)} className={`text-xs px-2.5 py-1 rounded-full border transition ${sub?.not_applicable ? 'bg-gray-200 border-gray-300 text-gray-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-400'}`}>
+                      {sub?.not_applicable ? '— N/A' : 'Mark N/A'}
                     </button>
                   </div>
                 </div>
