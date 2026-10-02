@@ -11,6 +11,49 @@ type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'li
 // abbss-ops-portal.vercel.app/?view=ops-dashboard opens that module
 // directly. Access is still enforced by the normal role checks at render
 // time -- a link never grants access the viewer's role doesn't have.
+// Flat list for the sidebar search box. Deliberately NOT filtered by
+// role here -- picking a result just navigates (setView), and the
+// existing per-view role gate in the main render switch (same one that
+// already protects every screen) shows "Access Restricted" exactly as
+// it would if the person had somehow typed the view directly. Search
+// only offers a shortcut; it never grants access a role wouldn't
+// already reach normally.
+const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] = [
+  { id: 'announcements', label: 'Announcements' },
+  { id: 'gaming-hub', label: 'Gaming Hub' },
+  { id: 'ops-dashboard', label: 'Ops Dashboard' },
+  { id: 'tickets', label: 'Tickets' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'bcp', label: 'BCP / Business Continuity Plan' },
+  { id: 'bcp', label: 'Escalation Matrix' },
+  { id: 'links', label: 'Links' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'hris-referral', label: 'Hiring Pipeline', external: 'https://abbss-hiring-pipeline.vercel.app/' },
+  { id: 'hris-records', label: 'Employee Records' },
+  { id: 'nte', label: 'Notice to Explain' },
+  { id: 'hris-timetracker', label: 'Time Tracker' },
+  { id: 'opex', label: 'Operational Expense' },
+  { id: 'hris-invoice', label: 'Invoice' },
+  { id: 'client-portal-admin', label: 'Client Onboarding' },
+  { id: 'dashboard-month', label: 'Dashboard' },
+  { id: 'tl-scorecard', label: 'Team Lead Scorecard' },
+  { id: 'tl-tools', label: 'Coaching & 1-on-1' },
+  { id: 'pulse-check', label: 'Weekly Pulse Check' },
+  { id: 'av-scan', label: 'AV Scan' },
+  { id: 'observations', label: 'Observations' },
+  { id: 'manager-cadence', label: 'Operating Cadence (Manager)' },
+  { id: 'entry', label: 'KPI Entry' },
+  { id: 'cadence', label: 'Operating Cadence (Team Lead)' },
+  { id: 'cadence', label: 'Team Huddle Notes' },
+  { id: 'dashboard-employee', label: 'Employee Trends' },
+  { id: 'dashboard-team', label: 'Team Dashboard' },
+  { id: 'employees', label: 'Employees' },
+  { id: 'teams', label: 'Teams' },
+  { id: 'org-chart', label: 'Org Chart' },
+  { id: 'matrix', label: 'Matrix' },
+  { id: 'settings', label: 'Settings' },
+]
+
 const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin']
 function readViewFromUrl(): View | null {
   if (typeof window === 'undefined') return null
@@ -1502,6 +1545,16 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false
   })
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchResults = searchQuery.trim()
+    ? SEARCHABLE_NAV_ITEMS.filter(i => i.label.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : []
+  function goToSearchResult(item: { id: string, label: string, external?: string }) {
+    if (item.external) window.open(item.external, '_blank')
+    else setView(item.id)
+    setSearchQuery('')
+    setMobileMenuOpen(false)
+  }
 
   function toggle(key: string) {
     setCollapsed(prev => ({ ...prev, [key]: !prev[key] }))
@@ -1668,6 +1721,41 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           </div>
         </div>
       )}
+
+      {/* Sidebar search -- finds any module by name, across every
+          section, instead of opening and scanning each one. Picking a
+          result just navigates; it never bypasses that screen's own
+          role check (see SEARCHABLE_NAV_ITEMS comment above). */}
+      <div className="px-3 pt-2 pb-1 relative">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') setSearchQuery('') }}
+            placeholder="Search modules..."
+            className="w-full pl-8 pr-2.5 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent"
+          />
+        </div>
+        {searchQuery.trim() && (
+          <div className="absolute left-3 right-3 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto">
+            {searchResults.length === 0 ? (
+              <p className="text-xs text-gray-400 px-3 py-2.5">No modules match "{searchQuery}"</p>
+            ) : (
+              searchResults.map((item, i) => (
+                <button
+                  key={`${item.id}-${i}`}
+                  onClick={() => goToSearchResult(item)}
+                  className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-900 transition flex items-center justify-between"
+                >
+                  <span>{item.label}</span>
+                  {item.external && <span className="text-gray-300 text-[10px]">↗ opens new tab</span>}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Collapse All / Expand All */}
       <div className="px-3 pb-2">
