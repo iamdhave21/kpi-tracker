@@ -1728,13 +1728,13 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           role check (see SEARCHABLE_NAV_ITEMS comment above). */}
       <div className="px-3 pt-2 pb-1 relative">
         <div className="relative">
-          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-4 h-4 text-blue-900 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') setSearchQuery('') }}
             placeholder="Search modules..."
-            className="w-full pl-8 pr-2.5 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent"
+            className="w-full pl-9 pr-2.5 py-2 text-sm font-medium bg-white border-2 border-blue-900 rounded-lg text-gray-900 placeholder-gray-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
           />
         </div>
         {searchQuery.trim() && (
@@ -7772,7 +7772,7 @@ function EscalationMatrixView() {
           <span className="text-sm font-semibold text-blue-900">{title}</span>
           <span className="text-gray-400 text-xs">{open ? '▲' : '▼'}</span>
         </button>
-        {open && <div className="px-4 pb-4 pt-1 border-t border-gray-100">{children}</div>}
+        {open && <div className="px-4 pb-4 pt-1 border-t border-gray-100 text-gray-800">{children}</div>}
       </div>
     )
   }

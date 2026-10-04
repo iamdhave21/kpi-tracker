@@ -12,11 +12,17 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* The portal has no dark mode yet (it's on the pending list) -- every
+   screen is built on white cards over a background image. This block
+   used to switch the page's default text to near-white (#ededed) on
+   systems set to dark mode, a leftover from the Next.js starter. Any
+   element without an explicit text color (table cells, bare spans)
+   then rendered near-white on a white card -- unreadable, and the cause
+   of the same bug showing up again and again on new screens. Pinning
+   the app to light until dark mode is built on purpose fixes it for
+   every screen at once, including ones that haven't been written yet. */
+:root {
+  color-scheme: light;
 }
 
 body {
