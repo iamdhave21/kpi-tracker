@@ -7762,17 +7762,73 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
 // still bracketed placeholders (Section 11 of the original), not
 // finalized policy, so this view says so rather than presenting them
 // as settled.
+// Clickable areas over the Escalation "Start Here" process map. The map is
+// a picture (2080x940 px natively); every box on it names the section to
+// read, so each box becomes a link to that section. Positions are the
+// measured edges of the boxes, stored as pixels and converted to
+// percentages at render so they stay aligned at any width.
+const PMAP_W = 2080, PMAP_H = 940
+const PMAP_COLS: [number, number][] = [[994, 1221], [1260, 1487], [1526, 1753], [1792, 2019]]
+const PMAP_ROWS: [number, number][] = [[122, 213], [222, 313], [322, 413], [422, 513], [522, 613], [622, 713], [722, 813], [822, 913]]
+const ESC_SECTION_TITLES: Record<string, string> = {
+  principles: '1. Principles', ladder: '2. Escalation Ladder', severity: '3. Track A: Incident Severity',
+  trackb: '4. Track B: Process Errors and Conduct', worked: '5. Worked Example', triggers: '6. Other Triggers',
+  response: '7. Response and Closure Standards', record: '8. Escalation Record', roles: '9. Roles and Contacts', reporting: '10. Reporting and Review',
+}
+// r/c = row/column of the box on the map; sec = section to open; anchor = sub-heading inside it
+const PMAP_HOTSPOTS: { r: number, c: number, label: string, sec: string, anchor?: string }[] = [
+  { r: 0, c: 0, label: 'Which severity?', sec: 'severity', anchor: '3-2' },
+  { r: 0, c: 1, label: 'Process steps', sec: 'severity', anchor: '3-1' },
+  { r: 0, c: 2, label: 'Response times', sec: 'response' },
+  { r: 0, c: 3, label: 'Escalation Record', sec: 'record' },
+  { r: 1, c: 0, label: 'Track B stages', sec: 'trackb', anchor: '4-1' },
+  { r: 1, c: 1, label: 'Definitions', sec: 'trackb', anchor: '4-2' },
+  { r: 1, c: 2, label: 'Record and NTE', sec: 'record' },
+  { r: 2, c: 0, label: 'Go direct to the Director or CEO', sec: 'principles' },
+  { r: 2, c: 1, label: 'Treat as Critical (S4)', sec: 'severity', anchor: '3-2' },
+  { r: 2, c: 2, label: 'Who to call', sec: 'roles' },
+  { r: 3, c: 0, label: 'Other triggers', sec: 'triggers' },
+  { r: 3, c: 1, label: 'If the client is affected', sec: 'severity', anchor: '3-2' },
+  { r: 4, c: 0, label: 'Client relationship', sec: 'triggers' },
+  { r: 4, c: 1, label: 'Severity levels', sec: 'severity', anchor: '3-2' },
+  { r: 4, c: 2, label: 'Who to call', sec: 'roles' },
+  { r: 5, c: 0, label: 'Escalation ladder', sec: 'ladder' },
+  { r: 5, c: 1, label: 'Who to call', sec: 'roles' },
+  { r: 6, c: 0, label: 'Escalation Record', sec: 'record' },
+  { r: 6, c: 1, label: 'Closure standards', sec: 'response' },
+  { r: 6, c: 2, label: 'Monthly reporting', sec: 'reporting' },
+  { r: 7, c: 0, label: 'Worked example', sec: 'worked' },
+]
+
 function EscalationMatrixView() {
   const [expanded, setExpanded] = useState<string | null>('start-here')
+  const [flash, setFlash] = useState<string | null>(null)
+  // Opens a section (and scrolls to a sub-heading inside it, if given),
+  // with a brief highlight so it's obvious where you landed.
+  function goTo(sec: string, anchor?: string) {
+    const target = `esc-${anchor || sec}`
+    setExpanded(sec)
+    setFlash(target)
+    setTimeout(() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+    setTimeout(() => setFlash(f => (f === target ? null : f)), 1800)
+  }
+  function Sub({ id, children }: { id: string, children: React.ReactNode }) {
+    return <h5 id={`esc-${id}`} className={`scroll-mt-20 text-xs font-bold text-blue-900 uppercase tracking-wide mt-4 mb-2 px-2 py-1 rounded transition ${flash === `esc-${id}` ? 'bg-blue-100' : ''}`}>{children}</h5>
+  }
   function Section({ id, title, children }: { id: string, title: string, children: React.ReactNode }) {
     const open = expanded === id
     return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div id={`esc-${id}`} className={`scroll-mt-20 bg-white border rounded-xl overflow-hidden transition ${flash === `esc-${id}` ? 'border-blue-400 ring-2 ring-blue-300' : 'border-gray-200'}`}>
         <button onClick={() => setExpanded(open ? null : id)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition">
           <span className="text-sm font-semibold text-blue-900">{title}</span>
           <span className="text-gray-400 text-xs">{open ? '▲' : '▼'}</span>
         </button>
-        {open && <div className="px-4 pb-4 pt-1 border-t border-gray-100 text-gray-800">{children}</div>}
+        {open && (
+          <div className="px-4 pb-4 pt-1 border-t border-gray-100 text-gray-800">
+            {children}
+            {id !== 'start-here' && <button onClick={() => goTo('start-here')} className="mt-4 text-xs text-blue-600 hover:underline">↑ Back to the process map</button>}
+          </div>
+        )}
       </div>
     )
   }
@@ -7788,8 +7844,26 @@ function EscalationMatrixView() {
       </div>
 
       <Section id="start-here" title="🗺️ Start Here — Find Your Situation">
-        <p className="text-xs text-gray-500 mb-3">The fastest way to know what to do: find your situation on the left, then follow the arrows to the sections and figures to read, in order.</p>
-        <img src="/escalation/process-map.png" alt="Process map: from your situation to the sections you need" className="w-full rounded-lg border border-gray-100" />
+        <p className="text-xs text-gray-500 mb-3">The fastest way to know what to do: find your situation on the left, then follow the arrows to the sections and figures to read, in order. Click any box to jump straight to that section.</p>
+        <div className="overflow-x-auto">
+          <div className="relative min-w-[880px]">
+            <img src="/escalation/process-map.png" alt="Process map: from your situation to the sections you need" className="block w-full rounded-lg border border-gray-100" />
+            {PMAP_HOTSPOTS.map((h, i) => {
+              const [x1, x2] = PMAP_COLS[h.c], [y1, y2] = PMAP_ROWS[h.r]
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => goTo(h.sec, h.anchor)}
+                  title={`Go to ${ESC_SECTION_TITLES[h.sec]}`}
+                  aria-label={`${h.label}: go to ${ESC_SECTION_TITLES[h.sec]}`}
+                  style={{ left: `${(x1 / PMAP_W) * 100}%`, top: `${(y1 / PMAP_H) * 100}%`, width: `${((x2 - x1) / PMAP_W) * 100}%`, height: `${((y2 - y1) / PMAP_H) * 100}%` }}
+                  className="absolute rounded-lg cursor-pointer transition hover:bg-blue-500/10 hover:ring-2 hover:ring-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                />
+              )
+            })}
+          </div>
+        </div>
       </Section>
 
       <Section id="principles" title="1. Principles">
@@ -7809,6 +7883,21 @@ function EscalationMatrixView() {
 
       <Section id="severity" title="3. Track A: Incident Severity">
         <p className="text-xs text-gray-500 mb-3">Used when the client, or AB BSS, identifies an error or incident. The client forwards the issue to the Team Lead, who confirms it, assigns a severity, and escalates when a trigger is met.</p>
+        <Sub id="3-1">3.1 Process</Sub>
+        <div className="overflow-x-auto mb-2">
+          <table className="w-full text-xs border-collapse">
+            <thead><tr className="bg-gray-50 text-left"><th className="p-2 border border-gray-200 w-12">Step</th><th className="p-2 border border-gray-200 w-32">Who</th><th className="p-2 border border-gray-200">What happens</th></tr></thead>
+            <tbody>
+              <tr><td className="p-2 border border-gray-200 font-medium">1</td><td className="p-2 border border-gray-200 font-medium">Client / AB BSS</td><td className="p-2 border border-gray-200">The issue is identified and reported to the Team Lead by the client, or raised internally.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">2</td><td className="p-2 border border-gray-200 font-medium">Team Lead</td><td className="p-2 border border-gray-200">Confirms the issue, contains it (stop repeat errors, fix or reverse where possible), logs it, and assigns a severity using 3.2.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">3</td><td className="p-2 border border-gray-200 font-medium">Team Lead</td><td className="p-2 border border-gray-200">For Severity 2 and above: notifies the next level within the window in Section 2 and opens an Escalation Record.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">4</td><td className="p-2 border border-gray-200 font-medium">Owning level</td><td className="p-2 border border-gray-200">Runs the root-cause analysis (5 Whys) and agrees the corrective action, owner and due date.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">5</td><td className="p-2 border border-gray-200 font-medium">Owning level</td><td className="p-2 border border-gray-200">Keeps the client updated until resolved. The Team Lead communicates for Severity 1; the Account Manager / Program Manager for Severity 2; the Director joins for Severity 3; the CEO decides the message for Severity 4.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">6</td><td className="p-2 border border-gray-200 font-medium">Owning level</td><td className="p-2 border border-gray-200">Verifies the fix worked, closes the record, and records lessons learned. Track B starts here if a person caused the issue.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <Sub id="3-2">3.2 Severity levels</Sub>
         <img src="/escalation/severity-flow.png" alt="Figure 2: which severity decision flow" className="w-full rounded-lg border border-gray-100 mb-4" />
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
@@ -7826,6 +7915,7 @@ function EscalationMatrixView() {
 
       <Section id="trackb" title="4. Track B: Process Errors and Conduct">
         <p className="text-xs text-gray-500 mb-3">Used when a team member's error or behavior caused the issue. Runs in parallel with Track A and never delays the client response.</p>
+        <Sub id="4-1">4.1 Stages</Sub>
         <img src="/escalation/track-b-stages.png" alt="Figure 3: Track B stages" className="w-full rounded-lg border border-gray-100 mb-4" />
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
@@ -7835,6 +7925,19 @@ function EscalationMatrixView() {
               <tr><td className="p-2 border border-gray-200 font-medium">B2</td><td className="p-2 border border-gray-200">Repeat error, breach of procedure, or an error with financial impact.</td><td className="p-2 border border-gray-200">Team Lead</td><td className="p-2 border border-gray-200">Notice to Explain (NTE) and a SMART coaching plan with a follow-up date. [Account Manager / Program Manager approves the NTE.]</td><td className="p-2 border border-gray-200">Portal: Notice to Explain, Coaching & 1-on-1</td></tr>
               <tr><td className="p-2 border border-gray-200 font-medium">B3</td><td className="p-2 border border-gray-200">Habitual errors, an NTE or plan that did not work, or gross negligence.</td><td className="p-2 border border-gray-200">Director of Operations</td><td className="p-2 border border-gray-200">Director reviews the case and decides the outcome under the company disciplinary policy.</td><td className="p-2 border border-gray-200">Portal: Notice to Explain; Director decision note</td></tr>
               <tr><td className="p-2 border border-gray-200 font-medium">B4</td><td className="p-2 border border-gray-200">Suspected fraud, falsification, or dishonesty.</td><td className="p-2 border border-gray-200">Director of Operations and CEO</td><td className="p-2 border border-gray-200">Immediate access suspension, investigation, and decision by the CEO.</td><td className="p-2 border border-gray-200">Escalation Record; Notice to Explain</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <Sub id="4-2">4.2 Definitions</Sub>
+        <p className="text-xs text-gray-500 mb-2">Thresholds in brackets are still to be agreed.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead><tr className="bg-gray-50 text-left"><th className="p-2 border border-gray-200 w-40">Term</th><th className="p-2 border border-gray-200">Meaning</th></tr></thead>
+            <tbody>
+              <tr><td className="p-2 border border-gray-200 font-medium">Isolated</td><td className="p-2 border border-gray-200">A single error of its type in the last [90] days.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">Repeat</td><td className="p-2 border border-gray-200">The same type of error again within [30] days of coaching.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">Habitual</td><td className="p-2 border border-gray-200">[3] or more errors of the same type within [90] days, or an error after an NTE and coaching plan on the same issue.</td></tr>
+              <tr><td className="p-2 border border-gray-200 font-medium">Gross negligence</td><td className="p-2 border border-gray-200">Serious disregard of a known procedure or instruction that causes, or could have caused, significant loss. Examples: skipping a mandatory check, sharing credentials, ignoring a stop instruction. [Wording to be confirmed with HR / legal counsel.]</td></tr>
             </tbody>
           </table>
         </div>
@@ -7875,6 +7978,28 @@ function EscalationMatrixView() {
             </tbody>
           </table>
         </div>
+      </Section>
+
+      <Section id="record" title="8. Escalation Record">
+        <p className="text-sm text-gray-700 mb-3">One record per Severity 2 or higher incident. Until a portal escalation type is built, keep the record in a shared tracker.</p>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Every record captures</p>
+        <ol className="text-sm text-gray-700 list-decimal pl-5 space-y-1 sm:columns-2 sm:gap-8">
+            <li>Record ID</li>
+            <li>Date and time identified</li>
+            <li>Identified by (client or AB BSS)</li>
+            <li>Client and account</li>
+            <li>Description of the issue</li>
+            <li>Severity (S1 to S4) and current level</li>
+            <li>Track (A, B or both)</li>
+            <li>Financial impact (amount)</li>
+            <li>Containment action taken</li>
+            <li>Root cause (5 Whys)</li>
+            <li>Corrective action, owner and due date</li>
+            <li>Client informed (who, when)</li>
+            <li>Closure verified by and date</li>
+            <li>Lessons learned</li>
+            <li>Linked NTE / coaching record</li>
+        </ol>
       </Section>
 
       <Section id="roles" title="9. Roles and Contacts">
