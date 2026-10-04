@@ -8790,49 +8790,6 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   )
 }
 
-// -- Observations Panel ------------------------------------------------------
-// -- My Observations (Agent view: own notes only, read-only) ----------------
-function MyObservations({ employees, currentUser }: { employees: Employee[], currentUser: string | null }) {
-  const [obs, setObs] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      if (!currentUser) { setLoading(false); return }
-      const myEmp = employees.find(e => e.email?.toLowerCase() === currentUser.toLowerCase())
-      if (!myEmp) { setObs([]); setLoading(false); return }
-      const { data } = await supabase.from('observations').select('*').eq('employee_id', myEmp.id).order('created_at', { ascending: false })
-      setObs(data || [])
-      setLoading(false)
-    }
-    load()
-  }, [currentUser, employees])
-
-  return (
-    <div className="max-w-3xl mx-auto space-y-4">
-      <div><h2 className="text-xl font-bold text-blue-900">My Observations</h2><p className="text-sm text-gray-500">Notes your Team Lead or Manager have shared about your performance. Only visible to you.</p></div>
-      {loading ? (
-        <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
-      ) : obs.length === 0 ? (
-        <div className="text-center py-12 text-gray-400"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30"/><p className="text-sm">No observations recorded for you yet.</p></div>
-      ) : (
-        <div className="space-y-3">
-          {obs.map(o => (
-            <div key={o.id} className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">{o.month_label}</span>
-                <span className="text-xs text-gray-400">{new Date(o.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
-              </div>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{o.observation}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // -- Notice to Explain --------------------------------------------------
 const NTE_LEVELS = ['Verbal Warning', 'Written Warning', 'Final Written Warning', 'Dismissal'] as const
 const NTE_LEVEL_COLOR: Record<string, string> = {
@@ -11449,7 +11406,7 @@ function CoachingLog({ employees, currentUser, userRole, canManage, showToast, o
                     <div key={o.id} className="bg-white rounded-lg border border-indigo-100 px-3 py-2 text-sm">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs font-medium text-indigo-700">{o.month_label}</span>
-                        <span className="text-xs text-gray-400">by {o.observed_by?.split('@')[0]} · {o.created_at ? new Date(o.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
+                        <span className="text-xs text-gray-400">by {o.observed_by?.split('@')[0]} · {o.created_at ? new Date(o.created_at).toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : ''}</span>
                       </div>
                       <p className="text-gray-700 whitespace-pre-wrap">{o.observation}</p>
                       <button
