@@ -249,8 +249,13 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
   if (!employeeEmail) return empty
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   if (mIdx < 0 || !yr) return empty
-  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
-  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
+  // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
+  // local-midnight instants. Building these with toISOString().slice(0, 10) lands a day early in UTC+8.
+  const start = ymdLocal(new Date(yr, mIdx, 1))
+  const end = ymdLocal(new Date(yr, mIdx + 1, 1))
+  const startTs = new Date(yr, mIdx, 1).toISOString()
+  const endTs = new Date(yr, mIdx + 1, 1).toISOString()
 
   // .ilike() (not .eq()) on every email match below -- Postgres text
   // comparison is case-sensitive by default, and employee_email/
@@ -272,7 +277,7 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
 
   const { data: anns } = await supabase.from('announcements')
     .select('id')
-    .gte('created_at', start).lt('created_at', end)
+    .gte('created_at', startTs).lt('created_at', endTs)
 
   const annIds = (anns || []).map(a => a.id)
   let annAcked = 0
@@ -285,7 +290,7 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
   const { data: taskData } = await supabase.from('tasks')
     .select('is_done')
     .ilike('assigned_to', employeeEmail)
-    .gte('created_at', start).lt('created_at', end)
+    .gte('created_at', startTs).lt('created_at', endTs)
 
   const { data: pulseData } = await supabase.from('pulse_surveys')
     .select('week_start')
@@ -3981,8 +3986,13 @@ async function getCoachingMonthStats(scopedEmployees: Employee[], monthLabel: st
   coached: {name: string, email: string, sessions: {date: string, type: string, coached_by: string, discussion: string, action_items: string, agent_acknowledged: boolean, requires_acknowledgment: boolean, status: string}[]}[],
 }> {
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
-  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
-  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
+  // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
+  // local-midnight instants. Building these with toISOString().slice(0, 10) lands a day early in UTC+8.
+  const start = ymdLocal(new Date(yr, mIdx, 1))
+  const end = ymdLocal(new Date(yr, mIdx + 1, 1))
+  const startTs = new Date(yr, mIdx, 1).toISOString()
+  const endTs = new Date(yr, mIdx + 1, 1).toISOString()
   const { data } = await supabase.from('coaching_logs').select('employee_email, agent_acknowledged, requires_acknowledgment, status, date, type, coached_by, discussion, action_items').gte('date', start).lt('date', end).order('date', { ascending: false })
   const rows = data || []
   const byEmail: Record<string, any[]> = {}
@@ -4011,9 +4021,14 @@ async function getCoachingMonthStats(scopedEmployees: Employee[], monthLabel: st
 // a query per employee.
 async function getAnnMonthDetail(scopedEmployees: Employee[], monthLabel: string): Promise<{ notAcked: {name: string, missingCount: number}[], annTotal: number }> {
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
-  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
-  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
-  const { data: anns } = await supabase.from('announcements').select('id').gte('created_at', start).lt('created_at', end)
+  // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
+  // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
+  // local-midnight instants. Building these with toISOString().slice(0, 10) lands a day early in UTC+8.
+  const start = ymdLocal(new Date(yr, mIdx, 1))
+  const end = ymdLocal(new Date(yr, mIdx + 1, 1))
+  const startTs = new Date(yr, mIdx, 1).toISOString()
+  const endTs = new Date(yr, mIdx + 1, 1).toISOString()
+  const { data: anns } = await supabase.from('announcements').select('id').gte('created_at', startTs).lt('created_at', endTs)
   const annIds = (anns || []).map((a: any) => a.id)
   if (annIds.length === 0) return { notAcked: [], annTotal: 0 }
   const { data: acks } = await supabase.from('announcement_acknowledgements').select('announcement_id, user_email').in('announcement_id', annIds)
@@ -4032,12 +4047,17 @@ async function getAnnMonthDetail(scopedEmployees: Employee[], monthLabel: string
 // incomplete tasks assigned that month, and how many.
 async function getTaskMonthDetail(scopedEmployees: Employee[], monthLabel: string): Promise<{ incomplete: {name: string, incompleteCount: number}[] }> {
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
-  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
-  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
+  // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
+  // local-midnight instants. Building these with toISOString().slice(0, 10) lands a day early in UTC+8.
+  const start = ymdLocal(new Date(yr, mIdx, 1))
+  const end = ymdLocal(new Date(yr, mIdx + 1, 1))
+  const startTs = new Date(yr, mIdx, 1).toISOString()
+  const endTs = new Date(yr, mIdx + 1, 1).toISOString()
   const active = scopedEmployees.filter(e => e.active && e.email)
   const emails = active.map(e => e.email!.toLowerCase())
   if (emails.length === 0) return { incomplete: [] }
-  const { data } = await supabase.from('tasks').select('assigned_to, is_done').gte('created_at', start).lt('created_at', end).in('assigned_to', emails)
+  const { data } = await supabase.from('tasks').select('assigned_to, is_done').gte('created_at', startTs).lt('created_at', endTs).in('assigned_to', emails)
   const counts: Record<string, number> = {}
   ;(data || []).forEach((t: any) => { if (!t.is_done) counts[(t.assigned_to||'').toLowerCase()] = (counts[(t.assigned_to||'').toLowerCase()] || 0) + 1 })
   const incomplete = active.map(e => ({ name: e.name, incompleteCount: counts[(e.email||'').toLowerCase()] || 0 })).filter(r => r.incompleteCount > 0)
@@ -4050,8 +4070,13 @@ async function getTaskMonthDetail(scopedEmployees: Employee[], monthLabel: strin
 // at-risk that month, since that's the genuinely actionable part.
 async function getPulseMonthDetail(monthLabel: string, employeeIdFilter?: Set<string> | null): Promise<{ categoryAverages: {key: string, label: string, avg: number}[], flagged: {name: string, avg: number|null, retention: number}[] }> {
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
-  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
-  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
+  // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
+  // local-midnight instants. Building these with toISOString().slice(0, 10) lands a day early in UTC+8.
+  const start = ymdLocal(new Date(yr, mIdx, 1))
+  const end = ymdLocal(new Date(yr, mIdx + 1, 1))
+  const startTs = new Date(yr, mIdx, 1).toISOString()
+  const endTs = new Date(yr, mIdx + 1, 1).toISOString()
   const { data } = await supabase.from('pulse_surveys').select('*').gte('week_start', start).lt('week_start', end)
   const rows = (data || []).filter((r: any) => !employeeIdFilter || employeeIdFilter.has(r.employee_id))
   const categoryAverages = PULSE_CATEGORIES.map(cat => {
@@ -4578,8 +4603,13 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
 
   async function loadMonthStats(monthLabel: string): Promise<OpsMonthStats> {
     const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
-    const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
-    const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+    // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
+    // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
+    // local-midnight instants. Building these with toISOString().slice(0, 10) lands a day early in UTC+8.
+    const start = ymdLocal(new Date(yr, mIdx, 1))
+    const end = ymdLocal(new Date(yr, mIdx + 1, 1))
+    const startTs = new Date(yr, mIdx, 1).toISOString()
+    const endTs = new Date(yr, mIdx + 1, 1).toISOString()
     const [coaching, compliance, pulseRes, obsRes, kpiRes] = await Promise.all([
       getCoachingMonthStats(scopedEmployees, monthLabel),
       getCompanyComplianceSummary(scopedEmployees, monthLabel),
@@ -10973,8 +11003,13 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
   if (!employeeEmail) return empty
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   if (mIdx < 0 || !yr) return empty
-  const start = new Date(yr, mIdx, 1).toISOString().slice(0, 10)
-  const end = new Date(yr, mIdx + 1, 1).toISOString().slice(0, 10)
+  // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
+  // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
+  // local-midnight instants. Building these with toISOString().slice(0, 10) lands a day early in UTC+8.
+  const start = ymdLocal(new Date(yr, mIdx, 1))
+  const end = ymdLocal(new Date(yr, mIdx + 1, 1))
+  const startTs = new Date(yr, mIdx, 1).toISOString()
+  const endTs = new Date(yr, mIdx + 1, 1).toISOString()
 
   // Same case-insensitive .ilike() fix as getComplianceBreakdown above,
   // for the same reason -- employee_email/user_email/assigned_to can be
@@ -10988,7 +11023,7 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
 
   const { data: anns } = await supabase.from('announcements')
     .select('id, title')
-    .gte('created_at', start).lt('created_at', end)
+    .gte('created_at', startTs).lt('created_at', endTs)
 
   const annIds = (anns || []).map((a:any) => a.id)
   let ackedIds: string[] = []
@@ -11001,7 +11036,7 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
   const { data: taskData } = await supabase.from('tasks')
     .select('title, is_done')
     .ilike('assigned_to', employeeEmail)
-    .gte('created_at', start).lt('created_at', end)
+    .gte('created_at', startTs).lt('created_at', endTs)
 
   const { data: pulseData } = await supabase.from('pulse_surveys')
     .select('week_start')
