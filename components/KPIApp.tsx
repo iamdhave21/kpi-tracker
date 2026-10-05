@@ -2,10 +2,11 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase, Employee, KpiRecord, NteRecord, AvScanSubmission } from '@/lib/supabase'
 import ClientPortalAdmin from '@/components/ClientPortalAdmin'
+import ToolsRepository from '@/components/ToolsRepository'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin' | 'tools-repository'
 // Deep-linking: every View is addressable as ?view=<id> (and Operating
 // Cadence sub-tabs as &tab=<tab>), so a link like
 // abbss-ops-portal.vercel.app/?view=ops-dashboard opens that module
@@ -36,6 +37,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'opex', label: 'Operational Expense' },
   { id: 'hris-invoice', label: 'Invoice' },
   { id: 'client-portal-admin', label: 'Client Onboarding' },
+  { id: 'tools-repository', label: 'Access and Tools Repository' },
   { id: 'dashboard-month', label: 'Dashboard' },
   { id: 'tl-scorecard', label: 'Team Lead Scorecard' },
   { id: 'tl-tools', label: 'Coaching & 1-on-1' },
@@ -55,7 +57,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'settings', label: 'Settings' },
 ]
 
-const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin']
+const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin','tools-repository']
 function readViewFromUrl(): View | null {
   if (typeof window === 'undefined') return null
   const v = new URLSearchParams(window.location.search).get('view')
@@ -1808,6 +1810,25 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </div>
       )}
 
+      {/* MANAGEMENT -- Admin/Super Admin only. Home for company-level
+          tools. The Project Management Tool is a separate app (its own
+          deployment and access model), so it opens in a new tab like
+          Hiring Pipeline does; this link only controls who sees it
+          from here. Kept separate from Manager Tools on purpose: that
+          section is day-to-day team oversight, this one is for running
+          the company (projects now; tools/subscriptions to come). */}
+      {(userRole === 'super_admin' || userRole === 'admin') && (
+        <>
+          <SectionHeader sectionKey="management" label="Management" hasActive={['tools-repository'].includes(view)} />
+          {!collapsed.management && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <NavItem id="tools-repository" label="Access and Tools Repository" icon={<Key className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-violet-400"/>
+              <ExternalNavItem label="Project Management Tool" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-project-task-management.vercel.app/board?board=cmtb3hxe2000cih04k2noqoaf" dotColor="bg-violet-400"/>
+            </div>
+          )}
+        </>
+      )}
+
       {/* DIRECTORY */}
       <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
       {!collapsed.dir && (
@@ -1856,23 +1877,6 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </>
       )}
 
-      {/* MANAGEMENT -- Admin/Super Admin only. Home for company-level
-          tools. The Project Management Tool is a separate app (its own
-          deployment and access model), so it opens in a new tab like
-          Hiring Pipeline does; this link only controls who sees it
-          from here. Kept separate from Manager Tools on purpose: that
-          section is day-to-day team oversight, this one is for running
-          the company (projects now; tools/subscriptions to come). */}
-      {(userRole === 'super_admin' || userRole === 'admin') && (
-        <>
-          <SectionHeader sectionKey="management" label="Management" hasActive={false} />
-          {!collapsed.management && (
-            <div className="px-2 pb-1 space-y-0.5">
-              <ExternalNavItem label="Project Management Tool" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-project-task-management.vercel.app/board?board=cmtb3hxe2000cih04k2noqoaf" dotColor="bg-violet-400"/>
-            </div>
-          )}
-        </>
-      )}
 
       {/* MANAGER TOOLS -- visible to everyone; content itself is gated by
           role (Dashboard hard-blocks below Admin/Super Admin; the rest
@@ -2498,6 +2502,8 @@ export default function KPIApp() {
             {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'client-portal-admin' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <ClientPortalAdmin currentUser={effectiveUser} showToast={showToast} />}
             {view === 'client-portal-admin' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'tools-repository' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <ToolsRepository currentUser={user} employees={employees} showToast={showToast} />}
+            {view === 'tools-repository' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'ops-dashboard' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <OpsDashboard employees={employees} user={user} />}
             {view === 'ops-dashboard' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
