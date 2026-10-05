@@ -1560,7 +1560,7 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
 
 function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, pendingNteCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, pendingNteCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
-    home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false, finance: false, clientportal: false, management: false
+    home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false, finance: false, clientportal: false, management: false, perfmgmt: false
   })
   const [searchQuery, setSearchQuery] = useState('')
   const searchResults = searchQuery.trim()
@@ -1584,7 +1584,16 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         : 'text-gray-900 hover:bg-gray-100 hover:text-blue-900'
     }`
 
-  const SectionHeader = ({ sectionKey, label, hasActive }: { sectionKey: string, label: string, hasActive: boolean }) => (
+  const SectionHeader = ({ sectionKey, label, hasActive, sub }: { sectionKey: string, label: string, hasActive: boolean, sub?: boolean }) => sub ? (
+    // Lighter style for a group nested inside a module (e.g. Manager Tools
+    // inside Performance Management), so the hierarchy reads at a glance.
+    <button onClick={() => toggle(sectionKey)} className="w-full px-2 pt-2 pb-0.5">
+      <div className={`flex items-center gap-2 rounded-md px-2.5 py-1 transition-all ${hasActive ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+        <p className="text-[11px] font-extrabold text-blue-900 uppercase tracking-wider flex-1 text-left">{label}</p>
+        <span className={`text-blue-900/60 text-xs font-bold transition-transform duration-200 inline-block ${collapsed[sectionKey] ? '-rotate-90' : 'rotate-0'}`}>▾</span>
+      </div>
+    </button>
+  ) : (
     <button onClick={() => toggle(sectionKey)} className="w-full px-3 pt-3 pb-1">
       <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 transition-all ${hasActive ? 'bg-blue-900' : 'bg-blue-900/80 hover:bg-blue-900'}`}>
         <div className="w-1 h-4 bg-white rounded-full opacity-60 flex-shrink-0"/>
@@ -1802,14 +1811,13 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* OPERATIONS */}
-      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp','ops-dashboard','client-observations'].includes(view)} />
+      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp','ops-dashboard'].includes(view)} />
       {!collapsed.ops && (
         <div className="px-2 pb-1 space-y-0.5">
           {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="ops-dashboard" label="Ops Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>}
           <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
           <NavItem id="tasks" label="Tasks" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingTaskCount} dotColor="bg-orange-400"/>
           <NavItem id="bcp" label="BCP" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
-          <NavItem id="client-observations" label="Client Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
         </div>
       )}
 
@@ -1832,20 +1840,20 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </>
       )}
 
-      {/* CLIENT PORTAL -- Admin/Super Admin only. Manages the external,
-          no-internal-login Client Portal (separate app at /client-portal)
-          -- contacts, onboarding checklist progress, and the shared
-          editable checklist template. */}
-      {(userRole === 'super_admin' || userRole === 'admin') && (
-        <>
-          <SectionHeader sectionKey="clientportal" label="Client Portal" hasActive={['client-portal-admin'].includes(view)} />
-          {!collapsed.clientportal && (
-            <div className="px-2 pb-1 space-y-0.5">
-              <NavItem id="client-portal-admin" label="Client Onboarding" icon={<Globe className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-            </div>
-          )}
-        </>
-      )}
+      {/* CLIENT PORTAL -- everything client-related. Client Observations
+          (the internal log of client events) is open to all staff, each
+          person seeing only what the visibility rule allows. Client
+          Onboarding, which manages the external portal itself, is
+          Admin/Super Admin only. */}
+      <>
+        <SectionHeader sectionKey="clientportal" label="Client Portal" hasActive={['client-portal-admin','client-observations'].includes(view)} />
+        {!collapsed.clientportal && (
+          <div className="px-2 pb-1 space-y-0.5">
+            <NavItem id="client-observations" label="Client Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="client-portal-admin" label="Client Onboarding" icon={<Globe className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
+          </div>
+        )}
+      </>
 
       {/* DIRECTORY */}
       <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
@@ -1880,12 +1888,20 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </>
       )}
 
+      {/* PERFORMANCE MANAGEMENT -- the module that holds the three
+          role-based tool groups below (Manager Tools, Team Lead Tools,
+          Agent Tools) and everything inside them. Each screen keeps its own
+          role gate, so moving them under one heading changes where they
+          are listed, not who can open them. */}
+      <SectionHeader sectionKey="perfmgmt" label="Performance Management" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check','manager-cadence','observations','av-scan','entry','cadence','dashboard-employee','dashboard-team'].includes(view as string)} />
+      {!collapsed.perfmgmt && (
+        <div className="ml-3 pl-1 border-l-2 border-blue-200">
       {/* MANAGER TOOLS -- visible to everyone; content itself is gated by
           role (Dashboard hard-blocks below Admin/Super Admin; the rest
           are shared, self-scoping screens that already show the right
           data for whoever's viewing). */}
       <>
-        <SectionHeader sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check','manager-cadence','observations','av-scan'].includes(view as string)} />
+        <SectionHeader sub sectionKey="mgrtools" label="Manager Tools" hasActive={['dashboard-month','tl-scorecard','tl-tools','pulse-check','manager-cadence','observations','av-scan'].includes(view as string)} />
         {!collapsed.mgrtools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="dashboard-month" label="Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-blue-400"/>
@@ -1902,7 +1918,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {/* TEAM LEAD TOOLS -- visible to everyone; KPI Entry, Observations,
           and Operating Cadence hard-block below Team Lead. */}
       <>
-        <SectionHeader sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check','av-scan'].includes(view as string)} />
+        <SectionHeader sub sectionKey="tltools" label="Team Lead Tools" hasActive={['tl-tools','entry','observations','cadence','tl-scorecard','pulse-check','av-scan'].includes(view as string)} />
         {!collapsed.tltools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="entry" label="KPI Entry" icon={<PlusCircle className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
@@ -1919,7 +1935,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       {/* AGENT TOOLS -- visible to everyone; every item here is a shared,
           self-scoping screen, so nothing hard-blocks in this group. */}
       <>
-        <SectionHeader sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check','cadence','av-scan'].includes(view as string)} />
+        <SectionHeader sub sectionKey="agenttools" label="Agent Tools" hasActive={['tl-tools','dashboard-employee','dashboard-team','pulse-check','cadence','av-scan'].includes(view as string)} />
         {!collapsed.agenttools && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="tl-tools" label="Coaching Logs" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} badge={pendingCoachingCount} badgeColor="bg-red-500" dotColor="bg-emerald-400"/>
@@ -1931,6 +1947,8 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           </div>
         )}
       </>
+        </div>
+      )}
 
       {/* PEOPLE */}
       <SectionHeader sectionKey="people" label="People" hasActive={['employees','teams','org-chart'].includes(view)} />
