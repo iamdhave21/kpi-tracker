@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
+import RequestsPanel from './RequestsPanel'
 
 // Deliberately its own minimal shell -- no sidebar, no nav to any other
 // module, not even a "restricted" placeholder for one. A client account
@@ -116,6 +117,12 @@ function ChecklistScreen({ contact, onLogout }: { contact: Contact, onLogout: ()
   const [readiness, setReadiness] = useState<Readiness>(null)
   const [loading, setLoading] = useState(true)
   const [openItem, setOpenItem] = useState<string | null>(null)
+  const [tab, setTab] = useState<'checklist' | 'requests'>('checklist')
+  const [unread, setUnread] = useState(0)
+  // so the Requests tab can show a dot when there's an update waiting, even from the checklist tab
+  useEffect(() => {
+    fetch('/api/client-portal/requests').then(r => r.json()).then(d => setUnread((d.requests || []).filter((x: any) => x.client_unread).length)).catch(() => {})
+  }, [])
 
   async function load() {
     setLoading(true)
@@ -153,8 +160,19 @@ function ChecklistScreen({ contact, onLogout }: { contact: Contact, onLogout: ()
         <button onClick={logout} className="text-xs text-blue-200 hover:text-white transition">Sign out</button>
       </header>
 
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-3xl mx-auto px-4 flex gap-1">
+          {([['checklist', 'Onboarding checklist'], ['requests', 'Requests']] as const).map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} className={`relative px-4 py-3 text-sm font-medium border-b-2 transition ${tab === id ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              {label}
+              {id === 'requests' && unread > 0 && <span className="absolute top-2 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">{unread}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <main className="max-w-3xl mx-auto px-4 py-8">
-        {loading ? (
+        {tab === 'requests' ? <RequestsPanel onUnread={setUnread} /> : loading ? (
           <p className="text-center text-gray-400 py-12">Loading...</p>
         ) : !pack ? (
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -314,6 +332,7 @@ function ChecklistRow({ item, submission, open, onToggle, onSaved }: {
           {!resolved && (
             <div className="space-y-2">
               <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs w-full" />
+              <p className="text-[11px] text-gray-400 -mt-1">Up to 4 MB. For a larger file, paste a link below.</p>
               <input type="url" value={driveLink} onChange={e => setDriveLink(e.target.value)} placeholder="Or paste a Google Drive / file link"
                 className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
               <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2}
@@ -338,6 +357,7 @@ function ChecklistRow({ item, submission, open, onToggle, onSaved }: {
           {resolved && (
             <div className="space-y-2">
               <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs w-full" />
+              <p className="text-[11px] text-gray-400 -mt-1">Up to 4 MB. For a larger file, paste a link below.</p>
               <input type="url" value={driveLink} onChange={e => setDriveLink(e.target.value)} placeholder="Replace with a Google Drive / file link"
                 className="w-full border border-gray-300 rounded-lg text-gray-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-900" />
               {error && <p className="text-xs text-red-600">{error}</p>}

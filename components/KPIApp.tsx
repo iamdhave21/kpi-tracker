@@ -4,10 +4,12 @@ import { supabase, Employee, KpiRecord, NteRecord, AvScanSubmission } from '@/li
 import ClientPortalAdmin from '@/components/ClientPortalAdmin'
 import ToolsRepository from '@/components/ToolsRepository'
 import ClientObservations from '@/components/ClientObservations'
+import ClientRequests from '@/components/ClientRequests'
+import { staffApi } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin' | 'tools-repository' | 'client-observations'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin' | 'tools-repository' | 'client-observations' | 'client-requests'
 // Deep-linking: every View is addressable as ?view=<id> (and Operating
 // Cadence sub-tabs as &tab=<tab>), so a link like
 // abbss-ops-portal.vercel.app/?view=ops-dashboard opens that module
@@ -40,6 +42,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'client-portal-admin', label: 'Client Onboarding' },
   { id: 'tools-repository', label: 'Access and Tools Repository' },
   { id: 'client-observations', label: 'Client Observations' },
+  { id: 'client-requests', label: 'Client Requests' },
   { id: 'dashboard-month', label: 'Dashboard' },
   { id: 'tl-scorecard', label: 'Team Lead Scorecard' },
   { id: 'tl-tools', label: 'Coaching & 1-on-1' },
@@ -59,7 +62,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'settings', label: 'Settings' },
 ]
 
-const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin','tools-repository','client-observations']
+const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin','tools-repository','client-observations','client-requests']
 function readViewFromUrl(): View | null {
   if (typeof window === 'undefined') return null
   const v = new URLSearchParams(window.location.search).get('view')
@@ -1452,8 +1455,8 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, r: string, mustChangePa
 // and this week's Pulse Check submission. Shown on every screen so
 // nothing gets missed just because someone didn't happen to open the
 // right tab.
-function AttentionBanner({ employees, currentUser, userRole, setView }:
-  { employees: Employee[], currentUser: string | null, userRole: string, setView: (v: any, subTab?: string) => void }) {
+function AttentionBanner({ employees, currentUser, userRole, setView, extraItems = [] }:
+  { employees: Employee[], currentUser: string | null, userRole: string, setView: (v: any, subTab?: string) => void, extraItems?: { label: string, count: number, view: string }[] }) {
   const [items, setItems] = useState<{ label: string, count: number, view: string, subTab?: string }[]>([])
   const [expanded, setExpanded] = useState(false)
   const [dismissedFor, setDismissedFor] = useState<string | null>(null)
@@ -1528,7 +1531,8 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
     return () => { cancelled = true }
   }, [currentUser, userRole, employees.length])
 
-  const totalCount = items.reduce((s, i) => s + i.count, 0)
+  const shownItems = [...items, ...extraItems.filter(i => i.count > 0)]
+  const totalCount = shownItems.reduce((s, i) => s + i.count, 0)
   const todayKey = new Date().toISOString().slice(0,10)
   if (totalCount === 0 || dismissedFor === todayKey) return null
 
@@ -1546,8 +1550,8 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
       </div>
       {expanded && (
         <div className="px-4 pb-3 space-y-1.5 border-t border-amber-200 pt-2">
-          {items.map((it, i) => (
-            <button key={i} onClick={() => setView(it.view, it.subTab)} className="w-full text-left flex items-center justify-between text-sm bg-white/60 hover:bg-white rounded-lg px-3 py-2 transition">
+          {shownItems.map((it, i) => (
+            <button key={i} onClick={() => setView(it.view, (it as any).subTab)} className="w-full text-left flex items-center justify-between text-sm bg-white/60 hover:bg-white rounded-lg px-3 py-2 transition">
               <span>{it.label}</span>
               <span className="text-amber-600 text-xs font-semibold">Go →</span>
             </button>
@@ -1558,7 +1562,7 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
   )
 }
 
-function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, pendingNteCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, pendingNteCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, pendingNteCount = 0, pendingRequestCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, pendingNteCount?: number, pendingRequestCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false, finance: false, clientportal: false, management: false, perfmgmt: false
   })
@@ -1846,10 +1850,11 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           Onboarding, which manages the external portal itself, is
           Admin/Super Admin only. */}
       <>
-        <SectionHeader sectionKey="clientportal" label="Client Portal" hasActive={['client-portal-admin','client-observations'].includes(view)} />
+        <SectionHeader sectionKey="clientportal" label="Client Portal" hasActive={['client-portal-admin','client-observations','client-requests'].includes(view)} />
         {!collapsed.clientportal && (
           <div className="px-2 pb-1 space-y-0.5">
             <NavItem id="client-observations" label="Client Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="client-requests" label="Client Requests" icon={<Bell className="w-4 h-4 flex-shrink-0"/>} badge={pendingRequestCount} badgeColor="bg-blue-600" dotColor="bg-indigo-400"/>}
             {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="client-portal-admin" label="Client Onboarding" icon={<Globe className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
           </div>
         )}
@@ -1980,6 +1985,7 @@ export default function KPIApp() {
   const [userRole, setUserRole] = useState<string>('agent')
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
   const [pendingNteCount, setPendingNteCount] = useState(0)
+  const [pendingRequestCount, setPendingRequestCount] = useState(0)
   const [pendingTaskCount, setPendingTaskCount] = useState(0)
   const [tasksRefreshKey, setTasksRefreshKey] = useState(0)
   const [favoriteViews, setFavoriteViews] = useState<string[]>([])
@@ -2240,6 +2246,24 @@ export default function KPIApp() {
     loadPending()
   }, [effectiveUser, effectiveRole, employees])
 
+  // Client requests that need a response -- the in-portal nudge (sidebar badge
+  // and a line in the attention banner). Asked of the server with the person's
+  // real Google sign-in, so it only counts what they're allowed to see. Checked
+  // on load, whenever the person changes screens, and every 2 minutes.
+  useEffect(() => {
+    if (!user || !(effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead')) { setPendingRequestCount(0); return }
+    let cancelled = false
+    const check = async () => {
+      try {
+        const r = await staffApi({ action: 'unseen_count' })
+        if (!cancelled) setPendingRequestCount(r.ok ? (r.data.count || 0) : 0)
+      } catch { /* a failed check just leaves the last number */ }
+    }
+    check()
+    const t = setInterval(check, 120000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [user, effectiveRole, view])
+
   // Own pending Notice to Explain sign-offs -- same underlying check the
   // AttentionBanner already does (nte_records where I'm the employee/
   // contractor party, minus ones I've already acknowledged), just
@@ -2382,7 +2406,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-64 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} pendingNteCount={pendingNteCount} userRole={effectiveRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} pendingNteCount={pendingNteCount} pendingRequestCount={pendingRequestCount} userRole={effectiveRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
 
         </aside>
 
@@ -2425,7 +2449,7 @@ export default function KPIApp() {
               )}
             </div>
           )}
-          <AttentionBanner employees={employees} currentUser={effectiveUser} userRole={effectiveRole} setView={navigateToTab} />
+          <AttentionBanner employees={employees} currentUser={effectiveUser} userRole={effectiveRole} setView={navigateToTab} extraItems={[{ label: `Client request${pendingRequestCount === 1 ? '' : 's'} waiting for a response`, count: pendingRequestCount, view: 'client-requests' }]} />
           {/* Global background for non-performance views */}
           {!(['dashboard-month','dashboard-employee','org-chart','announcements','gaming-hub'] as string[]).includes(view) && bgUrl && (
             <div className="fixed inset-0 z-0 pointer-events-none" style={{top:'56px',left:'240px'}}>
@@ -2522,6 +2546,8 @@ export default function KPIApp() {
             {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'client-portal-admin' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <ClientPortalAdmin currentUser={effectiveUser} showToast={showToast} />}
             {view === 'client-portal-admin' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'client-requests' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <ClientRequests employees={employees} isPreviewing={!!previewTarget} showToast={showToast} />}
+            {view === 'client-requests' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'client-observations' && <ClientObservations currentUser={effectiveUser} userRole={effectiveRole} employees={employees} isPreviewing={!!previewTarget} showToast={showToast} />}
             {view === 'tools-repository' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <ToolsRepository currentUser={user} employees={employees} showToast={showToast} />}
             {view === 'tools-repository' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}

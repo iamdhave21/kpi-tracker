@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifySession, getServiceSupabase, SESSION_COOKIE } from '@/lib/clientPortalAuth'
 
-const MAX_FILE_BYTES = 20 * 1024 * 1024 // 20MB
+// Vercel rejects request bodies over roughly 4.5 MB before this code ever runs,
+// so a higher limit here could never be reached and the client would just see
+// an opaque platform error. Cap below that and say why.
+const MAX_FILE_BYTES = 4 * 1024 * 1024 // 4MB
 const ALLOWED_EXT = ['pdf','doc','docx','xls','xlsx','ppt','pptx','png','jpg','jpeg','csv','txt']
 
 function looksLikeUrl(v: string) {
@@ -66,7 +69,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `That file type isn't allowed. Accepted: ${ALLOWED_EXT.join(', ')}` }, { status: 400 })
     }
     if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json({ error: 'File is too large (20MB max)' }, { status: 400 })
+      return NextResponse.json({ error: 'File is too large (4 MB max). For a larger file, paste a link to it instead.' }, { status: 400 })
     }
     const clientSlug = contact.client.toLowerCase().replace(/[^a-z0-9]+/g, '-')
     const path = `${clientSlug}/${pack.id}/${itemId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
