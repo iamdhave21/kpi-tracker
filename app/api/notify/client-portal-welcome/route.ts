@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
           </div>
           <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 12px 12px;">
             <p style="font-size: 14px; color: #111827;">Hi ${name},</p>
-            <p style="font-size: 14px; color: #374151;">Welcome! You've been set up with access to the AB BSS Client Portal for <strong>${client}</strong>. From there you can track your onboarding checklist, upload documents, and see progress in real time -- no password needed.</p>
+            <p style="font-size: 14px; color: #374151;">Welcome! You've been set up with access to the AB BSS Client Portal for <strong>${client}</strong>. From there you can track your onboarding checklist, send us requests and messages, upload documents, and see progress in real time -- no password needed.</p>
             <a href="${baseUrl}/client-portal" style="display: inline-block; background: #1e3a5f; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; margin: 16px 0;">Open Client Portal</a>
             <p style="font-size: 13px; color: #374151;">Enter your email there any time and we'll send you a secure sign-in link.</p>
           </div>

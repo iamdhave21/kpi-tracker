@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 import { getServiceSupabase, generateToken, TOKEN_HOURS } from '@/lib/clientPortalAuth'
 
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const MAX_LINKS_PER_HOUR = 5
+
 // Always returns a generic success message, whether or not the email
 // matches a real, active client_contacts row -- this prevents an outside
 // party from using this endpoint to discover which emails are (or
@@ -22,7 +25,17 @@ export async function POST(req: NextRequest) {
       .eq('active', true)
       .single()
 
-    if (contact && process.env.GMAIL_USER && process.env.GMAIL_PASS) {
+    // Cap how many sign-in emails one contact can be sent per hour, so the form can't be
+    // used to flood their inbox. Over the cap it quietly sends nothing and gives the same
+    // generic answer as always, so it still reveals nothing about who is registered.
+    let overLimit = false
+    if (contact) {
+      const since = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+      const { count } = await supabase.from('client_login_tokens').select('id', { count: 'exact', head: true }).eq('contact_id', contact.id).gte('created_at', since)
+      overLimit = (count || 0) >= MAX_LINKS_PER_HOUR
+    }
+
+    if (contact && !overLimit && process.env.GMAIL_USER && process.env.GMAIL_PASS) {
       const token = generateToken()
       const expiresAt = new Date(Date.now() + TOKEN_HOURS * 60 * 60 * 1000)
       await supabase.from('client_login_tokens').insert({
@@ -47,8 +60,8 @@ export async function POST(req: NextRequest) {
               <p style="color: #93c5fd; margin: 4px 0 0; font-size: 13px;">Client Portal</p>
             </div>
             <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 12px 12px;">
-              <p style="font-size: 14px; color: #111827;">Hi ${contact.name},</p>
-              <p style="font-size: 14px; color: #374151;">Click below to sign in to your onboarding checklist. This link is valid for ${TOKEN_HOURS} hours and can only be used once.</p>
+              <p style="font-size: 14px; color: #111827;">Hi ${esc(contact.name)},</p>
+              <p style="font-size: 14px; color: #374151;">Click below to sign in to your Client Portal. This link is valid for ${TOKEN_HOURS} hours and can only be used once.</p>
               <a href="${link}" style="display: inline-block; background: #1e3a5f; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; margin: 16px 0;">Sign in to Client Portal</a>
               <p style="font-size: 12px; color: #9ca3af;">If you didn't request this, you can safely ignore this email.</p>
             </div>
