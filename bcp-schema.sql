@@ -36,9 +36,7 @@ create policy "Allow read" on bcp_task_coverage for select using (true);
 create policy "Allow insert" on bcp_task_coverage for insert with check (true);
 create policy "Allow delete" on bcp_task_coverage for delete using (true);
 
--- Optional starter tasks — feel free to delete/edit these in the app afterward
-insert into bcp_tasks (title, category, description, created_by) values
-('Onboarding new hires', 'Onboarding', 'Setting up accounts, intro to systems, first-week orientation', 'system'),
-('Process payroll cutoff', 'Payroll', 'Compiling hours, computing pay, submitting for approval', 'system'),
-('Candidate interview & screening', 'Recruitment', 'Conducting interviews, assessing fit, providing recommendations', 'system')
-on conflict do nothing;
+-- No starter tasks: BCP is organised by department (Operations, Payroll,
+-- Recruitment, Client Management, IT) and each department's tasks should be
+-- entered by the people who own them. The old starter rows used an
+-- 'Onboarding' label that is no longer a department.
