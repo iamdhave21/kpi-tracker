@@ -1825,7 +1825,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </div>
       )}
 
-      {/* MANAGEMENT -- Admin/Super Admin only. Home for company-level
+      {/* INTERNAL MANAGEMENT -- Admin/Super Admin only. Home for company-level
           tools. The Project Management Tool is a separate app (its own
           deployment and access model), so it opens in a new tab like
           Hiring Pipeline does; this link only controls who sees it
@@ -1834,7 +1834,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           the company (projects now; tools/subscriptions to come). */}
       {(userRole === 'super_admin' || userRole === 'admin') && (
         <>
-          <SectionHeader sectionKey="management" label="Management" hasActive={['tools-repository'].includes(view)} />
+          <SectionHeader sectionKey="management" label="Internal Management" hasActive={['tools-repository'].includes(view)} />
           {!collapsed.management && (
             <div className="px-2 pb-1 space-y-0.5">
               <NavItem id="tools-repository" label="Access and Tools Repository" icon={<Key className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-violet-400"/>
@@ -1859,39 +1859,6 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           </div>
         )}
       </>
-
-      {/* DIRECTORY */}
-      <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
-      {!collapsed.dir && (
-        <div className="px-2 pb-1 space-y-0.5">
-          <NavItem id="links" label="Links" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-purple-400"/>
-          <NavItem id="resources" label="Resources" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-purple-400"/>
-        </div>
-      )}
-
-      {/* HRIS */}
-      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-timetracker','nte'].includes(view)} />
-      {!collapsed.hris && (
-        <div className="px-2 pb-1 space-y-0.5">
-          {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>}
-          <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
-          <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingNteCount} badgeColor="bg-red-500" dotColor="bg-pink-400"/>
-          <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
-        </div>
-      )}
-
-      {/* FINANCE -- Admin/Super Admin only, financial data */}
-      {userRole === 'super_admin' && (
-        <>
-          <SectionHeader sectionKey="finance" label="Finance" hasActive={['opex','hris-invoice'].includes(view)} />
-          {!collapsed.finance && (
-            <div className="px-2 pb-1 space-y-0.5">
-              <NavItem id="opex" label="Operational Expense" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
-              <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
-            </div>
-          )}
-        </>
-      )}
 
       {/* PERFORMANCE MANAGEMENT -- the module that holds the three
           role-based tool groups below (Manager Tools, Team Lead Tools,
@@ -1953,6 +1920,39 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         )}
       </>
         </div>
+      )}
+
+      {/* DIRECTORY */}
+      <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
+      {!collapsed.dir && (
+        <div className="px-2 pb-1 space-y-0.5">
+          <NavItem id="links" label="Links" icon={<TrendingUp className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-purple-400"/>
+          <NavItem id="resources" label="Resources" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-purple-400"/>
+        </div>
+      )}
+
+      {/* HRIS */}
+      <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-timetracker','nte'].includes(view)} />
+      {!collapsed.hris && (
+        <div className="px-2 pb-1 space-y-0.5">
+          {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>}
+          <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
+          <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingNteCount} badgeColor="bg-red-500" dotColor="bg-pink-400"/>
+          <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
+        </div>
+      )}
+
+      {/* FINANCE -- Admin/Super Admin only, financial data */}
+      {userRole === 'super_admin' && (
+        <>
+          <SectionHeader sectionKey="finance" label="Finance" hasActive={['opex','hris-invoice'].includes(view)} />
+          {!collapsed.finance && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <NavItem id="opex" label="Operational Expense" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
+              <NavItem id="hris-invoice" label="Invoice" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-teal-400"/>
+            </div>
+          )}
+        </>
       )}
 
       {/* PEOPLE */}
