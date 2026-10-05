@@ -119,6 +119,13 @@ function generateDesignation(empType: string, client: string, existingForPerson:
   while (taken.has(`${base} (${n})`)) n++
   return `${base} (${n})`
 }
+// Local-calendar dates. new Date(y, m, 1).toISOString() converts local
+// midnight to UTC, which in the Philippines (UTC+8) lands on the PREVIOUS
+// calendar day -- so a month built that way starts a day early and ends a
+// day early. Use these whenever a range is compared against a date column.
+function ymdLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 // Client-scoping decision: "a team's client" is defined by
 // clients_supported, not by adding a new column to `teams` or inferring
 // anything from team membership. An employee's own clients_supported
@@ -7582,15 +7589,18 @@ type BCPTask = {
   created_at: string
 }
 
-const BCP_CATEGORIES = ['Onboarding', 'Payroll', 'Recruitment', 'Client Management', 'Finance/AR/AP', 'IT/Systems', 'HR/Admin', 'Other']
+// BCP is organised by department -- each one needs its own plan. These are
+// the five departments that need a BCP. Tasks saved under an older label
+// (Onboarding, Finance/AR/AP, IT/Systems, HR/Admin, Other) aren't deleted:
+// they show under an "Unassigned" filter with their old label until
+// someone moves them to a department.
+const BCP_CATEGORIES = ['Operations', 'Payroll', 'Recruitment', 'Client Management', 'IT']
 const BCP_CATEGORY_COLORS: Record<string, string> = {
-  Onboarding: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Operations: 'bg-sky-50 text-sky-700 border-sky-200',
   Payroll: 'bg-amber-50 text-amber-700 border-amber-200',
   Recruitment: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
   'Client Management': 'bg-blue-50 text-blue-700 border-blue-200',
-  'Finance/AR/AP': 'bg-cyan-50 text-cyan-700 border-cyan-200',
-  'IT/Systems': 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  'HR/Admin': 'bg-violet-50 text-violet-700 border-violet-200',
+  IT: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   Other: 'bg-gray-100 text-gray-600 border-gray-200',
 }
 
@@ -7672,7 +7682,7 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
   })()
 
   const filtered = tasks.filter(t =>
-    (filterCategory === 'All' || t.category === filterCategory) &&
+    (filterCategory === 'All' || (filterCategory === 'Unassigned' ? !BCP_CATEGORIES.includes(t.category || '') : t.category === filterCategory)) &&
     (!searchQ || t.title.toLowerCase().includes(searchQ.toLowerCase()))
   )
 
@@ -7714,7 +7724,7 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
           <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search tasks..." className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 w-52"/>
         </div>
-        {['All', ...BCP_CATEGORIES].map(c => (
+        {['All', ...BCP_CATEGORIES, ...(tasks.some(t => !BCP_CATEGORIES.includes(t.category || '')) ? ['Unassigned'] : [])].map(c => (
           <button key={c} onClick={() => setFilterCategory(c)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterCategory === c ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{c}</button>
         ))}
       </div>
@@ -10332,6 +10342,43 @@ function ViewerCoachingBanner({ currentUser }: { currentUser: string | null }) {
 
 // -- TL Scorecard -------------------------------------------------------------
 // TLScorecard v3
+// TL coaching, per agent. Every active member of the teams a Team Lead
+// leads should receive at least COACHING_PER_AGENT sessions in the month;
+// extra sessions for the same agent add nothing (capped), so coaching one
+// person four times can't make up for skipping another. Monthly only --
+// the coaching cadence is twice a month, so there is no weekly target.
+// One function feeds both the score and the drill-down so they can't
+// disagree. Emails are compared lowercased (stored casing varies).
+const COACHING_PER_AGENT = 2
+async function getTLCoachingProgress(tlId: string, tlEmail: string, startD: string, endD: string): Promise<{ name: string, email: string, count: number, counted: number, last: string | null }[]> {
+  const { data: ledTeams } = await supabase.from('teams').select('id').eq('team_lead_id', tlId).eq('active', true)
+  const ledIds = (ledTeams || []).map((t: any) => t.id)
+  if (ledIds.length === 0) return []
+  const { data: mem } = await supabase.from('team_members').select('employee_id').in('team_id', ledIds)
+  const memIds = Array.from(new Set((mem || []).map((m: any) => m.employee_id))).filter(id => id !== tlId)
+  if (memIds.length === 0) return []
+  const { data: emps } = await supabase.from('employees').select('id,name,email,active').in('id', memIds)
+  const agents = (emps || []).filter((e: any) => e.active && e.email)
+  if (agents.length === 0) return []
+  const perAgent: Record<string, { n: number, last: string | null }> = {}
+  if (tlEmail) {
+    const { data: sessions } = await supabase.from('coaching_logs').select('employee_email,date')
+      .ilike('coached_by', tlEmail.replace(/[\\%_]/g, '\\$&')).gte('date', startD).lte('date', endD)
+    ;(sessions || []).forEach((r: any) => {
+      const k = (r.employee_email || '').toLowerCase()
+      const cur = perAgent[k] || { n: 0, last: null }
+      cur.n += 1
+      if (!cur.last || r.date > cur.last) cur.last = r.date
+      perAgent[k] = cur
+    })
+  }
+  return agents.map((e: any) => {
+    const k = e.email.toLowerCase()
+    const n = perAgent[k]?.n || 0
+    return { name: e.name, email: k, count: n, counted: Math.min(n, COACHING_PER_AGENT), last: perAgent[k]?.last || null }
+  })
+}
+
 function TLScorecard({ currentUser, userRole, showToast, records }: { currentUser: string|null, userRole: string, showToast: (m:string,t?:'success'|'error')=>void, records: KpiRecord[] }) {
   const isManager = userRole === 'super_admin' || userRole === 'admin'
   const [period, setPeriod] = useState<'mtd'|'weekly'>('mtd')
@@ -10349,6 +10396,14 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
   const currentYear = new Date().getFullYear()
   const years = Array.from({length: 3}, (_,i) => currentYear - i)
 
+  // Local-calendar start/end dates for the selected month, for comparing
+  // against the coaching_logs.date column (see ymdLocal).
+  function getCoachingDateRange() {
+    const startD = ymdLocal(new Date(selectedYear, selectedMonth, 1))
+    const isCurrentMonth = selectedMonth === new Date().getMonth() && selectedYear === new Date().getFullYear()
+    const endD = isCurrentMonth ? ymdLocal(new Date()) : ymdLocal(new Date(selectedYear, selectedMonth + 1, 0))
+    return { startD, endD }
+  }
   function getPeriodBounds() {
     if (period === 'mtd') {
       const start = new Date(selectedYear, selectedMonth, 1)
@@ -10451,11 +10506,20 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
     }
     const cadenceScore = cadenceTotal / 3
 
-    // 2. Coaching sessions (target: 2/month or 0.5/week)
-    const coachTarget = period === 'mtd' ? 2 : 1
-    const { count: coachCount } = await supabase.from('coaching_logs').select('id',{count:'exact',head:true})
-      .eq('coached_by',tlEmail).gte('date',start.slice(0,10)).lte('date',end.slice(0,10))
-    const coachScore = Math.min((coachCount||0)/coachTarget,1)*100
+    // 2. Coaching -- 2 sessions per active team member per month, capped per
+    // agent (see getTLCoachingProgress). Only scored in the monthly view; a
+    // TL with no active team members isn't scored on it either, rather than
+    // getting a free 100% or a 0% for something with nothing to measure.
+    let coachCount = 0, coachTarget = 0, coachScore = 0, coachAgents = 0
+    if (period === 'mtd') {
+      const { startD, endD } = getCoachingDateRange()
+      const progress = await getTLCoachingProgress(selectedTL, tlEmail, startD, endD)
+      coachAgents = progress.length
+      coachCount = progress.reduce((sum, a) => sum + a.counted, 0)
+      coachTarget = coachAgents * COACHING_PER_AGENT
+      coachScore = coachTarget > 0 ? (coachCount / coachTarget) * 100 : 0
+    }
+    const coachApplicable = period === 'mtd' && coachAgents > 0
 
     // 3. Observations (target: 4/month or 1/week)
     const obsTarget = period === 'mtd' ? 4 : 1
@@ -10484,7 +10548,8 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
     const kpiScore = (kpiCount||0) > 0 ? 100 : 0
 
     const complianceSubScores = { cadenceScore, coachScore, obsScore, huddleScore, kpiScore }
-    const complianceScore = (cadenceScore + coachScore + obsScore + huddleScore + kpiScore) / 5
+    const complianceParts = [cadenceScore, obsScore, huddleScore, kpiScore, ...(coachApplicable ? [coachScore] : [])]
+    const complianceScore = complianceParts.reduce((a, b) => a + b, 0) / complianceParts.length
 
     const tlPhoto = null
     const tlName = tlEmpInfo?.name || 'Unknown'
@@ -10531,7 +10596,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
       overall, complianceScore, teamPerfScore, attendanceScore,
       tlPhoto, tlName, tlEmail, tlTeams: tlTeamsData || [],
       ...complianceSubScores,
-      coachCount: coachCount||0, coachTarget,
+      coachCount, coachTarget, coachApplicable, coachAgents,
       obsCount: obsCount||0, obsTarget,
       huddleCount: huddleCount||0, huddleTarget,
       kpiCount: kpiCount||0,
@@ -10624,18 +10689,25 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
   // items logged (and, for coaching, whether they counted toward target)
   // so a TL/Manager can see exactly what's behind the percentage, not
   // just a count.
-  type ListDrillItem = { title: string, date: string, subtitle?: string }
+  type ListDrillItem = { title: string, date: string, subtitle?: string }  // date may be '' (nothing to show)
   const [showListDrill, setShowListDrill] = useState<{kind:string, title:string} | null>(null)
   const [listDrillItems, setListDrillItems] = useState<ListDrillItem[] | null>(null)
 
   async function openCoachingDrilldown() {
     if (!score?.tlEmail) return
-    setShowListDrill({ kind: 'coach', title: 'Coaching Sessions' })
+    setShowListDrill({ kind: 'coach', title: `Coaching by Agent (${COACHING_PER_AGENT} per month)` })
     setListDrillItems(null)
-    const { start, end } = getPeriodBounds()
-    const { data } = await supabase.from('coaching_logs').select('employee_name,date,type')
-      .eq('coached_by', score.tlEmail).gte('date', start.slice(0,10)).lte('date', end.slice(0,10)).order('date', { ascending: false })
-    setListDrillItems((data||[]).map((r:any) => ({ title: r.employee_name, date: r.date, subtitle: r.type })))
+    const { startD, endD } = getCoachingDateRange()
+    const progress = await getTLCoachingProgress(selectedTL, score.tlEmail, startD, endD)
+    // Agents still short of the target first, so the gaps are what you see
+    progress.sort((a, b) => (a.counted - b.counted) || a.name.localeCompare(b.name))
+    setListDrillItems(progress.map(a => ({
+      title: a.name,
+      date: a.last || '',
+      subtitle: a.counted >= COACHING_PER_AGENT
+        ? `${a.count} sessions - target met`
+        : `${a.count} of ${COACHING_PER_AGENT} sessions - needs ${COACHING_PER_AGENT - a.counted} more`,
+    })))
   }
 
   async function openObsDrilldown() {
@@ -10754,7 +10826,17 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
             <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">30% weight</span>
           </div>
           <SubItem label="Cadence Compliance" score={score.cadenceScore} extra="Avg across daily, weekly, monthly" onClick={openCadenceDrilldown} />
-          <SubItem label="Coaching Sessions" score={score.coachScore} count={score.coachCount} target={score.coachTarget} extra="sessions" onClick={openCoachingDrilldown} />
+          {score.coachApplicable ? (
+            <SubItem label={`Coaching (${COACHING_PER_AGENT} per agent)`} score={score.coachScore} count={score.coachCount} target={score.coachTarget} extra={`sessions counted across ${score.coachAgents} agents (extras don't add)`} onClick={openCoachingDrilldown} />
+          ) : (
+            <div className="flex items-center justify-between py-2 border-b border-gray-50">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Coaching</p>
+                <p className="text-xs text-gray-400 mt-0.5">{period === 'mtd' ? 'No active team members found for this Team Lead, so nothing to score' : `Scored monthly only (${COACHING_PER_AGENT} sessions per agent)`}</p>
+              </div>
+              <span className="text-xs text-gray-400">Not scored</span>
+            </div>
+          )}
           <SubItem label="Observations Logged" score={score.obsScore} count={score.obsCount} target={score.obsTarget} extra="observations" onClick={openObsDrilldown} />
           <SubItem label="Huddle Notes Posted" score={score.huddleScore} count={score.huddleCount} target={score.huddleTarget} extra="huddles" onClick={openHuddleDrilldown} />
           <SubItem label="KPI Entry Compliance" score={score.kpiScore} extra={score.kpiCount > 0 ? 'Entry submitted this month' : 'No entry submitted yet'} />
@@ -10860,7 +10942,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
                     <div key={i} className="border border-gray-100 rounded-lg px-3 py-2 bg-gray-50">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-gray-800">{item.title}</span>
-                        <span className="text-xs text-gray-400">{new Date(item.date).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</span>
+                        <span className="text-xs text-gray-400">{item.date ? new Date(item.date).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
                       </div>
                       {item.subtitle && <p className="text-xs text-gray-500 mt-0.5">{item.subtitle}</p>}
                     </div>
