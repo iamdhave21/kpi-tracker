@@ -29,6 +29,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'links', label: 'Links' },
   { id: 'resources', label: 'Resources' },
   { id: 'hris-referral', label: 'Hiring Pipeline', external: 'https://abbss-hiring-pipeline.vercel.app/' },
+  { id: 'project-management', label: 'Project Management Tool', external: 'https://abbss-project-task-management.vercel.app/board?board=cmtb3hxe2000cih04k2noqoaf' },
   { id: 'hris-records', label: 'Employee Records' },
   { id: 'nte', label: 'Notice to Explain' },
   { id: 'hris-timetracker', label: 'Time Tracker' },
@@ -1543,7 +1544,7 @@ function AttentionBanner({ employees, currentUser, userRole, setView }:
 
 function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, pendingNteCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, pendingNteCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
-    home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false
+    home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false, finance: false, clientportal: false, management: false
   })
   const [searchQuery, setSearchQuery] = useState('')
   const searchResults = searchQuery.trim()
@@ -1838,6 +1839,24 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           {!collapsed.clientportal && (
             <div className="px-2 pb-1 space-y-0.5">
               <NavItem id="client-portal-admin" label="Client Onboarding" icon={<Globe className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* MANAGEMENT -- Admin/Super Admin only. Home for company-level
+          tools. The Project Management Tool is a separate app (its own
+          deployment and access model), so it opens in a new tab like
+          Hiring Pipeline does; this link only controls who sees it
+          from here. Kept separate from Manager Tools on purpose: that
+          section is day-to-day team oversight, this one is for running
+          the company (projects now; tools/subscriptions to come). */}
+      {(userRole === 'super_admin' || userRole === 'admin') && (
+        <>
+          <SectionHeader sectionKey="management" label="Management" hasActive={false} />
+          {!collapsed.management && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <ExternalNavItem label="Project Management Tool" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-project-task-management.vercel.app/board?board=cmtb3hxe2000cih04k2noqoaf" dotColor="bg-violet-400"/>
             </div>
           )}
         </>
@@ -2467,7 +2486,7 @@ export default function KPIApp() {
             {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'client-portal-admin' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <ClientPortalAdmin currentUser={effectiveUser} showToast={showToast} />}
             {view === 'client-portal-admin' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
-            {view === 'ops-dashboard' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <OpsDashboard employees={employees} />}
+            {view === 'ops-dashboard' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <OpsDashboard employees={employees} user={user} />}
             {view === 'ops-dashboard' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'links' && <DirectoryLinks userRole={effectiveRole} currentUser={effectiveUser} employees={employees} showToast={showToast} />}
             {/* Agents CAN reach this view -- see note inside OperatingCadence
@@ -4427,7 +4446,7 @@ function AVScanPanel({ employees, currentUser, userRole, showToast }:
   )
 }
 
-function OpsDashboard({ employees }: { employees: Employee[] }) {
+function OpsDashboard({ employees, user }: { employees: Employee[], user: string | null }) {
   // Current month + the 2 before it, oldest first, in the same
   // "Month Year" label format used by kpi_records/observations.
   const rollingMonths = Array.from({length: 3}, (_, i) => {
@@ -4488,14 +4507,35 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
   // later if that turns out to matter.
   const DEFAULT_CARD_ORDER = ['coaching','ann','task','pulse','obs','perf']
   const [cardOrder, setCardOrder] = useState<string[]>(DEFAULT_CARD_ORDER)
+  const validOrder = (o: any): o is string[] => Array.isArray(o) && o.length === DEFAULT_CARD_ORDER.length && DEFAULT_CARD_ORDER.every(id => o.includes(id))
+  // Order is saved on the person's own account (app_users.ops_card_order,
+  // same idea as Favorites) so it follows them across devices, with
+  // localStorage as an instant local copy and as the fallback if the
+  // column isn't there yet or the request fails. Uses the real signed-in
+  // user, not a "View As" preview, since it's a personal layout.
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('ops_dashboard_card_order') || 'null')
-      if (Array.isArray(saved) && DEFAULT_CARD_ORDER.every(id => saved.includes(id)) && saved.length === DEFAULT_CARD_ORDER.length) {
-        setCardOrder(saved)
-      }
+      const local = JSON.parse(localStorage.getItem('ops_dashboard_card_order') || 'null')
+      if (validOrder(local)) setCardOrder(local)
     } catch {}
-  }, [])
+    if (!user) return
+    const u = user.toLowerCase().replace(/[\\%_]/g, '\\$&')  // escape LIKE wildcards so only this exact account matches
+    supabase.from('app_users').select('ops_card_order').or(`email.ilike.${u},username.ilike.${u}`).limit(1).maybeSingle()
+      .then(({ data, error }) => {
+        if (error || !data) return
+        if (validOrder(data.ops_card_order)) {
+          setCardOrder(data.ops_card_order)
+          localStorage.setItem('ops_dashboard_card_order', JSON.stringify(data.ops_card_order))
+        }
+      })
+  }, [user])
+  function persistCardOrder(next: string[] | null) {
+    if (next) localStorage.setItem('ops_dashboard_card_order', JSON.stringify(next))
+    else localStorage.removeItem('ops_dashboard_card_order')
+    if (!user) return
+    const u = user.toLowerCase().replace(/[\\%_]/g, '\\$&')
+    supabase.from('app_users').update({ ops_card_order: next }).or(`email.ilike.${u},username.ilike.${u}`).then(() => {})
+  }
   const [dragCardId, setDragCardId] = useState<string | null>(null)
   function handleCardDrop(targetId: string) {
     if (!dragCardId || dragCardId === targetId) { setDragCardId(null); return }
@@ -4505,7 +4545,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
     next.splice(fromIdx, 1)
     next.splice(toIdx, 0, dragCardId)
     setCardOrder(next)
-    localStorage.setItem('ops_dashboard_card_order', JSON.stringify(next))
+    persistCardOrder(next)
     setDragCardId(null)
   }
 
@@ -4726,7 +4766,7 @@ function OpsDashboard({ employees }: { employees: Employee[] }) {
         <span className="text-xs text-gray-400 ml-auto flex items-center gap-2">
           Drag a card to reorder
           {JSON.stringify(cardOrder) !== JSON.stringify(DEFAULT_CARD_ORDER) && (
-            <button onClick={() => { setCardOrder(DEFAULT_CARD_ORDER); localStorage.removeItem('ops_dashboard_card_order') }} className="text-blue-600 hover:underline">Reset order</button>
+            <button onClick={() => { setCardOrder(DEFAULT_CARD_ORDER); persistCardOrder(null) }} className="text-blue-600 hover:underline">Reset order</button>
           )}
         </span>
       </div>
