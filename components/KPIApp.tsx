@@ -1832,6 +1832,21 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
         </>
       )}
 
+      {/* CLIENT PORTAL -- Admin/Super Admin only. Manages the external,
+          no-internal-login Client Portal (separate app at /client-portal)
+          -- contacts, onboarding checklist progress, and the shared
+          editable checklist template. */}
+      {(userRole === 'super_admin' || userRole === 'admin') && (
+        <>
+          <SectionHeader sectionKey="clientportal" label="Client Portal" hasActive={['client-portal-admin'].includes(view)} />
+          {!collapsed.clientportal && (
+            <div className="px-2 pb-1 space-y-0.5">
+              <NavItem id="client-portal-admin" label="Client Onboarding" icon={<Globe className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
+            </div>
+          )}
+        </>
+      )}
+
       {/* DIRECTORY */}
       <SectionHeader sectionKey="dir" label="Directory" hasActive={['links','resources'].includes(view)} />
       {!collapsed.dir && (
@@ -1864,22 +1879,6 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           )}
         </>
       )}
-
-      {/* CLIENT PORTAL -- Admin/Super Admin only. Manages the external,
-          no-internal-login Client Portal (separate app at /client-portal)
-          -- contacts, onboarding checklist progress, and the shared
-          editable checklist template. */}
-      {(userRole === 'super_admin' || userRole === 'admin') && (
-        <>
-          <SectionHeader sectionKey="clientportal" label="Client Portal" hasActive={['client-portal-admin'].includes(view)} />
-          {!collapsed.clientportal && (
-            <div className="px-2 pb-1 space-y-0.5">
-              <NavItem id="client-portal-admin" label="Client Onboarding" icon={<Globe className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
-            </div>
-          )}
-        </>
-      )}
-
 
       {/* MANAGER TOOLS -- visible to everyone; content itself is gated by
           role (Dashboard hard-blocks below Admin/Super Admin; the rest
