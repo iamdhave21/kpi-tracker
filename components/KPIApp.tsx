@@ -5,11 +5,12 @@ import ClientPortalAdmin from '@/components/ClientPortalAdmin'
 import ToolsRepository from '@/components/ToolsRepository'
 import ClientObservations from '@/components/ClientObservations'
 import ClientRequests from '@/components/ClientRequests'
+import SopRepository from '@/components/SopRepository'
 import { staffApi } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin' | 'tools-repository' | 'client-observations' | 'client-requests'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin' | 'tools-repository' | 'client-observations' | 'client-requests' | 'sop-repository'
 // Deep-linking: every View is addressable as ?view=<id> (and Operating
 // Cadence sub-tabs as &tab=<tab>), so a link like
 // abbss-ops-portal.vercel.app/?view=ops-dashboard opens that module
@@ -28,6 +29,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'ops-dashboard', label: 'Ops Dashboard' },
   { id: 'tickets', label: 'Tickets' },
   { id: 'tasks', label: 'Tasks' },
+  { id: 'sop-repository', label: 'SOP and LWI Repository' },
   { id: 'bcp', label: 'BCP / Business Continuity Plan' },
   { id: 'bcp', label: 'Escalation Matrix' },
   { id: 'links', label: 'Links' },
@@ -62,7 +64,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'settings', label: 'Settings' },
 ]
 
-const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin','tools-repository','client-observations','client-requests']
+const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin','tools-repository','client-observations','client-requests','sop-repository']
 function readViewFromUrl(): View | null {
   if (typeof window === 'undefined') return null
   const v = new URLSearchParams(window.location.search).get('view')
@@ -1643,6 +1645,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     'gaming-hub': { label: 'Gaming Hub', icon: <Gamepad2 className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-sky-400' },
     'tickets': { label: 'Tickets', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
     'tasks': { label: 'Tasks', icon: <CheckCircle className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
+    'sop-repository': { label: 'SOP and LWI Repository', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
     'bcp': { label: 'BCP', icon: <Shield className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
     'links': { label: 'Links', icon: <TrendingUp className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
     'resources': { label: 'Resources', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
@@ -1815,13 +1818,14 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* OPERATIONS */}
-      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp','ops-dashboard'].includes(view)} />
+      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp','ops-dashboard','sop-repository'].includes(view)} />
       {!collapsed.ops && (
         <div className="px-2 pb-1 space-y-0.5">
           {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="ops-dashboard" label="Ops Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>}
           <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
           <NavItem id="tasks" label="Tasks" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingTaskCount} dotColor="bg-orange-400"/>
           <NavItem id="bcp" label="BCP" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
+          <NavItem id="sop-repository" label="SOP and LWI" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
         </div>
       )}
 
@@ -2546,6 +2550,7 @@ export default function KPIApp() {
             {view === 'opex' && effectiveRole !== 'super_admin' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'client-portal-admin' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <ClientPortalAdmin currentUser={effectiveUser} showToast={showToast} />}
             {view === 'client-portal-admin' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
+            {view === 'sop-repository' && <SopRepository userRole={effectiveRole} employees={employees} isPreviewing={!!previewTarget} showToast={showToast} />}
             {view === 'client-requests' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <ClientRequests employees={employees} isPreviewing={!!previewTarget} showToast={showToast} />}
             {view === 'client-requests' && !(effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'client-observations' && <ClientObservations currentUser={effectiveUser} userRole={effectiveRole} employees={employees} isPreviewing={!!previewTarget} showToast={showToast} />}
