@@ -8074,6 +8074,51 @@ function EscalationMatrixView() {
   )
 }
 
+// Owner override for a new ticket. Picking someone shows them as a removable chip, so an
+// accidental pick is one click to undo; typing never writes text into the owner, only
+// choosing a person does; the list closes on click-away or Escape. Defined at top level
+// on purpose: inside the Tickets screen it was rebuilt on every keystroke and lost focus.
+function TicketOwnerPicker({ value, onChange, employees }: { value: string, onChange: (email: string) => void, employees: { name: string, email: string }[] }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function onDown(e: MouseEvent) { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [])
+  if (value) {
+    const picked = employees.find(e => localPart(e.email) === localPart(value))
+    return (
+      <div className="flex items-center justify-between gap-3 border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-sm">
+        <span className="text-blue-900 min-w-0 truncate"><span className="font-medium">{picked?.name || value}</span>{picked && <span className="text-xs text-blue-500 ml-2">{picked.email}</span>}</span>
+        <button type="button" onClick={() => { onChange(''); setQuery(''); setOpen(false) }} className="text-xs font-semibold text-red-600 hover:underline flex-shrink-0">Remove</button>
+      </div>
+    )
+  }
+  const q = query.trim().toLowerCase()
+  const matches = employees.filter(e => !q || e.name.toLowerCase().includes(q) || (e.email || '').toLowerCase().includes(q)).slice(0, 8)
+  return (
+    <div ref={boxRef} className="relative">
+      <input value={query} onChange={e => { setQuery(e.target.value); setOpen(true) }} onFocus={() => setOpen(true)}
+        onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
+        placeholder="No override. Type a name to assign someone else..."
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+      {open && (
+        <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
+          {matches.length === 0 && <p className="px-3 py-2 text-sm text-gray-400">No one matches.</p>}
+          {matches.map(e => (
+            <button type="button" key={e.email} onClick={() => { onChange(e.email); setQuery(''); setOpen(false) }} className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-gray-900">
+              <span className="font-medium">{e.name}</span><span className="text-gray-400 text-xs ml-2">{e.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-gray-400 mt-1">Leave empty to use the category POC.</p>
+    </div>
+  )
+}
+
 function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
   const canEdit = (t: Ticket) => canManage || t.created_by === currentUser
@@ -8109,8 +8154,6 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const [postingComment, setPostingComment] = useState(false)
   const [commentAttachments, setCommentAttachments] = useState<TicketAttachment[]>([])
   const [uploadingComment, setUploadingComment] = useState(false)
-  const [ownerSearch, setOwnerSearch] = useState('')
-  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false)
 
   useEffect(() => {
     loadTickets()
@@ -8236,7 +8279,9 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     const slaDeadline = new Date(Date.now() + form.sla_hours * 60 * 60 * 1000).toISOString()
     // Auto-assign POCs for this category
     const pocs = categoryOwners[form.category] || []
-    const primaryOwner = pocs.length > 0 ? pocs[0] : (form.owner || null)
+    // An explicit override wins; otherwise the category's first POC; otherwise unassigned.
+    const override = form.owner || null
+    const primaryOwner = override || (pocs.length > 0 ? pocs[0] : null)
     const { data, error } = await supabase.from('tickets').insert({
       title: form.title.trim(), description: form.description.trim(),
       category: form.category, ticket_type: form.ticket_type,
@@ -8253,7 +8298,8 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     showToast('Ticket submitted!', 'success')
     loadTickets()
     // Notify all POCs
-    const notifyEmails = pocs.length > 0 ? pocs : (form.owner ? [form.owner] : [])
+    // Everyone responsible hears about it: the category POCs and the override person.
+    const notifyEmails = [...pocs, ...(override ? [override] : [])].filter((e, i, a) => a.findIndex(x => localPart(x) === localPart(e)) === i)
     if (notifyEmails.length > 0) {
       fetch('/api/notify/ticket-created', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -8296,27 +8342,6 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const openCount = tickets.filter(t => t.status === 'Open').length
   const inProgressCount = tickets.filter(t => t.status === 'In Progress').length
   const overdueCount = tickets.filter(t => getSLAStatus(t).label.startsWith('Overdue')).length
-
-  const OwnerPicker = ({ value, onChange }: { value: string, onChange: (v:string) => void }) => (
-    <div className="relative">
-      <input value={ownerSearch || value} onChange={e => { setOwnerSearch(e.target.value); onChange(e.target.value); setShowOwnerDropdown(true) }}
-        onFocus={() => setShowOwnerDropdown(true)}
-        placeholder="Search and assign owner..."
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-      {showOwnerDropdown && (
-        <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto mt-1">
-          {allEmployees.filter(e => !ownerSearch || e.name.toLowerCase().includes(ownerSearch.toLowerCase()) || (e.email||'').toLowerCase().includes(ownerSearch.toLowerCase()))
-            .map(e => (
-              <button key={e.email} onClick={() => { onChange(e.email); setOwnerSearch(e.name); setShowOwnerDropdown(false) }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-gray-900">
-                <span className="font-medium">{e.name}</span>
-                <span className="text-gray-400 text-xs ml-2">{e.email}</span>
-              </button>
-            ))}
-        </div>
-      )}
-    </div>
-  )
 
   return (
     <div className="space-y-5">
@@ -8442,7 +8467,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
           <div>
             <label className="text-xs text-gray-500 font-medium">Override Owner (optional)</label>
             <div className="mt-1">
-              <OwnerPicker value={form.owner} onChange={v => setForm(p=>({...p,owner:v}))} />
+              <TicketOwnerPicker value={form.owner} onChange={v => setForm(p=>({...p,owner:v}))} employees={allEmployees} />
             </div>
           </div>
           )}
