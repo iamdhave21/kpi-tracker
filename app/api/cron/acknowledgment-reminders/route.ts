@@ -29,8 +29,8 @@ const AV_SCAN_REQUIRED_FROM = new Date('2026-09-21')
 
 // Runs once daily via Vercel Cron (see vercel.json). Emails every active
 // employee a digest of anything they still haven't acknowledged/completed:
-// coaching sessions requiring acknowledgment, announcements, incomplete
-// tasks, this week's missing Quick Scan, and this month's missing Full
+// coaching sessions requiring acknowledgment, announcements, this
+// week's missing Quick Scan, and this month's missing Full
 // Scan. Skips anyone with nothing pending -- no email if they're all
 // caught up.
 export async function GET(req: NextRequest) {
@@ -58,11 +58,10 @@ export async function GET(req: NextRequest) {
   const currentMonth = new Date().toISOString().slice(0, 7)
   const pastAvScanLaunch = new Date() >= AV_SCAN_REQUIRED_FROM
 
-  const [{ data: allCoaching }, { data: allAnnouncements }, { data: allAcks }, { data: allTasks }, { data: appUsers }, { data: avSubs }] = await Promise.all([
+  const [{ data: allCoaching }, { data: allAnnouncements }, { data: allAcks }, { data: appUsers }, { data: avSubs }] = await Promise.all([
     supabase.from('coaching_logs').select('employee_email, date, type').eq('requires_acknowledgment', true).eq('agent_acknowledged', false).eq('status', 'Final'),
     supabase.from('announcements').select('id, title').eq('active', true),
     supabase.from('announcement_acknowledgements').select('announcement_id, user_email'),
-    supabase.from('tasks').select('assigned_to, title, due_date').eq('is_done', false),
     pastAvScanLaunch ? supabase.from('app_users').select('email, role') : Promise.resolve({ data: [] as any[] }),
     pastAvScanLaunch ? supabase.from('av_scan_submissions').select('employee_id, scan_type, period_key').in('period_key', [currentWeek, currentMonth]) : Promise.resolve({ data: [] as any[] }),
   ])
@@ -92,7 +91,6 @@ export async function GET(req: NextRequest) {
     const missingCoaching = (allCoaching || []).filter((c:any) => c.employee_email?.toLowerCase() === email)
     const ackedIds = new Set((allAcks || []).filter((a:any) => a.user_email?.toLowerCase() === email).map((a:any) => a.announcement_id))
     const missingAnnouncements = (allAnnouncements || []).filter((a:any) => !ackedIds.has(a.id))
-    const missingTasks = (allTasks || []).filter((t:any) => t.assigned_to?.toLowerCase() === email)
 
     // Same population/exemption as the AV Scan feature itself: no role
     // recognised for this email (no app_users row) means not exempt by
@@ -108,13 +106,12 @@ export async function GET(req: NextRequest) {
       if (!submittedTypes.has('full')) missingAvScans.push("This month's Full Scan")
     }
 
-    const totalPending = missingCoaching.length + missingAnnouncements.length + missingTasks.length + missingAvScans.length
+    const totalPending = missingCoaching.length + missingAnnouncements.length + missingAvScans.length
     if (totalPending === 0) continue
 
     const rows = [
       ...missingCoaching.map((c:any) => `<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6;">📋 Coaching session</td><td style="padding:8px;border-bottom:1px solid #f3f4f6;">${c.type || 'Coaching session'} (${new Date(c.date).toLocaleDateString('en-US',{month:'short',day:'numeric'})})</td></tr>`),
       ...missingAnnouncements.map((a:any) => `<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6;">📢 Announcement</td><td style="padding:8px;border-bottom:1px solid #f3f4f6;">${a.title}</td></tr>`),
-      ...missingTasks.map((t:any) => `<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6;">✅ Task</td><td style="padding:8px;border-bottom:1px solid #f3f4f6;">${t.title}${t.due_date ? ' (due ' + new Date(t.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ')' : ''}</td></tr>`),
       ...missingAvScans.map((label:string) => `<tr><td style="padding:8px;border-bottom:1px solid #f3f4f6;">🛡️ AV Scan</td><td style="padding:8px;border-bottom:1px solid #f3f4f6;">${label}</td></tr>`),
     ].join('')
 

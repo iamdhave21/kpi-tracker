@@ -6,11 +6,12 @@ import ToolsRepository from '@/components/ToolsRepository'
 import ClientObservations from '@/components/ClientObservations'
 import ClientRequests from '@/components/ClientRequests'
 import SopRepository from '@/components/SopRepository'
+import { canSeeTicket, isMine, pocCategoriesFor, teamEmailsFor, localPart } from '@/lib/ticketScope'
 import { staffApi } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
 
-type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'tasks' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin' | 'tools-repository' | 'client-observations' | 'client-requests' | 'sop-repository'
+type View = 'announcements' | 'gaming-hub' | 'cadence' | 'manager-cadence' | 'links' | 'resources' | 'dashboard-month' | 'dashboard-employee' | 'dashboard-team' | 'entry' | 'employees' | 'teams' | 'observations' | 'org-chart' | 'tickets' | 'bcp' | 'tl-tools' | 'directory' | 'settings' | 'matrix' | 'hris-referral' | 'hris-records' | 'hris-invoice' | 'hris-timetracker' | 'tl-scorecard' | 'pulse-check' | 'opex' | 'nte' | 'ops-dashboard' | 'av-scan' | 'client-portal-admin' | 'tools-repository' | 'client-observations' | 'client-requests' | 'sop-repository'
 // Deep-linking: every View is addressable as ?view=<id> (and Operating
 // Cadence sub-tabs as &tab=<tab>), so a link like
 // abbss-ops-portal.vercel.app/?view=ops-dashboard opens that module
@@ -28,7 +29,6 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'gaming-hub', label: 'Gaming Hub' },
   { id: 'ops-dashboard', label: 'Ops Dashboard' },
   { id: 'tickets', label: 'Tickets' },
-  { id: 'tasks', label: 'Tasks' },
   { id: 'sop-repository', label: 'SOP and LWI Repository' },
   { id: 'bcp', label: 'BCP / Business Continuity Plan' },
   { id: 'bcp', label: 'Escalation Matrix' },
@@ -64,7 +64,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'settings', label: 'Settings' },
 ]
 
-const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','tasks','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin','tools-repository','client-observations','client-requests','sop-repository']
+const DEEP_LINK_VIEWS: View[] = ['announcements','gaming-hub','cadence','manager-cadence','links','resources','dashboard-month','dashboard-employee','dashboard-team','entry','employees','teams','observations','org-chart','tickets','bcp','tl-tools','directory','settings','matrix','hris-referral','hris-records','hris-invoice','hris-timetracker','tl-scorecard','pulse-check','opex','nte','ops-dashboard','av-scan','client-portal-admin','tools-repository','client-observations','client-requests','sop-repository']
 function readViewFromUrl(): View | null {
   if (typeof window === 'undefined') return null
   const v = new URLSearchParams(window.location.search).get('view')
@@ -196,8 +196,6 @@ type ComplianceBreakdown = {
   coachAcked: number
   annTotal: number
   annAcked: number
-  taskTotal: number
-  taskDone: number
   pulseTotal: number
   pulseSubmitted: number
   totalRequired: number
@@ -246,15 +244,15 @@ function countMondaysInRange(start: Date, end: Date): number {
   return count
 }
 
-// Auto-calculates compliance = (coaching acks + announcement acks + tasks
-// completed + Weekly Pulse Check submissions) / (total required) for a
+// Auto-calculates compliance = (coaching acks + announcement acks +
+// Weekly Pulse Check submissions) / (total required) for a
 // given employee + month. Returns rate: null when there's simply nothing
 // to acknowledge/complete/submit yet that month (e.g. rollout hasn't
 // started) so callers can fall back to a manual value instead of showing
 // a misleading 0%. This is the ONLY place Weekly Pulse Check factors into
 // scoring -- it never affects the separate HRIS document compliance %.
 async function getComplianceBreakdown(employeeEmail: string | null | undefined, monthLabel: string): Promise<ComplianceBreakdown> {
-  const empty: ComplianceBreakdown = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, pulseTotal: 0, pulseSubmitted: 0, totalRequired: 0, totalAcked: 0 }
+  const empty: ComplianceBreakdown = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, pulseTotal: 0, pulseSubmitted: 0, totalRequired: 0, totalAcked: 0 }
   if (!employeeEmail) return empty
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   if (mIdx < 0 || !yr) return empty
@@ -296,11 +294,6 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
     annAcked = (acks || []).length
   }
 
-  const { data: taskData } = await supabase.from('tasks')
-    .select('is_done')
-    .ilike('assigned_to', employeeEmail)
-    .gte('created_at', startTs).lt('created_at', endTs)
-
   const { data: pulseData } = await supabase.from('pulse_surveys')
     .select('week_start')
     .ilike('employee_email', employeeEmail)
@@ -308,16 +301,14 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
 
   const coachTotal = (coaching || []).length
   const coachAcked = (coaching || []).filter(c => c.agent_acknowledged).length
-  const taskTotal = (taskData || []).length
-  const taskDone = (taskData || []).filter(t => t.is_done).length
   const pulseRangeStart = new Date(Math.max(new Date(start).getTime(), PULSE_CHECK_REQUIRED_FROM.getTime()))
   const pulseTotal = isPulseCheckExempt(employeeEmail) ? 0 : countMondaysInRange(pulseRangeStart, new Date(end))
   const pulseSubmitted = Math.min((pulseData || []).length, pulseTotal)
-  const totalRequired = coachTotal + annIds.length + taskTotal + pulseTotal
-  const totalAcked = coachAcked + annAcked + taskDone + pulseSubmitted
+  const totalRequired = coachTotal + annIds.length + pulseTotal
+  const totalAcked = coachAcked + annAcked + pulseSubmitted
   return {
     rate: totalRequired > 0 ? totalAcked / totalRequired : null,
-    coachTotal, coachAcked, annTotal: annIds.length, annAcked, taskTotal, taskDone, pulseTotal, pulseSubmitted, totalRequired, totalAcked
+    coachTotal, coachAcked, annTotal: annIds.length, annAcked, pulseTotal, pulseSubmitted, totalRequired, totalAcked
   }
 }
 
@@ -1564,7 +1555,7 @@ function AttentionBanner({ employees, currentUser, userRole, setView, extraItems
   )
 }
 
-function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingTaskCount = 0, pendingNteCount = 0, pendingRequestCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingTaskCount?: number, pendingNteCount?: number, pendingRequestCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingCount = 0, pendingNteCount = 0, pendingRequestCount = 0, userRole, favoriteViews = [], onToggleFavorite, onReorderFavorites, user, displayName, showToast }: { view: string, setView: (v: any) => void, setMobileMenuOpen: (v: boolean) => void, pendingCoachingCount?: number, pendingNteCount?: number, pendingRequestCount?: number, userRole: string, favoriteViews?: string[], onToggleFavorite?: (id: string) => void, onReorderFavorites?: (next: string[]) => void, user: string | null, displayName: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({
     home: false, perf: false, people: false, ops: false, tltools: false, mgrtools: false, agenttools: false, hris: false, dir: false, sys: false, finance: false, clientportal: false, management: false, perfmgmt: false
   })
@@ -1644,7 +1635,6 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
     'announcements': { label: 'Announcements', icon: <Bell className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-sky-400' },
     'gaming-hub': { label: 'Gaming Hub', icon: <Gamepad2 className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-sky-400' },
     'tickets': { label: 'Tickets', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
-    'tasks': { label: 'Tasks', icon: <CheckCircle className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
     'sop-repository': { label: 'SOP and LWI Repository', icon: <FileText className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
     'bcp': { label: 'BCP', icon: <Shield className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-orange-400' },
     'links': { label: 'Links', icon: <TrendingUp className="w-4 h-4 flex-shrink-0"/>, dotColor: 'bg-purple-400' },
@@ -1747,7 +1737,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
                   className={`cursor-move ${dragIndex === i ? 'opacity-40' : ''}`}
                 >
                   <NavItem id={id} label={meta.label} icon={meta.icon} dotColor={meta.dotColor}
-                    badge={id === 'tl-tools' ? pendingCoachingCount : id === 'tasks' ? pendingTaskCount : undefined} />
+                    badge={id === 'tl-tools' ? pendingCoachingCount : undefined} />
                 </div>
               )
             })}
@@ -1818,12 +1808,11 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       )}
 
       {/* OPERATIONS */}
-      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','tasks','bcp','ops-dashboard','sop-repository'].includes(view)} />
+      <SectionHeader sectionKey="ops" label="Operations" hasActive={['tickets','bcp','ops-dashboard','sop-repository'].includes(view)} />
       {!collapsed.ops && (
         <div className="px-2 pb-1 space-y-0.5">
           {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="ops-dashboard" label="Ops Dashboard" icon={<BarChart2 className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>}
           <NavItem id="tickets" label="Tickets" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
-          <NavItem id="tasks" label="Tasks" icon={<CheckCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingTaskCount} dotColor="bg-orange-400"/>
           <NavItem id="bcp" label="BCP" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
           <NavItem id="sop-repository" label="SOP and LWI" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
         </div>
@@ -1990,8 +1979,6 @@ export default function KPIApp() {
   const [pendingCoachingCount, setPendingCoachingCount] = useState(0)
   const [pendingNteCount, setPendingNteCount] = useState(0)
   const [pendingRequestCount, setPendingRequestCount] = useState(0)
-  const [pendingTaskCount, setPendingTaskCount] = useState(0)
-  const [tasksRefreshKey, setTasksRefreshKey] = useState(0)
   const [favoriteViews, setFavoriteViews] = useState<string[]>([])
   const [bgUrl, setBgUrl] = useState<string|null>(null)
 
@@ -2291,25 +2278,6 @@ export default function KPIApp() {
     return () => { cancelled = true }
   }, [effectiveUser, employees])
 
-  // Load pending tasks count -- matches the same scoping TasksPanel itself
-  // uses: Agent sees only their own, Team Lead/Admin see own + assigned by
-  // them, Super Admin sees everyone. Also re-runs on tasksRefreshKey so the
-  // badge doesn't go stale after tasks are completed elsewhere in the app.
-  useEffect(() => {
-    if (!user) return
-    async function loadPendingTasks() {
-      let q = supabase.from('tasks').select('id').eq('is_done', false)
-      // .ilike() not .eq()/.or(...eq...): same case-sensitivity family
-      // as the coaching_logs and announcement fixes -- assigned_to/
-      // assigned_by can be stored with mixed case.
-      if (userRole === 'agent') q = q.ilike('assigned_to', user!.toLowerCase())
-      else if (userRole === 'Team Lead' || userRole === 'admin') q = q.or(`assigned_to.ilike.${user!.toLowerCase()},assigned_by.ilike.${user}`)
-      const { data } = await q
-      setPendingTaskCount((data || []).length)
-    }
-    loadPendingTasks()
-  }, [user, userRole, tasksRefreshKey])
-
   // Load this user's favorited sidebar items (persisted per-account, not
   // device-specific) and a helper to save changes back.
   useEffect(() => {
@@ -2410,7 +2378,7 @@ export default function KPIApp() {
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative inset-y-0 left-0 z-30 w-64 bg-gradient-to-b from-gray-50 to-white flex flex-col transition-transform duration-200 ease-in-out pt-14 md:pt-0 shadow-2xl border-r border-gray-200 md:h-full`}>
-                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingTaskCount={pendingTaskCount} pendingNteCount={pendingNteCount} pendingRequestCount={pendingRequestCount} userRole={effectiveRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
+                    <CollapsibleSidebar view={view} setView={setView} setMobileMenuOpen={setMobileMenuOpen} pendingCoachingCount={pendingCoachingCount} pendingNteCount={pendingNteCount} pendingRequestCount={pendingRequestCount} userRole={effectiveRole} favoriteViews={favoriteViews} onToggleFavorite={toggleFavorite} onReorderFavorites={saveFavorites} user={user} displayName={displayName} showToast={showToast} />
 
         </aside>
 
@@ -2498,7 +2466,6 @@ export default function KPIApp() {
             {view === 'org-chart' && effectiveRole !== 'agent' && <OrgChart employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'org-chart' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'tickets' && <TicketsPanel currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
-            {view === 'tasks' && <TasksPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} onTasksChanged={() => setTasksRefreshKey(k => k+1)} />}
             {view === 'bcp' && <BCPPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} isPreviewing={!!previewTarget} onAckChange={async () => {
               // Mirrors the same scoping as the initial badge-count effect
@@ -2703,7 +2670,7 @@ function EditScoreModal({ record, currentUser, onSaved, onClose, showToast }: { 
           </div>
           <p className="text-xs text-gray-400 mt-1">
             {compLoading ? 'Checking coaching + announcement acknowledgments...' :
-             compAuto && compAuto.totalRequired > 0 ? `Auto-calculated: ${(compAuto.rate!*100).toFixed(0)}% (${compAuto.totalAcked}/${compAuto.totalRequired} acknowledged — ${compAuto.coachAcked}/${compAuto.coachTotal} coaching, ${compAuto.annAcked}/${compAuto.annTotal} announcements, ${compAuto.taskDone}/${compAuto.taskTotal} tasks, ${compAuto.pulseSubmitted}/${compAuto.pulseTotal} weekly pulse check-ins). Edit above to override.` :
+             compAuto && compAuto.totalRequired > 0 ? `Auto-calculated: ${(compAuto.rate!*100).toFixed(0)}% (${compAuto.totalAcked}/${compAuto.totalRequired} acknowledged — ${compAuto.coachAcked}/${compAuto.coachTotal} coaching, ${compAuto.annAcked}/${compAuto.annTotal} announcements, ${compAuto.pulseSubmitted}/${compAuto.pulseTotal} weekly pulse check-ins). Edit above to override.` :
              'No coaching or announcements requiring acknowledgment found this month — set manually.'}
           </p>
         </div>
@@ -4007,15 +3974,15 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
 // (KPI Entry auto-fill, HRIS compliance, Team Compliance), just summed
 // across every active employee with an email, rather than introducing a
 // second, potentially-diverging aggregate formula. Returns per-category
-// totals (coaching/announcement/task/pulse) so the Ops Dashboard can
+// totals (coaching/announcement/pulse) so the Ops Dashboard can
 // show each one as its own honest number instead of one blended rate
 // that hides which category is actually driving it.
 async function getCompanyComplianceSummary(employees: Employee[], monthLabel: string): Promise<{
   rate: number | null, totalRequired: number, totalAcked: number, employeeCount: number,
   coachTotal: number, coachAcked: number, annTotal: number, annAcked: number,
-  taskTotal: number, taskDone: number, pulseTotal: number, pulseSubmitted: number,
+  pulseTotal: number, pulseSubmitted: number,
 }> {
-  const empty = { rate: null, totalRequired: 0, totalAcked: 0, employeeCount: 0, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, pulseTotal: 0, pulseSubmitted: 0 }
+  const empty = { rate: null, totalRequired: 0, totalAcked: 0, employeeCount: 0, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, pulseTotal: 0, pulseSubmitted: 0 }
   const active = employees.filter(e => e.active && e.email)
   if (active.length === 0) return empty
   const results = await Promise.all(active.map(e => getComplianceBreakdown(e.email, monthLabel)))
@@ -4024,7 +3991,7 @@ async function getCompanyComplianceSummary(employees: Employee[], monthLabel: st
   return {
     rate: totalRequired > 0 ? totalAcked / totalRequired : null, totalRequired, totalAcked, employeeCount: active.length,
     coachTotal: sum('coachTotal'), coachAcked: sum('coachAcked'), annTotal: sum('annTotal'), annAcked: sum('annAcked'),
-    taskTotal: sum('taskTotal'), taskDone: sum('taskDone'), pulseTotal: sum('pulseTotal'), pulseSubmitted: sum('pulseSubmitted'),
+    pulseTotal: sum('pulseTotal'), pulseSubmitted: sum('pulseSubmitted'),
   }
 }
 
@@ -4101,27 +4068,6 @@ async function getAnnMonthDetail(scopedEmployees: Employee[], monthLabel: string
   return { notAcked, annTotal: annIds.length }
 }
 
-// Per-month drill-down for Task Completion: scoped employees with
-// incomplete tasks assigned that month, and how many.
-async function getTaskMonthDetail(scopedEmployees: Employee[], monthLabel: string): Promise<{ incomplete: {name: string, incompleteCount: number}[] }> {
-  const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
-  // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
-  // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
-  // local-midnight instants. Building these with toISOString().slice(0, 10) lands a day early in UTC+8.
-  const start = ymdLocal(new Date(yr, mIdx, 1))
-  const end = ymdLocal(new Date(yr, mIdx + 1, 1))
-  const startTs = new Date(yr, mIdx, 1).toISOString()
-  const endTs = new Date(yr, mIdx + 1, 1).toISOString()
-  const active = scopedEmployees.filter(e => e.active && e.email)
-  const emails = active.map(e => e.email!.toLowerCase())
-  if (emails.length === 0) return { incomplete: [] }
-  const { data } = await supabase.from('tasks').select('assigned_to, is_done').gte('created_at', startTs).lt('created_at', endTs).in('assigned_to', emails)
-  const counts: Record<string, number> = {}
-  ;(data || []).forEach((t: any) => { if (!t.is_done) counts[(t.assigned_to||'').toLowerCase()] = (counts[(t.assigned_to||'').toLowerCase()] || 0) + 1 })
-  const incomplete = active.map(e => ({ name: e.name, incompleteCount: counts[(e.email||'').toLowerCase()] || 0 })).filter(r => r.incompleteCount > 0)
-  return { incomplete }
-}
-
 // Per-month detail for the Pulse Check drill-down: category sub-averages
 // (so a manager can see e.g. "Work-Life Balance is the weak spot," not
 // just one blended number) plus the actual names of anyone flagged
@@ -4177,7 +4123,7 @@ async function getPerfMonthDetail(monthLabel: string, employeeIdFilter?: Set<str
 
 // -- Ops Dashboard -------------------------------------------------------
 // Fixed 3-month rolling window (current month + the 2 before it) for
-// Admin/Super Admin. Coaching, Announcements, and Tasks are broken out
+// Admin/Super Admin. Coaching and Announcements are broken out
 // into their own honest cards (previously blended into one "Compliance"
 // rate that hid which category was actually driving it); Weekly Pulse
 // Check keeps its own dedicated card rather than also being folded into
@@ -4191,9 +4137,6 @@ type OpsMonthStats = {
   annRate: number | null
   annTotal: number
   annAcked: number
-  taskRate: number | null
-  taskTotal: number
-  taskDone: number
   pulseAvg: number | null
   pulseFlagged: number
   pulseSubmitted: number
@@ -4578,11 +4521,10 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
 
   const [stats, setStats] = useState<OpsMonthStats[] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [expandedCard, setExpandedCard] = useState<'coaching'|'ann'|'task'|'pulse'|'obs'|'perf'|null>(null)
+  const [expandedCard, setExpandedCard] = useState<'coaching'|'ann'|'pulse'|'obs'|'perf'|null>(null)
   const [drillMonth, setDrillMonth] = useState(currentMonth)
   const [coachingDetail, setCoachingDetail] = useState<Awaited<ReturnType<typeof getCoachingMonthStats>> | null>(null)
   const [annDetail, setAnnDetail] = useState<Awaited<ReturnType<typeof getAnnMonthDetail>> | null>(null)
-  const [taskDetail, setTaskDetail] = useState<Awaited<ReturnType<typeof getTaskMonthDetail>> | null>(null)
   const [pulseDetail, setPulseDetail] = useState<Awaited<ReturnType<typeof getPulseMonthDetail>> | null>(null)
   const [obsDetail, setObsDetail] = useState<Awaited<ReturnType<typeof getObsMonthDetail>> | null>(null)
   const [perfDetail, setPerfDetail] = useState<Awaited<ReturnType<typeof getPerfMonthDetail>> | null>(null)
@@ -4595,8 +4537,9 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
   // since this doesn't need to follow someone across devices the way
   // Favorites does -- happy to move it to a real per-account column
   // later if that turns out to matter.
-  const DEFAULT_CARD_ORDER = ['coaching','ann','task','pulse','obs','perf']
+  const DEFAULT_CARD_ORDER = ['coaching','ann','pulse','obs','perf']
   const [cardOrder, setCardOrder] = useState<string[]>(DEFAULT_CARD_ORDER)
+  const migrateOrder = (o: any) => Array.isArray(o) ? o.filter((id: any) => id !== 'task') : o   // 'task' card was retired
   const validOrder = (o: any): o is string[] => Array.isArray(o) && o.length === DEFAULT_CARD_ORDER.length && DEFAULT_CARD_ORDER.every(id => o.includes(id))
   // Order is saved on the person's own account (app_users.ops_card_order,
   // same idea as Favorites) so it follows them across devices, with
@@ -4606,16 +4549,18 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
   useEffect(() => {
     try {
       const local = JSON.parse(localStorage.getItem('ops_dashboard_card_order') || 'null')
-      if (validOrder(local)) setCardOrder(local)
+      const m = migrateOrder(local)
+      if (validOrder(m)) setCardOrder(m)
     } catch {}
     if (!user) return
     const u = user.toLowerCase().replace(/[\\%_]/g, '\\$&')  // escape LIKE wildcards so only this exact account matches
     supabase.from('app_users').select('ops_card_order').or(`email.ilike.${u},username.ilike.${u}`).limit(1).maybeSingle()
       .then(({ data, error }) => {
         if (error || !data) return
-        if (validOrder(data.ops_card_order)) {
-          setCardOrder(data.ops_card_order)
-          localStorage.setItem('ops_dashboard_card_order', JSON.stringify(data.ops_card_order))
+        const m = migrateOrder(data.ops_card_order)
+        if (validOrder(m)) {
+          setCardOrder(m)
+          localStorage.setItem('ops_dashboard_card_order', JSON.stringify(m))
         }
       })
   }, [user])
@@ -4689,7 +4634,6 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
       month: monthLabel,
       coachRate: coaching.rate, coachTotalScoped: coaching.totalScoped, coachCompliantCount: coaching.compliantCount,
       annRate: compliance.annTotal > 0 ? compliance.annAcked / compliance.annTotal : null, annTotal: compliance.annTotal, annAcked: compliance.annAcked,
-      taskRate: compliance.taskTotal > 0 ? compliance.taskDone / compliance.taskTotal : null, taskTotal: compliance.taskTotal, taskDone: compliance.taskDone,
       pulseAvg: pulseAvg !== null ? Math.round(pulseAvg * 100) / 100 : null, pulseFlagged, pulseSubmitted: pulseRows.length,
       obsCount: obsRows.length,
       attendanceAvg: avgOfField('attendance'), accuracyAvg: avgOfField('accuracy'), efficiencyAvg: avgOfField('efficiency'),
@@ -4721,9 +4665,6 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
       } else if (expandedCard === 'ann') {
         const d = await getAnnMonthDetail(scopedEmployees, drillMonth)
         if (!cancelled) setAnnDetail(d)
-      } else if (expandedCard === 'task') {
-        const d = await getTaskMonthDetail(scopedEmployees, drillMonth)
-        if (!cancelled) setTaskDetail(d)
       } else if (expandedCard === 'pulse') {
         const d = await getPulseMonthDetail(drillMonth, filterActive ? scopedEmployeeIds : null)
         if (!cancelled) setPulseDetail(d)
@@ -4739,7 +4680,7 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
     return () => { cancelled = true }
   }, [expandedCard, drillMonth, employees.length])
 
-  function toggleCard(card: 'coaching'|'ann'|'task'|'pulse'|'obs'|'perf') {
+  function toggleCard(card: 'coaching'|'ann'|'pulse'|'obs'|'perf') {
     if (expandedCard === card) { setExpandedCard(null); return }
     setExpandedCard(card)
     setDrillMonth(currentMonth)
@@ -4842,7 +4783,7 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
         <BarChart2 className="w-6 h-6 text-blue-800" />
         <div>
           <h2 className="text-xl font-bold text-blue-900">Ops Dashboard</h2>
-          <p className="text-sm text-gray-500">Rolling 3-month view of Coaching, Announcements, Tasks, Pulse Check, Observations, and Attendance/Accuracy/Efficiency. Click a card to drill in.</p>
+          <p className="text-sm text-gray-500">Rolling 3-month view of Coaching, Announcements, Pulse Check, Observations, and Attendance/Accuracy/Efficiency. Click a card to drill in.</p>
         </div>
       </div>
 
@@ -4920,19 +4861,6 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
               </div>
             )
 
-            if (id === 'task') return (
-              <div key={id} {...dragProps} onClick={() => toggleCard('task')} className={`${wrapperClass} ${expandedCard==='task' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Task Completion</p>
-                  <span className="text-gray-400 text-xs">{expandedCard==='task' ? '▲' : '▼'}</span>
-                </div>
-                <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].taskRate !== null ? `${(stats[2].taskRate*100).toFixed(0)}%` : '—'}</p>
-                {deltaLabel(stats[2].taskRate !== null ? stats[2].taskRate*100 : null, stats[1].taskRate !== null ? stats[1].taskRate*100 : null, true, 'pts')}
-                <div className="mt-2"><TrendMini data={stats} dataKey="taskRate" color="#7c2d12" isPercent domain={[0,100]} /></div>
-                <p className="text-xs text-gray-400 mt-1">{stats[2].taskDone}/{stats[2].taskTotal} tasks completed in {currentMonth}</p>
-              </div>
-            )
-
             if (id === 'pulse') return (
               <div key={id} {...dragProps} onClick={() => toggleCard('pulse')} className={`${wrapperClass} ${expandedCard==='pulse' ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}`}>
                 <div className="flex items-center justify-between">
@@ -4989,7 +4917,7 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
             <h3 className="text-sm font-semibold text-blue-900">
-              {expandedCard==='coaching' ? 'Coaching Compliance Detail' : expandedCard==='ann' ? 'Announcement Acknowledgement Detail' : expandedCard==='task' ? 'Task Completion Detail' : expandedCard==='pulse' ? 'Pulse Check Detail' : expandedCard==='obs' ? 'Observations Detail' : 'Attendance / Accuracy / Efficiency Detail'}
+              {expandedCard==='coaching' ? 'Coaching Compliance Detail' : expandedCard==='ann' ? 'Announcement Acknowledgement Detail' : expandedCard==='pulse' ? 'Pulse Check Detail' : expandedCard==='obs' ? 'Observations Detail' : 'Attendance / Accuracy / Efficiency Detail'}
             </h3>
             <div className="flex gap-1.5">
               {rollingMonths.map(m => (
@@ -5065,17 +4993,6 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
                   {annDetail.notAcked.length === 0 ? <p className="text-sm text-gray-400">{annDetail.annTotal === 0 ? 'No announcements posted this month.' : 'Everyone in scope has acknowledged all of them.'}</p> : (
                     <div className="flex flex-wrap gap-2">
                       {annDetail.notAcked.map(e => <span key={e.name} className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 rounded-full">{e.name} · {e.missingCount} missing</span>)}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {expandedCard === 'task' && taskDetail && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-2">Have Incomplete Tasks ({taskDetail.incomplete.length})</p>
-                  {taskDetail.incomplete.length === 0 ? <p className="text-sm text-gray-400">No incomplete tasks in scope.</p> : (
-                    <div className="flex flex-wrap gap-2">
-                      {taskDetail.incomplete.map(e => <span key={e.name} className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 rounded-full">{e.name} · {e.incompleteCount} incomplete</span>)}
                     </div>
                   )}
                 </div>
@@ -5264,7 +5181,7 @@ function KPIEntry({ employees, records, onSaved, showToast, currentUser, userRol
           <div className="relative"><input type="number" min="0" max="100" step="0.01" value={compliance} onChange={e=>setCompliance(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-7 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" placeholder="e.g. 100"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span></div>
           <p className="text-xs text-gray-400 mt-1">
             {complianceLoading ? 'Checking coaching + announcement acknowledgments...' :
-             complianceAuto && complianceAuto.totalRequired > 0 ? `Auto-calculated: ${(complianceAuto.rate!*100).toFixed(0)}% (${complianceAuto.totalAcked}/${complianceAuto.totalRequired} acknowledged — ${complianceAuto.coachAcked}/${complianceAuto.coachTotal} coaching, ${complianceAuto.annAcked}/${complianceAuto.annTotal} announcements, ${complianceAuto.taskDone}/${complianceAuto.taskTotal} tasks, ${complianceAuto.pulseSubmitted}/${complianceAuto.pulseTotal} weekly pulse check-ins). Edit above to override.` :
+             complianceAuto && complianceAuto.totalRequired > 0 ? `Auto-calculated: ${(complianceAuto.rate!*100).toFixed(0)}% (${complianceAuto.totalAcked}/${complianceAuto.totalRequired} acknowledged — ${complianceAuto.coachAcked}/${complianceAuto.coachTotal} coaching, ${complianceAuto.annAcked}/${complianceAuto.annTotal} announcements, ${complianceAuto.pulseSubmitted}/${complianceAuto.pulseTotal} weekly pulse check-ins). Edit above to override.` :
              'No coaching or announcements requiring acknowledgment found this month — set manually.'}
           </p>
         </div>
@@ -6678,7 +6595,7 @@ const MANAGER_CADENCE_ITEMS: CadenceItem[] = [
   { id: 'md-opsdash', frequency: 'daily', label: 'Review Ops Dashboard for any compliance/pulse anomalies since yesterday', role_scope: 'manager' },
   // Weekly
   { id: 'mw-tlsync', frequency: 'weekly', label: 'Weekly sync/huddle with Team Leads', role_scope: 'manager' },
-  { id: 'mw-tlcompliance', frequency: 'weekly', label: "Review each Team Lead's weekly compliance completion (coaching, announcements, tasks)", role_scope: 'manager' },
+  { id: 'mw-tlcompliance', frequency: 'weekly', label: "Review each Team Lead's weekly compliance completion (coaching, announcements, pulse check)", role_scope: 'manager' },
   { id: 'mw-workload', frequency: 'weekly', label: 'Cross-team workload/staffing balance check', role_scope: 'manager' },
   { id: 'mw-clienthealth', frequency: 'weekly', label: 'Client health check-in -- any client-specific concerns raised this week', role_scope: 'manager' },
   { id: 'mw-kpitrend', frequency: 'weekly', label: 'Weekly KPI trend review across teams', role_scope: 'manager' },
@@ -8157,332 +8074,6 @@ function EscalationMatrixView() {
   )
 }
 
-// -- Tasks: Manager/Team Lead assigns a task to a subordinate -------------
-type AppTask = {
-  id: string
-  title: string
-  description: string | null
-  assigned_to: string
-  assigned_by: string
-  due_date: string | null
-  is_done: boolean
-  priority: 'Low'|'Medium'|'High'
-  status: 'No Status'|'To Do'|'In Progress'|'Complete'
-  created_at: string
-}
-
-const TASK_STATUSES: AppTask['status'][] = ['No Status','To Do','In Progress','Complete']
-const TASK_STATUS_STYLE: Record<AppTask['status'], string> = {
-  'No Status': 'text-gray-400', 'To Do': 'text-gray-500', 'In Progress': 'text-blue-600', 'Complete': 'text-emerald-600'
-}
-const TASK_PRIORITY_STYLE: Record<AppTask['priority'], string> = {
-  Low: 'bg-emerald-100 text-emerald-700', Medium: 'bg-amber-100 text-amber-700', High: 'bg-red-100 text-red-700'
-}
-
-function TasksPanel({ employees, currentUser, userRole, showToast, onTasksChanged }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void, onTasksChanged?: () => void }) {
-  const canAssign = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
-  const canSeeAll = userRole === 'super_admin'
-  const [tasks, setTasks] = useState<AppTask[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [posting, setPosting] = useState(false)
-  const [viewMode, setViewMode] = useState<'list'|'board'>('list')
-  const [filterStatus, setFilterStatus] = useState<'All' | 'To Do' | 'Done'>('All')
-  const [assignerFilter, setAssignerFilter] = useState('All') // Super Admin only: filter by who assigned it
-  const [nameFilter, setNameFilter] = useState('')
-  const [form, setForm] = useState({ title: '', description: '', due_date: '', priority: 'Medium' as AppTask['priority'] })
-  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
-  const [recipientSearch, setRecipientSearch] = useState('')
-  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
-
-  // Build a lookup of email -> name for display, and the list of people
-  // a Manager/Team Lead can actually assign to (anyone with a work email).
-  const assignableEmployees = employees.filter(e => e.active && e.email)
-  const nameByEmail = (email: string) => assignableEmployees.find(e => e.email?.toLowerCase() === email.toLowerCase())?.name || email.split('@')[0]
-  const visibleRecipients = assignableEmployees.filter(e => !recipientSearch.trim() || e.name.toLowerCase().includes(recipientSearch.toLowerCase()))
-
-  async function loadTasks() {
-    setLoading(true)
-    let q = supabase.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false })
-    // Agents, Team Leads, and Admins only see tasks assigned to them, plus
-    // (for Team Lead/Admin) tasks they personally assigned to others so
-    // they can track completion. Only Super Admin sees everyone's tasks.
-    if (!canSeeAll) {
-      // .ilike() not .eq()/.or(...eq...): same case-sensitivity reason
-      // as elsewhere -- assigned_to/assigned_by can be stored with
-      // mixed case.
-      if (userRole === 'Team Lead' || userRole === 'admin') {
-        q = q.or(`assigned_to.ilike.${currentUser.toLowerCase()},assigned_by.ilike.${currentUser}`)
-      } else {
-        q = q.ilike('assigned_to', currentUser.toLowerCase())
-      }
-    }
-    const { data, error } = await q
-    if (!error) setTasks((data || []) as AppTask[])
-    setLoading(false)
-    onTasksChanged?.()
-  }
-
-  useEffect(() => { loadTasks() }, [])
-
-  function toggleRecipient(email: string) {
-    setSelectedEmails(prev => { const next = new Set(prev); next.has(email) ? next.delete(email) : next.add(email); return next })
-  }
-  function selectAllRecipients() {
-    setSelectedEmails(new Set(visibleRecipients.map(e => e.email!.toLowerCase())))
-  }
-  function clearAllRecipients() {
-    setSelectedEmails(new Set())
-  }
-
-  async function createTask() {
-    if (!form.title.trim() || selectedEmails.size === 0) { showToast('Please add a title and select at least one recipient.', 'error'); return }
-    setPosting(true)
-    const recipients = Array.from(selectedEmails)
-    const rows = recipients.map(email => ({
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      assigned_to: email,
-      assigned_by: currentUser,
-      due_date: form.due_date || null,
-      priority: form.priority,
-      status: 'To Do',
-      is_done: false,
-    }))
-    const { error } = await supabase.from('tasks').insert(rows)
-    setPosting(false)
-    if (error) { showToast(error.message, 'error'); return }
-    showToast(`Task assigned to ${recipients.length} ${recipients.length === 1 ? 'person' : 'people'}!`)
-    recipients.forEach(email => {
-      fetch('/api/notify/task-assigned', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignedTo: email, assignedBy: currentUser, title: form.title.trim(), description: form.description.trim(), dueDate: form.due_date || null })
-      }).catch(() => {})
-    })
-    setForm({ title: '', description: '', due_date: '', priority: 'Medium' })
-    setSelectedEmails(new Set()); setRecipientSearch('')
-    setShowForm(false)
-    loadTasks()
-  }
-
-  async function setStatus(task: AppTask, status: AppTask['status']) {
-    const { error } = await supabase.from('tasks').update({ status, is_done: status === 'Complete' }).eq('id', task.id)
-    if (error) { showToast('Failed to update status: ' + error.message, 'error'); return }
-    loadTasks()
-  }
-
-  async function toggleDone(task: AppTask) {
-    const next = !task.is_done
-    const { error } = await supabase.from('tasks').update({ is_done: next, status: next ? 'Complete' : 'To Do' }).eq('id', task.id)
-    if (error) { showToast('Failed to update: ' + error.message, 'error'); return }
-    loadTasks()
-  }
-
-  async function deleteTask(id: string) {
-    if (!confirm('Delete this task?')) return
-    await supabase.from('tasks').delete().eq('id', id)
-    showToast('Task deleted')
-    loadTasks()
-  }
-
-  const assigners = canSeeAll ? Array.from(new Set(tasks.map(t => t.assigned_by))).sort() : []
-  const filtered = tasks.filter(t => {
-    if (filterStatus === 'To Do' && t.is_done) return false
-    if (filterStatus === 'Done' && !t.is_done) return false
-    if (canSeeAll && assignerFilter !== 'All' && t.assigned_by !== assignerFilter) return false
-    if (nameFilter.trim() && !nameByEmail(t.assigned_to).toLowerCase().includes(nameFilter.trim().toLowerCase())) return false
-    return true
-  })
-
-  const isOverdue = (dueDate: string | null) => dueDate ? new Date(dueDate) < new Date(new Date().toDateString()) : false
-
-  const TaskRow = ({ t }: { t: AppTask }) => (
-    <div className={`bg-white border rounded-xl p-4 flex items-start gap-3 ${t.is_done ? 'border-gray-200 opacity-60' : isOverdue(t.due_date) ? 'border-red-300' : 'border-gray-200'}`}>
-      <button onClick={() => toggleDone(t)} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${t.is_done ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-blue-400'}`}>
-        {t.is_done && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className={`font-semibold text-sm ${t.is_done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{t.title}</p>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${TASK_PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
-        </div>
-        {t.description && <p className="text-sm text-gray-500 mt-0.5">{t.description}</p>}
-        <p className="text-xs text-gray-400 mt-1.5">
-          {canSeeAll && <>Assigned to <span className="font-medium text-gray-600">{nameByEmail(t.assigned_to)}</span> · </>}
-          By {t.assigned_by.split('@')[0]}
-          {t.due_date && <> · <span className={isOverdue(t.due_date) && !t.is_done ? 'text-red-500 font-medium' : ''}>{isOverdue(t.due_date) && !t.is_done ? '⚠ Overdue: ' : 'Due '}{new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></>}
-        </p>
-      </div>
-      {(canAssign && (canSeeAll || t.assigned_by === currentUser)) && <button onClick={() => deleteTask(t.id)} className="text-gray-300 hover:text-red-500 text-xs transition flex-shrink-0">×</button>}
-    </div>
-  )
-
-  // Group into month buckets (by created_at) so history can be collapsed
-  // month-over-month. Current month is expanded by default.
-  const currentMonthKey = new Date().toISOString().slice(0, 7)
-  const monthGroups = new Map<string, AppTask[]>()
-  filtered.forEach(t => {
-    const key = t.created_at.slice(0, 7)
-    if (!monthGroups.has(key)) monthGroups.set(key, [])
-    monthGroups.get(key)!.push(t)
-  })
-  const sortedMonthKeys = Array.from(monthGroups.keys()).sort((a, b) => b.localeCompare(a))
-  const monthLabel = (key: string) => new Date(key + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  function toggleMonth(key: string) {
-    setExpandedMonths(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next })
-  }
-  const isMonthExpanded = (key: string) => key === currentMonthKey || expandedMonths.has(key)
-
-  const BoardCard = ({ t }: { t: AppTask }) => (
-    <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between gap-2">
-        <p className={`font-semibold text-sm text-gray-900 ${t.status === 'Complete' ? 'line-through text-gray-400' : ''}`}>{t.title}</p>
-        {(canAssign && (canSeeAll || t.assigned_by === currentUser)) && <button onClick={() => deleteTask(t.id)} className="text-gray-300 hover:text-red-500 text-xs flex-shrink-0">×</button>}
-      </div>
-      <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${TASK_PRIORITY_STYLE[t.priority]}`}>{t.priority}</span>
-      {t.due_date && <p className={`text-xs ${isOverdue(t.due_date) && t.status !== 'Complete' ? 'text-red-500 font-medium' : 'text-gray-500'}`}>{new Date(t.due_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>}
-      {canSeeAll && <p className="text-xs text-gray-400">{nameByEmail(t.assigned_to)}</p>}
-      <select value={t.status} onChange={e => setStatus(t, e.target.value as AppTask['status'])} className="w-full border border-gray-200 rounded px-1.5 py-1 text-[11px] text-gray-700">
-        {TASK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-    </div>
-  )
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-blue-900">Tasks</h2>
-          <p className="text-sm text-gray-500">{canSeeAll ? `${tasks.length} task${tasks.length !== 1 ? 's' : ''} across the team` : `${tasks.length} task${tasks.length !== 1 ? 's' : ''} involving you`}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs">
-            <button onClick={() => setViewMode('list')} className={`px-3 py-2 font-medium transition ${viewMode === 'list' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>☰ List</button>
-            <button onClick={() => setViewMode('board')} className={`px-3 py-2 font-medium transition ${viewMode === 'board' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>▤ By Status</button>
-          </div>
-          {canAssign && (
-            <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ Assign Task'}</button>
-          )}
-        </div>
-      </div>
-
-      {showForm && canAssign && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-          <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Task title..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Details (optional)..." rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-medium text-gray-600">Recipients ({selectedEmails.size} selected)</label>
-              <div className="flex gap-2">
-                <button type="button" onClick={selectAllRecipients} className="text-xs text-blue-700 hover:underline">Select All</button>
-                <button type="button" onClick={clearAllRecipients} className="text-xs text-gray-400 hover:underline">Clear</button>
-              </div>
-            </div>
-            <input value={recipientSearch} onChange={e => setRecipientSearch(e.target.value)} placeholder="Search people..." className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 mb-2 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white divide-y divide-gray-50">
-              {visibleRecipients.map(e => {
-                const email = e.email!.toLowerCase()
-                const checked = selectedEmails.has(email)
-                return (
-                  <label key={e.id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50">
-                    <input type="checkbox" checked={checked} onChange={() => toggleRecipient(email)} className="w-4 h-4 rounded border-gray-300 text-blue-600" />
-                    <span className="text-gray-800">{e.name}</span>
-                  </label>
-                )
-              })}
-              {visibleRecipients.length === 0 && <p className="text-xs text-gray-400 px-3 py-2">No matches.</p>}
-            </div>
-            {selectedEmails.size > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {Array.from(selectedEmails).map(email => (
-                  <span key={email} className="flex items-center gap-1 bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded-full">
-                    {nameByEmail(email)}
-                    <button onClick={() => toggleRecipient(email)} className="hover:text-blue-900">×</button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <input type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
-            <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as AppTask['priority'] }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
-              {(['Low','Medium','High'] as const).map(p => <option key={p} value={p}>{p} priority</option>)}
-            </select>
-          </div>
-          <div className="flex justify-end">
-            <button onClick={createTask} disabled={posting} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Assigning...' : `Assign to ${selectedEmails.size || ''} ${selectedEmails.size === 1 ? 'Person' : 'People'}`}</button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 flex-wrap">
-        {viewMode === 'list' && (['All', 'To Do', 'Done'] as const).map(s => (
-          <button key={s} onClick={() => setFilterStatus(s)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterStatus === s ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{s}</button>
-        ))}
-        {userRole !== 'agent' && (
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input value={nameFilter} onChange={e => setNameFilter(e.target.value)} placeholder="Filter by name..." className="text-xs border border-gray-200 rounded-full pl-7 pr-3 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-900 w-40" />
-          </div>
-        )}
-        {canSeeAll && assigners.length > 0 && (
-          <select value={assignerFilter} onChange={e => setAssignerFilter(e.target.value)} className="text-xs border border-gray-200 rounded-full px-3 py-1.5 text-gray-600 ml-auto">
-            <option value="All">All assigners (TL/Admin)</option>
-            {assigners.map(a => <option key={a} value={a}>{a.split('@')[0]}</option>)}
-          </select>
-        )}
-      </div>
-
-      {loading ? (
-        <div className="text-center py-8 text-gray-400 text-sm">Loading tasks...</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 text-sm">No tasks found.</div>
-      ) : viewMode === 'board' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {TASK_STATUSES.map(status => {
-            const colTasks = filtered.filter(t => (t.status || 'To Do') === status)
-            return (
-              <div key={status} className="space-y-2">
-                <div className="flex items-center gap-2 px-1">
-                  <span className={`text-sm font-semibold ${TASK_STATUS_STYLE[status]}`}>{status}</span>
-                  <span className="text-xs text-gray-400">{colTasks.length}</span>
-                </div>
-                <div className="space-y-2 min-h-[60px]">
-                  {colTasks.map(t => <BoardCard key={t.id} t={t} />)}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {sortedMonthKeys.map(key => {
-            const monthTasks = monthGroups.get(key)!
-            const expanded = isMonthExpanded(key)
-            return (
-              <div key={key} className="space-y-2">
-                <button onClick={() => toggleMonth(key)} className="w-full flex items-center justify-between px-1 py-1.5 text-left group">
-                  <span className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                    {monthLabel(key)} {key === currentMonthKey && <span className="text-xs font-normal text-blue-600">(current)</span>}
-                  </span>
-                  <span className="text-xs text-gray-400">{monthTasks.length} task{monthTasks.length !== 1 ? 's' : ''}</span>
-                </button>
-                {expanded && (
-                  <div className="space-y-2">
-                    {monthTasks.map(t => <TaskRow key={t.id} t={t} />)}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
 function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
   const canEdit = (t: Ticket) => canManage || t.created_by === currentUser
@@ -8499,7 +8090,10 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   const [attachments, setAttachments] = useState<TicketAttachment[]>([])
   const [filterStatus, setFilterStatus] = useState<string>('All')
   const [filterCat, setFilterCat] = useState<string>('All')
-  const [scope, setScope] = useState<'mine'|'all'>(canManage ? 'all' : 'mine')
+  // Agents see only what the rules allow, so the toggle is for roles that can see more than their own.
+  const canToggleScope = canManage || userRole === 'Team Lead'
+  const [scope, setScope] = useState<'mine'|'all'>('all')
+  const effectiveScope = canToggleScope ? scope : 'all'
   const [expandedId, setExpandedId] = useState<string|null>(null)
   const [editingId, setEditingId] = useState<string|null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -8522,7 +8116,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     loadTickets()
     loadEmployees()
     loadCategoryOwners()
-  }, [scope])
+  }, [scope, currentUser, userRole])
 
   async function loadCategoryOwners() {
     const { data } = await supabase.from('ticket_category_owners').select('*')
@@ -8546,21 +8140,33 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     setAllEmployees((data || []).filter((e:any) => e.email))
   }
 
+  // Visibility rules live in lib/ticketScope.ts (tested). Anyone can be a POC for a
+  // category, so POCs always see their category's tickets whatever their role.
   async function loadTickets() {
     setLoading(true)
-    let query = supabase.from('tickets').select('*').order('created_at', { ascending: false })
-    if (userRole === 'agent') {
-      // Agents see only their own tickets
-      query = query.eq('created_by', currentUser)
-    } else if (userRole === 'Team Lead') {
-      // Team Leads see their own + tickets where they are owner
-      query = query.or(`created_by.eq.${currentUser},owner.eq.${currentUser}`)
-    } else if (scope === 'mine') {
-      query = query.eq('created_by', currentUser)
+    const none = Promise.resolve({ data: [] as any[], error: null })
+    const isTL = userRole === 'Team Lead', isMgr = userRole === 'admin'
+    const [tRes, ownRes, empRes, teamRes, memRes, userRes] = await Promise.all([
+      supabase.from('tickets').select('*').order('created_at', { ascending: false }),
+      supabase.from('ticket_category_owners').select('category, owner_emails'),
+      isTL ? supabase.from('employees').select('id, email') : none,
+      isTL ? supabase.from('teams').select('id, team_lead_id') : none,
+      isTL ? supabase.from('team_members').select('team_id, employee_id') : none,
+      isMgr ? supabase.from('app_users').select('email, username, role') : none,
+    ])
+    if (tRes.error) { setLoading(false); return }
+    const owners: Record<string, string[]> = {}
+    ;(ownRes.data || []).forEach((r: any) => { owners[r.category] = r.owner_emails || [] })
+    const roleByLocal: Record<string, string> = {}
+    ;(userRes.data || []).forEach((u: any) => { if (u.email) roleByLocal[localPart(u.email)] = u.role; if (u.username) roleByLocal[localPart(u.username)] = u.role })
+    const ctx = {
+      role: userRole, email: currentUser, roleByLocal,
+      pocCategories: pocCategoriesFor(owners, currentUser),
+      teamEmails: isTL ? teamEmailsFor(currentUser, (empRes.data || []) as any[], (teamRes.data || []) as any[], (memRes.data || []) as any[]) : [],
     }
-    // admin and super_admin with scope='all' see everything
-    const { data, error } = await query
-    if (!error) setTickets((data || []) as Ticket[])
+    let visible = ((tRes.data || []) as Ticket[]).filter(t => canSeeTicket(t, ctx))
+    if (effectiveScope === 'mine') visible = visible.filter(t => isMine(t, currentUser))
+    setTickets(visible)
     setLoading(false)
   }
 
@@ -8724,10 +8330,10 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {canManage && (
+          {canToggleScope && (
             <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
               <button onClick={() => setScope('mine')} className={`px-3 py-1.5 font-medium transition ${scope==='mine'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>My Tickets</button>
-              <button onClick={() => setScope('all')} className={`px-3 py-1.5 font-medium transition ${scope==='all'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>All Tickets</button>
+              <button onClick={() => setScope('all')} className={`px-3 py-1.5 font-medium transition ${scope==='all'?'bg-blue-900 text-white':'bg-white text-gray-600 hover:bg-gray-50'}`}>{userRole === 'Team Lead' ? 'My Team & Assigned' : 'All Tickets'}</button>
             </div>
           )}
           {userRole === 'super_admin' && (
@@ -11049,7 +10655,6 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
 type ComplianceDetail = ComplianceBreakdown & {
   missingCoaching: { title: string, date: string }[]
   missingAnnouncements: { title: string }[]
-  missingTasks: { title: string }[]
   missingPulseWeeks: { title: string }[]
 }
 
@@ -11057,7 +10662,7 @@ type ComplianceDetail = ComplianceBreakdown & {
 // needing acknowledgment so a Team Lead can see exactly who's missing what,
 // not just a percentage.
 async function getComplianceDetail(employeeEmail: string | null | undefined, monthLabel: string): Promise<ComplianceDetail> {
-  const empty: ComplianceDetail = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, taskTotal: 0, taskDone: 0, pulseTotal: 0, pulseSubmitted: 0, totalRequired: 0, totalAcked: 0, missingCoaching: [], missingAnnouncements: [], missingTasks: [], missingPulseWeeks: [] }
+  const empty: ComplianceDetail = { rate: null, coachTotal: 0, coachAcked: 0, annTotal: 0, annAcked: 0, pulseTotal: 0, pulseSubmitted: 0, totalRequired: 0, totalAcked: 0, missingCoaching: [], missingAnnouncements: [], missingPulseWeeks: [] }
   if (!employeeEmail) return empty
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   if (mIdx < 0 || !yr) return empty
@@ -11091,11 +10696,6 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
     ackedIds = (acks || []).map((a:any) => a.announcement_id)
   }
 
-  const { data: taskData } = await supabase.from('tasks')
-    .select('title, is_done')
-    .ilike('assigned_to', employeeEmail)
-    .gte('created_at', startTs).lt('created_at', endTs)
-
   const { data: pulseData } = await supabase.from('pulse_surveys')
     .select('week_start')
     .ilike('employee_email', employeeEmail)
@@ -11103,8 +10703,6 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
 
   const coachTotal = (coaching || []).length
   const coachAcked = (coaching || []).filter((c:any) => c.agent_acknowledged).length
-  const taskTotal = (taskData || []).length
-  const taskDone = (taskData || []).filter((t:any) => t.is_done).length
 
   // Build the list of Mondays expected this month, then diff against what
   // was actually submitted to find which specific weeks are missing.
@@ -11123,15 +10721,14 @@ async function getComplianceDetail(employeeEmail: string | null | undefined, mon
   const pulseTotal = expectedWeeks.length
   const pulseSubmitted = expectedWeeks.filter(w => submittedWeeks.has(w)).length
 
-  const totalRequired = coachTotal + annIds.length + taskTotal + pulseTotal
-  const totalAcked = coachAcked + (annIds.length - (annIds.length - ackedIds.length)) + taskDone + pulseSubmitted
+  const totalRequired = coachTotal + annIds.length + pulseTotal
+  const totalAcked = coachAcked + (annIds.length - (annIds.length - ackedIds.length)) + pulseSubmitted
 
   return {
     rate: totalRequired > 0 ? totalAcked / totalRequired : null,
-    coachTotal, coachAcked, annTotal: annIds.length, annAcked: ackedIds.length, taskTotal, taskDone, pulseTotal, pulseSubmitted, totalRequired, totalAcked,
+    coachTotal, coachAcked, annTotal: annIds.length, annAcked: ackedIds.length, pulseTotal, pulseSubmitted, totalRequired, totalAcked,
     missingCoaching: (coaching || []).filter((c:any) => !c.agent_acknowledged).map((c:any) => ({ title: c.type || 'Coaching session', date: c.date })),
     missingAnnouncements: (anns || []).filter((a:any) => !ackedIds.includes(a.id)).map((a:any) => ({ title: a.title })),
-    missingTasks: (taskData || []).filter((t:any) => !t.is_done).map((t:any) => ({ title: t.title })),
     missingPulseWeeks: expectedWeeks.filter(w => !submittedWeeks.has(w)).map(w => ({ title: `Week of ${new Date(w).toLocaleDateString('en-PH',{month:'short',day:'numeric'})}` })),
   }
 }
@@ -11249,7 +10846,7 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2"><CheckCircle className="w-4 h-4 text-emerald-500"/>Team Acknowledgment Compliance</h3>
-          <p className="text-xs text-gray-400 mt-0.5">Coaching sessions, announcements, and tasks -- who has and hasn't acknowledged/completed what.</p>
+          <p className="text-xs text-gray-400 mt-0.5">Coaching sessions, announcements, and weekly pulse check-ins -- who has and hasn't acknowledged/submitted what.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <select value={`${selMonth} ${selYear}`} onChange={e => { const [m,y] = e.target.value.split(' '); setSelMonth(m); setSelYear(y) }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900">
@@ -11310,7 +10907,7 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
             const d = details[e.id]
             const isExpanded = expanded.has(e.id)
             const pct = d?.rate !== null && d?.rate !== undefined ? Math.round(d.rate * 100) : null
-            const missingCount = d ? d.missingCoaching.length + d.missingAnnouncements.length + d.missingTasks.length + d.missingPulseWeeks.length : 0
+            const missingCount = d ? d.missingCoaching.length + d.missingAnnouncements.length + d.missingPulseWeeks.length : 0
             return (
               <div key={e.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <button onClick={() => toggleExpand(e.id)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition text-left">
@@ -11331,15 +10928,14 @@ function TeamCompliancePanel({ employees, userRole, currentUser }: { employees: 
                     <div className="grid grid-cols-3 gap-3 text-center">
                       <div><p className="text-xs text-gray-400">Coaching</p><p className="text-sm font-semibold text-gray-800">{d.coachAcked}/{d.coachTotal}</p></div>
                       <div><p className="text-xs text-gray-400">Announcements</p><p className="text-sm font-semibold text-gray-800">{d.annAcked}/{d.annTotal}</p></div>
-                      <div><p className="text-xs text-gray-400">Tasks</p><p className="text-sm font-semibold text-gray-800">{d.taskDone}/{d.taskTotal}</p></div>
+                      <div><p className="text-xs text-gray-400">Weekly Pulse</p><p className="text-sm font-semibold text-gray-800">{d.pulseSubmitted}/{d.pulseTotal}</p></div>
                     </div>
                     {missingCount === 0 ? (
-                      <p className="text-xs text-emerald-600 font-medium">✓ Fully acknowledged/completed this month.</p>
+                      <p className="text-xs text-emerald-600 font-medium">✓ Fully acknowledged/submitted this month.</p>
                     ) : (
                       <div className="space-y-1.5">
                         {d.missingCoaching.map((c,i) => <p key={`c${i}`} className="text-xs text-gray-600">📋 Not acknowledged: <span className="font-medium">{c.title}</span> ({new Date(c.date).toLocaleDateString('en-US',{month:'short',day:'numeric'})})</p>)}
                         {d.missingAnnouncements.map((a,i) => <p key={`a${i}`} className="text-xs text-gray-600">📢 Not acknowledged: <span className="font-medium">{a.title}</span></p>)}
-                        {d.missingTasks.map((t,i) => <p key={`t${i}`} className="text-xs text-gray-600">✅ Not completed: <span className="font-medium">{t.title}</span></p>)}
                         {d.missingPulseWeeks.map((p,i) => <p key={`p${i}`} className="text-xs text-gray-600">💙 Not submitted: <span className="font-medium">Weekly Pulse Check -- {p.title}</span></p>)}
                       </div>
                     )}

@@ -211,18 +211,6 @@ Update this file whenever a new table or significant column change is deployed.
 | uploaded_by | text | YES | NULL |
 | created_at | timestamptz | YES | now() |
 
-### `tasks`
-| Column | Type | Nullable | Default |
-|---|---|---|---|
-| id | uuid | NO | gen_random_uuid() |
-| title | text | NO | NULL |
-| description | text | YES | NULL |
-| assigned_to | text | NO | NULL |
-| assigned_by | text | NO | NULL |
-| due_date | date | YES | NULL |
-| is_done | boolean | NO | false |
-| created_at | timestamptz | NO | now() |
-
 ### `teams`
 | Column | Type | Nullable | Default |
 |---|---|---|---|
@@ -301,7 +289,6 @@ Update this file whenever a new table or significant column change is deployed.
 | dev_matrix | Allow insert | INSERT |
 | dev_matrix | Allow read | SELECT |
 | dev_matrix | Allow update | UPDATE |
-| tasks | Allow read/insert/update/delete | ALL |
 | ticket_comments | Allow read | SELECT |
 | ticket_comments | Allow insert | INSERT |
 | tickets | Full access | ALL |
@@ -344,7 +331,7 @@ ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Manager', team_lead: 'Team L
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (server-side only) |
 | `GMAIL_USER` | Gmail account for outbound notifications |
 | `GMAIL_PASS` | Gmail App Password (not account password) |
-| `CRON_SECRET` | Protects the `/api/cron/task-reminders` endpoint |
+| `CRON_SECRET` | Protects the `/api/cron/*` endpoints |
 | `NEXT_PUBLIC_APP_URL` | Public app URL (for OAuth callbacks) |
 
 ---
