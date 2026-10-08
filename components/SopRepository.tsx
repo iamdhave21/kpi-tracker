@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Employee } from '@/lib/supabase'
 import { staffApi } from '@/lib/staffFetch'
-import { SOP_DEPARTMENTS, SOP_TYPES, Card, reviewState, statusLabel, methodLabel } from '@/lib/sop'
+import { SOP_DEPARTMENTS, SOP_TYPES, Card, reviewState, statusLabel, methodLabel, buildDocNumber, cleanCampaign, campaignOf, DOC_NUMBER_FORMAT } from '@/lib/sop'
 import { ymdLocal } from '@/lib/toolsRepo'
 
 const API = '/api/sop/staff'
@@ -57,7 +57,7 @@ export default function SopRepository({ userRole, employees, isPreviewing, showT
   userRole: string, employees: Employee[], isPreviewing: boolean, showToast: (m: string, t?: 'success' | 'error') => void,
 }) {
   const [docs, setDocs] = useState<DocRow[]>([])
-  const [me, setMe] = useState<{ email: string, role: string, can_author: boolean } | null>(null)
+  const [me, setMe] = useState<{ email: string, role: string, can_author: boolean, clients: string[], all_clients: string[] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
@@ -74,7 +74,11 @@ export default function SopRepository({ userRole, employees, isPreviewing, showT
   }, [])
   useEffect(() => { load() }, [load])
 
-  const clients = useMemo(() => Array.from(new Set(employees.flatMap(clientsOf))).sort(), [employees])
+  // Clients a person may use on a document: Admins any client (or none), Team Leads only the
+  // clients they support. The server enforces the same rule; this just stops the wrong choice appearing.
+  const isAdminUser = me?.role === 'admin' || me?.role === 'super_admin'
+  const clients = isAdminUser ? (me?.all_clients || []) : (me?.clients || [])
+  const campaigns = useMemo(() => Array.from(new Set(docs.map(d => campaignOf(d.code)).filter(Boolean) as string[])).sort(), [docs])
   const today = new Date()
   const filtered = useMemo(() => docs.filter(d => {
     if (fType && d.doc_type !== fType) return false
@@ -187,39 +191,95 @@ export default function SopRepository({ userRole, employees, isPreviewing, showT
         </div>
       )}
 
-      {showQuick && <QuickAddModal clients={clients} showToast={showToast} onClose={() => setShowQuick(false)} onDone={id => { setShowQuick(false); setOpenId(id) }} />}
-      {showNew && <NewDocModal clients={clients} employees={employees} onClose={() => setShowNew(false)} showToast={showToast}
+      {showQuick && <QuickAddModal clients={clients} companyWide={isAdminUser} campaigns={campaigns} showToast={showToast} onClose={() => setShowQuick(false)} onDone={id => { setShowQuick(false); setOpenId(id) }} />}
+      {showNew && <NewDocModal clients={clients} companyWide={isAdminUser} campaigns={campaigns} employees={employees} onClose={() => setShowNew(false)} showToast={showToast}
         onCreated={id => { setShowNew(false); setOpenId(id) }} />}
     </div>
   )
 }
 
 // ---------------------------------------------------------------- create
-function NewDocModal({ clients, employees, onClose, onCreated, showToast }: {
-  clients: string[], employees: Employee[], onClose: () => void, onCreated: (id: string) => void, showToast: (m: string, t?: 'success' | 'error') => void,
+// ---------------------------------------------------------------- document number + client
+// The standard number is CAMPAIGN-TYPE-MMDDYY, for example AR-SOP-100826, built from three
+// plain fields so nobody has to remember the format.
+function DocNumberFields({ campaign, setCampaign, type, setType, numberDate, setNumberDate, suggestions }: {
+  campaign: string, setCampaign: (v: string) => void, type: string, setType: (v: string) => void,
+  numberDate: string, setNumberDate: (v: string) => void, suggestions: string[],
 }) {
-  const [f, setF] = useState({ code: '', title: '', doc_type: 'SOP', department: 'Operations', client: '', owner_email: '' })
+  const code = buildDocNumber(campaign, type, numberDate)
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        <label className="text-xs text-gray-600">Campaign
+          <input value={campaign} onChange={e => setCampaign(cleanCampaign(e.target.value))} list="sop-campaigns" placeholder="AR" className={inputCls} />
+          <datalist id="sop-campaigns">{suggestions.map(c => <option key={c} value={c} />)}</datalist>
+        </label>
+        <label className="text-xs text-gray-600">Type
+          <select value={type} onChange={e => setType(e.target.value)} className={inputCls}>
+            <option value="SOP">SOP: the goal</option><option value="LWI">LWI: the steps</option>
+          </select>
+        </label>
+        <label className="text-xs text-gray-600">Date for the number
+          <input type="date" value={numberDate} onChange={e => setNumberDate(e.target.value)} className={inputCls} />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-gray-500">Document number</span>
+        <span className="font-mono text-sm px-2 py-1 rounded bg-gray-100 text-gray-900">{code || DOC_NUMBER_FORMAT}</span>
+        <span className="text-xs text-gray-400">campaign, type, then month-day-year</span>
+      </div>
+      <div className="text-xs bg-blue-50 border border-blue-100 text-blue-900 rounded-lg px-3 py-2">
+        <b>SOP</b> is the goal: what must be achieved, and the rules. <b>LWI</b> is the how: the step-by-step instructions to do it.
+      </div>
+    </div>
+  )
+}
+
+// Only offers clients this person may use. Team Leads must pick one of theirs; Admins may
+// also leave it company-wide. A client document is seen and acknowledged only by the people
+// who support that client; a company-wide one by everyone.
+function ClientSelect({ value, onChange, allowed, companyWide }: { value: string, onChange: (v: string) => void, allowed: string[], companyWide: boolean }) {
+  const options = Array.from(new Set([...allowed, ...(value ? [value] : [])]))
+  return (
+    <div>
+      <select value={value} onChange={e => onChange(e.target.value)} className={inputCls}>
+        {companyWide ? <option value="">None: company-wide (everyone)</option> : <option value="" disabled>Choose a client</option>}
+        {options.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <p className="text-xs text-gray-400 mt-1">
+        {value ? `Only people who support ${value} can see and acknowledge it.` : companyWide ? 'Everyone sees and acknowledges it.' : allowed.length === 0 ? 'You are not assigned to a client yet. Ask an Admin to set it up.' : 'Pick the client this document is for.'}
+      </p>
+    </div>
+  )
+}
+
+function NewDocModal({ clients, companyWide, campaigns, employees, onClose, onCreated, showToast }: {
+  clients: string[], companyWide: boolean, campaigns: string[], employees: Employee[], onClose: () => void, onCreated: (id: string) => void, showToast: (m: string, t?: 'success' | 'error') => void,
+}) {
+  const [f, setF] = useState({ title: '', doc_type: 'SOP', department: 'Operations', client: !companyWide && clients.length === 1 ? clients[0] : '', owner_email: '' })
+  const [campaign, setCampaign] = useState('')
+  const [numberDate, setNumberDate] = useState(ymdLocal(new Date()))
   const [saving, setSaving] = useState(false)
   const people = employees.filter(e => e.active && e.email).sort((a, b) => a.name.localeCompare(b.name))
   async function save() {
+    const code = buildDocNumber(campaign, f.doc_type, numberDate)
+    if (!code) { showToast('Enter the campaign (letters or numbers, for example AR) and a valid date.', 'error'); return }
     setSaving(true)
-    const r = await call({ action: 'create', ...f })
+    const r = await call({ action: 'create', ...f, code })
     setSaving(false)
     if (!r.ok) { showToast(r.data.error || 'Could not create', 'error'); return }
+    if (r.data.code && r.data.code !== code) showToast(`That number was taken, so it was saved as ${r.data.code}.`, 'success')
     onCreated(r.data.id)
   }
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg p-5 space-y-3" onClick={e => e.stopPropagation()}>
-        <h2 className="text-lg font-bold text-gray-900">New SOP / LWI</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-xs text-gray-600">Code<input value={f.code} onChange={e => setF({ ...f, code: e.target.value })} placeholder="OPS-SOP-001" className={inputCls} /></label>
-          <label className="text-xs text-gray-600">Type<select value={f.doc_type} onChange={e => setF({ ...f, doc_type: e.target.value })} className={inputCls}>{SOP_TYPES.map(t => <option key={t}>{t}</option>)}</select></label>
-        </div>
-        <label className="text-xs text-gray-600 block">Title<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} className={inputCls} /></label>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg p-5 space-y-3 my-6" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-gray-900">New draft (needs approval)</h2>
+        <DocNumberFields campaign={campaign} setCampaign={setCampaign} type={f.doc_type} setType={v => setF({ ...f, doc_type: v })} numberDate={numberDate} setNumberDate={setNumberDate} suggestions={campaigns} />
+        <label className="text-xs text-gray-600 block">Process name<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="AR Refunds - Paypal" className={inputCls} /></label>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-xs text-gray-600">Department<select value={f.department} onChange={e => setF({ ...f, department: e.target.value })} className={inputCls}>{SOP_DEPARTMENTS.map(t => <option key={t}>{t}</option>)}</select></label>
-          <label className="text-xs text-gray-600">Client (optional)<select value={f.client} onChange={e => setF({ ...f, client: e.target.value })} className={inputCls}><option value="">None / all clients</option>{clients.map(c => <option key={c}>{c}</option>)}</select></label>
+          <div className="text-xs text-gray-600">Client<ClientSelect value={f.client} onChange={v => setF({ ...f, client: v })} allowed={clients} companyWide={companyWide} /></div>
         </div>
         <label className="text-xs text-gray-600 block">Owner (defaults to you)
           <select value={f.owner_email} onChange={e => setF({ ...f, owner_email: e.target.value })} className={inputCls}><option value="">Me</option>{people.map(p => <option key={p.id} value={p.email!}>{p.name}</option>)}</select>
@@ -314,8 +374,10 @@ function FilePicker({ label, files, setFiles, hint }: { label: string, files: Fi
 // ---------------------------------------------------------------- quick add
 // For a document that was already approved elsewhere (for example by the client
 // in a chat). It goes live straight away, marked with who approved it and when.
-function QuickAddModal({ clients, onClose, onDone, showToast }: { clients: string[], onClose: () => void, onDone: (id: string) => void, showToast: Toast }) {
-  const [f, setF] = useState({ code: '', title: '', doc_type: 'SOP', department: 'Operations', client: '', description: '', link: '', effectivity_date: ymdLocal(new Date()), next_review_date: '' })
+function QuickAddModal({ clients, companyWide, campaigns, onClose, onDone, showToast }: { clients: string[], companyWide: boolean, campaigns: string[], onClose: () => void, onDone: (id: string) => void, showToast: Toast }) {
+  const [campaign, setCampaign] = useState('')
+  const [numberDate, setNumberDate] = useState(ymdLocal(new Date()))
+  const [f, setF] = useState({ title: '', doc_type: 'SOP', department: 'Operations', client: !companyWide && clients.length === 1 ? clients[0] : '', description: '', link: '', effectivity_date: ymdLocal(new Date()), next_review_date: '' })
   const [proof, setProof] = useState<ProofForm>(emptyProof())
   const [docFiles, setDocFiles] = useState<File[]>([])
   const [proofFiles, setProofFiles] = useState<File[]>([])
@@ -326,7 +388,9 @@ function QuickAddModal({ clients, onClose, onDone, showToast }: { clients: strin
     if (problem) { showToast(problem, 'error'); return }
     if (!f.description.trim() && !f.link.trim() && docFiles.length === 0) { showToast('Add the document itself: a file, a link, or a short description.', 'error'); return }
     setBusy('Saving…')
-    const r = await call({ action: 'quick_add', ...f, ...proof })
+    const code = buildDocNumber(campaign, f.doc_type, numberDate)
+    if (!code) { setBusy(''); showToast('Enter the campaign (letters or numbers, for example AR) and a valid date.', 'error'); return }
+    const r = await call({ action: 'quick_add', ...f, ...proof, code })
     if (!r.ok) { setBusy(''); showToast(r.data.error || 'Could not add the document', 'error'); return }
     const { id, version_id, file_card_id, proof_id } = r.data
     if (docFiles.length) {
@@ -354,14 +418,11 @@ function QuickAddModal({ clients, onClose, onDone, showToast }: { clients: strin
           <h2 className="text-lg font-bold text-gray-900">Add document</h2>
           <p className="text-xs text-gray-500">For a document that is already approved. It goes live right away and everyone is asked to acknowledge it. “Added by” is you.</p>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <label className="text-xs text-gray-600 col-span-2">Document number<input value={f.code} onChange={e => setF({ ...f, code: e.target.value })} placeholder="OPS-SOP-001" className={inputCls} /></label>
-          <label className="text-xs text-gray-600">Type<select value={f.doc_type} onChange={e => setF({ ...f, doc_type: e.target.value })} className={inputCls}>{SOP_TYPES.map(t => <option key={t}>{t}</option>)}</select></label>
-        </div>
-        <label className="text-xs text-gray-600 block">Title<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} className={inputCls} /></label>
+        <DocNumberFields campaign={campaign} setCampaign={setCampaign} type={f.doc_type} setType={v => setF({ ...f, doc_type: v })} numberDate={numberDate} setNumberDate={setNumberDate} suggestions={campaigns} />
+        <label className="text-xs text-gray-600 block">Process name<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="AR Refunds - Paypal" className={inputCls} /></label>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-xs text-gray-600">Department<select value={f.department} onChange={e => setF({ ...f, department: e.target.value })} className={inputCls}>{SOP_DEPARTMENTS.map(t => <option key={t}>{t}</option>)}</select></label>
-          <label className="text-xs text-gray-600">Client (optional)<select value={f.client} onChange={e => setF({ ...f, client: e.target.value })} className={inputCls}><option value="">None / all clients</option>{clients.map(c => <option key={c}>{c}</option>)}</select></label>
+          <div className="text-xs text-gray-600">Client<ClientSelect value={f.client} onChange={v => setF({ ...f, client: v })} allowed={clients} companyWide={companyWide} /></div>
         </div>
 
         <div className="border border-gray-200 rounded-xl p-3 space-y-2">
@@ -782,7 +843,7 @@ function Editor({ mode, doc, version, change, me, guard, showToast, clients, emp
   const myLocal = (me?.email || '').toLowerCase().split('@')[0]
   const externalProof = (version.proofs || [])[0]
 
-  useEffect(() => { if (!minor) call({ action: 'people' }).then(r => { if (r.ok) setPeople(r.data) }) }, [minor])
+  useEffect(() => { if (!minor) call({ action: 'people', client: doc.client || '' }).then(r => { if (r.ok) setPeople(r.data) }) }, [minor, doc.client])
 
   const upd = (i: number, patch: Partial<Card>) => setCards(cs => cs.map((c, j) => j === i ? { ...c, ...patch } : c))
   const move = (i: number, dir: -1 | 1) => setCards(cs => { const j = i + dir; if (j < 0 || j >= cs.length) return cs; const n = cs.slice(); [n[i], n[j]] = [n[j], n[i]]; return n })
@@ -868,11 +929,11 @@ function Editor({ mode, doc, version, change, me, guard, showToast, clients, emp
           {externalProof && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-900">Already approved by <b>{externalProof.approved_by_name}</b>{externalProof.approved_by_role ? ` (${externalProof.approved_by_role})` : ''}, {fmt(externalProof.approved_on)}. You can publish directly; no internal approval round is needed.</div>}
           <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
             <h2 className="font-semibold text-gray-900">Details</h2>
-            <label className="text-xs text-gray-600 block">Title<input value={meta.title} onChange={e => setMeta({ ...meta, title: e.target.value })} className={inputCls} /></label>
+            <label className="text-xs text-gray-600 block">Process name<input value={meta.title} onChange={e => setMeta({ ...meta, title: e.target.value })} placeholder="AR Refunds - Paypal" className={inputCls} /></label>
             <div className="grid grid-cols-3 gap-3">
               <label className="text-xs text-gray-600">Type<select value={meta.doc_type} onChange={e => setMeta({ ...meta, doc_type: e.target.value })} className={inputCls}>{SOP_TYPES.map(t => <option key={t}>{t}</option>)}</select></label>
               <label className="text-xs text-gray-600">Department<select value={meta.department} onChange={e => setMeta({ ...meta, department: e.target.value })} className={inputCls}><option value="">—</option>{SOP_DEPARTMENTS.map(t => <option key={t}>{t}</option>)}</select></label>
-              <label className="text-xs text-gray-600">Client<select value={meta.client} onChange={e => setMeta({ ...meta, client: e.target.value })} className={inputCls}><option value="">None / all</option>{clients.map(c => <option key={c}>{c}</option>)}</select></label>
+              <div className="text-xs text-gray-600">Client<ClientSelect value={meta.client} onChange={v => setMeta({ ...meta, client: v })} allowed={clients} companyWide={isAdmin} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs text-gray-600">Effectivity date (required)<input type="date" value={f.effectivity_date} onChange={e => setF({ ...f, effectivity_date: e.target.value })} className={inputCls} /></label>

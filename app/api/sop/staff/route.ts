@@ -5,6 +5,7 @@ import {
   sameStaff, canAuthor, canManageDoc, canSeeDoc, canSeeAllVersions, isReceiver, ackStats, approvalOutcome,
   approverProblem, nextVersionNo, validCode, sanitizeCards, cardPaths, SOP_TYPES, Card, Attachment, Decision,
   canRetireDoc, proofProblem, cardsChanged, cardHasContent, publicProof, proofMissing, isAdminRole, PROOF_METHODS,
+  DOC_NUMBER_FORMAT, isStandardDocNumber, nextFreeDocNumber, clientCheck, audienceEmails,
 } from '@/lib/sop'
 import { uploadAttachments, signedUrl, BUCKET } from '@/lib/requestsServer'
 import { sendMail, emailShell, esc, PORTAL_URL } from '@/lib/serverMail'
@@ -68,14 +69,21 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
     return res.data
   }
 
-  let empCache: { email: string, name: string }[] | null = null
+  let empCache: { email: string, name: string, clients: string[] }[] | null = null
   async function activeEmployees() {
     if (!empCache) {
-      const { data } = await supabase.from('employees').select('name, email').eq('active', true)
-      empCache = (data || []).filter((e: any) => e.email).map((e: any) => ({ email: lc(e.email), name: e.name || e.email }))
+      const { data } = await supabase.from('employees').select('name, email, client, clients_supported').eq('active', true)
+      empCache = (data || []).filter((e: any) => e.email).map((e: any) => ({
+        email: lc(e.email), name: e.name || e.email,
+        clients: ((e.clients_supported && e.clients_supported.length ? e.clients_supported : (e.client ? [e.client] : [])) as string[]),
+      }))
     }
     return empCache!
   }
+  // A document that belongs to a client goes to the people who support that client;
+  // null means a company-wide document (everyone).
+  async function audienceOf(doc: any): Promise<string[] | null> { return audienceEmails(doc.client, await activeEmployees()) }
+  async function allClientNames(): Promise<string[]> { return Array.from(new Set((await activeEmployees()).flatMap(e => e.clients))).sort() }
   async function nameFor(email: string): Promise<string> {
     if (sameStaff(email, me)) return staff.name
     const emps = await activeEmployees()
@@ -122,7 +130,7 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
     const selected = current && current.receiver_mode === 'selected' ? await receiversOf(current.id) : []
     return {
       isApprover, current, selected,
-      vctx: { role, email: me, clients: staff.clients, isApprover, isReceiver: current ? isReceiver(current.receiver_mode, selected, me) : false, hasCurrentVersion: !!current },
+      vctx: { role, email: me, clients: staff.clients, isApprover, isReceiver: current ? isReceiver(current.receiver_mode, selected, me, await audienceOf(doc)) : false, hasCurrentVersion: !!current },
     }
   }
   async function seeDoc(id: string) {
@@ -153,7 +161,7 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
     ok(await supabase.from('sop_versions').update({ status: 'approved', approval_date: phToday(), approved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', v.id))
     ok(await supabase.from('sop_documents').update({ status: 'active', current_version_id: v.id, updated_at: new Date().toISOString() }).eq('id', doc.id))
     const emps = await activeEmployees()
-    const recipients = v.receiver_mode === 'all' ? emps.map(e => e.email) : await receiversOf(v.id)
+    const recipients = v.receiver_mode === 'all' ? (audienceEmails(doc.client, emps) ?? emps.map(e => e.email)) : await receiversOf(v.id)
     const effective = v.effectivity_date ? ` Effective ${esc(v.effectivity_date)}.` : ''
     const by = proof ? `<p style="color:#6b7280;">Approved by ${esc(proof.approved_by_name)}${proof.approved_by_role ? ' (' + esc(proof.approved_by_role) + ')' : ''}, ${esc(proof.approved_on)}.</p>` : ''
     await sendMail(recipients.slice(0, 300), `Please acknowledge: ${doc.code} v${v.version_no}`,
@@ -200,16 +208,19 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
   // Validates and inserts a new document row (shared by "create" and "quick_add").
   async function newDocRow(b: any) {
     if (!canAuthor(role)) throw new UserError('Only Admins and Team Leads can create documents.', 403)
-    const code = String(b.code || '').trim()
     const title = String(b.title || '').trim()
-    if (!validCode(code)) throw new UserError('Use a document number of 2 to 40 characters: letters, numbers, dots, dashes (for example OPS-SOP-001).')
-    if (!title) throw new UserError('Please enter a title.')
+    if (!title) throw new UserError('Please enter the process name.')
     if (!(SOP_TYPES as readonly string[]).includes(b.doc_type)) throw new UserError('Choose SOP or LWI.')
+    const wanted = String(b.code || '').trim().toUpperCase()
+    if (!isStandardDocNumber(wanted, b.doc_type)) throw new UserError(`Use the standard document number, ${DOC_NUMBER_FORMAT}, for example AR-SOP-100826: the campaign, then SOP or LWI to match the type, then the date as month, day, year.`)
+    const cc = clientCheck(role, staff.clients, await allClientNames(), b.client)
+    if (!cc.ok) throw new UserError(cc.error)
+    // If another document already took today's number, use the next free one (-2, -3 ...).
+    const { data: taken } = await supabase.from('sop_documents').select('code').ilike('code', `${likeEsc(wanted)}%`)
+    const code = nextFreeDocNumber(wanted, (taken || []).map((r: any) => r.code))
     const ownerEmail = b.owner_email && isEmail(String(b.owner_email)) ? lc(b.owner_email) : me
-    const { data: dupe } = await supabase.from('sop_documents').select('id').ilike('code', likeEsc(code)).maybeSingle()
-    if (dupe) throw new UserError(`The document number ${code} is already used.`)
     const { data: doc, error } = await supabase.from('sop_documents').insert({
-      code, title, doc_type: b.doc_type, department: b.department || null, client: b.client || null,
+      code, title, doc_type: b.doc_type, department: b.department || null, client: cc.client,
       owner_email: ownerEmail, owner_name: await nameFor(ownerEmail), created_by: me, created_by_name: staff.name,
     }).select('*').single()
     if (error || !doc) { console.error(error); throw new UserError('Could not create the document.', 500) }
@@ -240,7 +251,8 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
         const isApprover = appr.some(a => submittedIds.has(a.version_id) && sameStaff(a.approver_email, me))
         const cur = d.current_version_id ? vById.get(d.current_version_id) : null
         const selected = cur && cur.receiver_mode === 'selected' ? recv.filter(r => r.version_id === cur.id).map(r => r.email) : []
-        const vctx = { role, email: me, clients: staff.clients, isApprover, isReceiver: cur ? isReceiver(cur.receiver_mode, selected, me) : false, hasCurrentVersion: !!cur }
+        const aud = audienceEmails(d.client, emps)
+        const vctx = { role, email: me, clients: staff.clients, isApprover, isReceiver: cur ? isReceiver(cur.receiver_mode, selected, me, aud) : false, hasCurrentVersion: !!cur }
         if (!canSeeDoc(d, vctx)) continue
         const manager = canSeeAllVersions(d, vctx)
         const curAcked = cur ? acks.filter(a => a.version_id === cur.id).map(a => a.email) : []
@@ -260,10 +272,10 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
           can_manage: canManageDoc(d, role, me, staff.clients),
           // Drafts, in-flight versions and acknowledgment totals are for managers only.
           latest: manager && latest ? { id: latest.id, version_no: latest.version_no, status: latest.status } : null,
-          acks: manager && cur ? (({ expected, acked }) => ({ expected, acked }))(ackStats(cur.receiver_mode, emps.map(e => e.email), selected, curAcked)) : null,
+          acks: manager && cur ? (({ expected, acked }) => ({ expected, acked }))(ackStats(cur.receiver_mode, aud ?? emps.map(e => e.email), selected, curAcked)) : null,
         })
       }
-      return NextResponse.json({ docs: out, me: { email: me, role, can_author: canAuthor(role) } })
+      return NextResponse.json({ docs: out, me: { email: me, role, can_author: canAuthor(role), clients: staff.clients, all_clients: await allClientNames() } })
     }
 
     case 'get': {
@@ -286,9 +298,10 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
         const acked = await acksOf(cur.id)
         const selected = cur.receiver_mode === 'selected' ? await receiversOf(cur.id) : []
         const emps = await activeEmployees()
-        const stats = ackStats(cur.receiver_mode, emps.map(e => e.email), selected, acked)
+        const aud = audienceEmails(doc.client, emps)
+        const stats = ackStats(cur.receiver_mode, aud ?? emps.map(e => e.email), selected, acked)
         acks = {
-          my_acked: acked.some(a => sameStaff(a, me)), i_am_receiver: isReceiver(cur.receiver_mode, selected, me),
+          my_acked: acked.some(a => sameStaff(a, me)), i_am_receiver: isReceiver(cur.receiver_mode, selected, me, aud),
           ...(manager ? { expected: stats.expected, acked: stats.acked, pending: stats.pending.map(e => ({ email: e, name: emps.find(x => sameStaff(x.email, e))?.name || e })) } : {}),
         }
       }
@@ -329,7 +342,9 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
       const approvers = users.filter(u => u.email).map(u => ({
         email: lc(u.email), role: u.role, name: emps.find(e => sameStaff(e.email, u.email))?.name || u.display_name || u.username || u.email,
       })).sort((a, b) => a.name.localeCompare(b.name))
-      return NextResponse.json({ approvers, receivers: emps.slice().sort((a, b) => a.name.localeCompare(b.name)) })
+      const aud = body.client ? audienceEmails(body.client, emps) : null
+      const pool = aud ? emps.filter(e => aud.includes(e.email)) : emps
+      return NextResponse.json({ approvers, receivers: pool.map(e => ({ email: e.email, name: e.name })).sort((a, b) => a.name.localeCompare(b.name)) })
     }
 
     case 'file_url': {
@@ -348,7 +363,7 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
       const doc = await newDocRow(body)
       const { data: ver, error: vErr } = await supabase.from('sop_versions').insert({ sop_id: doc.id, version_no: 1, created_by: me }).select('id').single()
       if (vErr || !ver) { await supabase.from('sop_documents').delete().eq('id', doc.id); throw new UserError('Could not create the document.', 500) }
-      return NextResponse.json({ id: doc.id, version_id: ver.id })
+      return NextResponse.json({ id: doc.id, version_id: ver.id, code: doc.code })
     }
 
     case 'update_meta': {
@@ -358,7 +373,14 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
       if (body.title !== undefined) { const t = String(body.title).trim(); if (!t) throw new UserError('Please enter a title.'); patch.title = t }
       if (body.doc_type !== undefined) { if (!(SOP_TYPES as readonly string[]).includes(body.doc_type)) throw new UserError('Choose SOP or LWI.'); patch.doc_type = body.doc_type }
       if (body.department !== undefined) patch.department = body.department || null
-      if (body.client !== undefined) patch.client = body.client || null
+      if (body.client !== undefined) {
+        const next = String(body.client || '').trim()
+        if (lc(next) !== lc(doc.client)) {   // unchanged is always fine; a change must pass the scoping rules
+          const cc = clientCheck(role, staff.clients, await allClientNames(), next)
+          if (!cc.ok) throw new UserError(cc.error)
+          patch.client = cc.client
+        }
+      }
       if (body.owner_email !== undefined && isEmail(String(body.owner_email))) { patch.owner_email = lc(body.owner_email); patch.owner_name = await nameFor(body.owner_email) }
       ok(await supabase.from('sop_documents').update(patch).eq('id', doc.id))
       return NextResponse.json({ ok: true })
@@ -390,7 +412,8 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
         if (mode === 'selected') {
           const emps = await activeEmployees()
           const list = (Array.isArray(body.receivers) ? body.receivers : []).map((e: any) => lc(String(e))).filter(isEmail)
-          const rows = list.filter((e: string, i: number) => list.findIndex((x: string) => sameStaff(x, e)) === i && emps.some(x => sameStaff(x.email, e)))
+          const aud = audienceEmails(doc.client, emps)
+          const rows = list.filter((e: string, i: number) => list.findIndex((x: string) => sameStaff(x, e)) === i && emps.some(x => sameStaff(x.email, e)) && (!aud || aud.some(a => sameStaff(a, e))))
             .map((e: string) => ({ version_id: v.id, email: e, name: emps.find(x => sameStaff(x.email, e))?.name || e }))
           if (rows.length) ok(await supabase.from('sop_receivers').insert(rows))
         }
@@ -542,7 +565,7 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
         approved_on: body.approved_on, method: body.method, note: String(body.note || '').trim().slice(0, 2000) || null, added_by: me, added_by_name: staff.name,
       }).select('id').single()
       if (pErr || !proof) { await supabase.from('sop_documents').delete().eq('id', doc.id); throw new UserError('Could not save the approval details.', 500) }
-      return NextResponse.json({ id: doc.id, version_id: ver.id, file_card_id: fileCardId, proof_id: proof.id })
+      return NextResponse.json({ id: doc.id, code: doc.code, version_id: ver.id, file_card_id: fileCardId, proof_id: proof.id })
     }
 
     // Approval details for a version that was approved outside the system.
@@ -703,7 +726,7 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
       const cur = await loadVersion(doc.current_version_id)
       const emps = await activeEmployees()
       const selected = cur.receiver_mode === 'selected' ? await receiversOf(cur.id) : []
-      const stats = ackStats(cur.receiver_mode, emps.map(e => e.email), selected, await acksOf(cur.id))
+      const stats = ackStats(cur.receiver_mode, audienceEmails(doc.client, emps) ?? emps.map(e => e.email), selected, await acksOf(cur.id))
       if (stats.pending.length === 0) return NextResponse.json({ sent: 0 })
       const sent = await sendMail(stats.pending.slice(0, 300), `Reminder: please acknowledge ${doc.code} v${cur.version_no}`,
         emailShell('Reminder: acknowledgment needed', `<p>Please read and acknowledge <b>${esc(doc.code)} — ${esc(doc.title)}</b> (version ${cur.version_no}) in the portal.</p>`, { label: 'Open the SOP Repository', url: LINK }))

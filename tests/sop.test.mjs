@@ -2,6 +2,7 @@ import {
   sameStaff, canAuthor, canBeApprover, canManageDoc, canSeeDoc, canSeeAllVersions, isReceiver, ackStats,
   approvalOutcome, approverProblem, nextVersionNo, validCode, reviewState, sanitizeCards, cardPaths,
   canRetireDoc, proofProblem, proofMissing, cardsChanged, cardHasContent, publicProof, methodLabel,
+  cleanCampaign, mmddyy, buildDocNumber, isStandardDocNumber, campaignOf, nextFreeDocNumber, clientCheck, audienceEmails,
 } from '../lib/sop.ts'
 let fail = 0
 const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`) }
@@ -128,6 +129,52 @@ eq('reorder = change', cardsChanged([c1, { ...c1, id: 'bbbbbbbb' }], [{ ...c1, i
 eq('new attachment = change', cardsChanged([c1], [{ ...c1, attachments: [{ name: 'a', path: 'p', size: 1 }] }]), true)
 eq('empty card has no content', cardHasContent({ ...c1, title: '', body: '  ' }), false)
 eq('file-only card has content', cardHasContent({ ...c1, title: '', body: '', attachments: [{ name: 'a', path: 'p', size: 1 }] }), true)
+
+// ---- document number template: CAMPAIGN-TYPE-MMDDYY ----
+eq('your example: AR / SOP / Oct 8 2026', buildDocNumber('AR', 'SOP', '2026-10-08'), 'AR-SOP-100826')
+eq('LWI works the same', buildDocNumber('ar', 'lwi', '2026-01-05'), 'AR-LWI-010526')
+eq('campaign is cleaned to letters and digits', cleanCampaign(' a-r! 2 '), 'AR2')
+eq('campaign limited to 10 characters', cleanCampaign('ABCDEFGHIJKLMNOP'), 'ABCDEFGHIJ')
+eq('no campaign, no number', buildDocNumber('', 'SOP', '2026-10-08'), null)
+eq('unknown type, no number', buildDocNumber('AR', 'POLICY', '2026-10-08'), null)
+eq('an impossible date, no number', buildDocNumber('AR', 'SOP', '2026-02-31'), null)
+eq('mmddyy of a real date', mmddyy('2026-12-31'), '123126')
+eq('standard number accepted', isStandardDocNumber('AR-SOP-100826'), true)
+eq('same-day suffix accepted', isStandardDocNumber('AR-SOP-100826-2'), true)
+eq('type segment must match the chosen type', isStandardDocNumber('AR-SOP-100826', 'LWI'), false)
+eq('the old free-form style is rejected', isStandardDocNumber('OPS-SOP-001'), false)
+eq('month 13 rejected', isStandardDocNumber('AR-SOP-130126'), false)
+eq('lower case rejected (the form always upper-cases)', isStandardDocNumber('ar-sop-100826'), false)
+eq('campaign read back from a number', campaignOf('AR-LWI-100826-2'), 'AR')
+eq('no campaign from a non-standard number', campaignOf('whatever'), null)
+eq('free number as is', nextFreeDocNumber('AR-SOP-100826', []), 'AR-SOP-100826')
+eq('second on the same day gets -2', nextFreeDocNumber('AR-SOP-100826', ['AR-SOP-100826']), 'AR-SOP-100826-2')
+eq('third gets -3, case-insensitive', nextFreeDocNumber('AR-SOP-100826', ['ar-sop-100826', 'AR-SOP-100826-2']), 'AR-SOP-100826-3')
+
+// ---- client scoping ----
+const allC = ['EMMA', 'AB BSS', 'Harlan + Holden']
+eq('Admin may pick any client (stored spelling)', clientCheck('admin', [], allC, 'emma'), { ok: true, client: 'EMMA' })
+eq('Super Admin may leave it company-wide', clientCheck('super_admin', [], allC, ''), { ok: true, client: null })
+eq('Team Lead may use a client they support', clientCheck('Team Lead', ['EMMA'], allC, 'EMMA'), { ok: true, client: 'EMMA' })
+eq('Team Lead cannot use someone else\'s client', clientCheck('Team Lead', ['EMMA'], allC, 'Harlan + Holden').ok, false)
+eq('Team Lead must choose a client', clientCheck('Team Lead', ['EMMA'], allC, '').ok, false)
+eq('Team Lead with no client assigned is told why', /not assigned/.test(clientCheck('Team Lead', [], allC, '').error), true)
+eq('a made-up client is rejected', clientCheck('admin', [], allC, 'Acme').ok, false)
+eq('an agent cannot set a client at all', clientCheck('agent', ['EMMA'], allC, 'EMMA').ok, false)
+
+// ---- who must acknowledge a client's document ----
+const staffList = [
+  { email: 'a@x.com', clients: ['EMMA'] }, { email: 'b@x.com', clients: ['Harlan + Holden'] },
+  { email: 'c@x.com', clients: ['EMMA', 'AB BSS'] }, { email: 'd@x.com', clients: [] },
+]
+eq('client document goes to that client\'s people only', audienceEmails('emma', staffList), ['a@x.com', 'c@x.com'])
+eq('a company-wide document has no audience limit', audienceEmails('', staffList), null)
+eq('nobody supports it: empty audience, not everyone', audienceEmails('Nobody Inc', staffList), [])
+eq('in the audience = must acknowledge (alias domain)', isReceiver('all', [], 'A@y.com', ['a@x.com', 'c@x.com']), true)
+eq('outside the audience = not a receiver', isReceiver('all', [], 'b@x.com', ['a@x.com', 'c@x.com']), false)
+eq('no audience set = everyone, as before', isReceiver('all', [], 'b@x.com', null), true)
+eq('selected people still override the audience', isReceiver('selected', ['b@x.com'], 'b@x.com', ['a@x.com']), true)
+eq('acknowledgment counts only the audience', ackStats('all', ['a@x.com', 'c@x.com'], [], ['a@x.com']).expected, 2)
 
 console.log(fail === 0 ? '\nALL PASSED' : `\n${fail} FAILED`)
 process.exit(fail === 0 ? 0 : 1)

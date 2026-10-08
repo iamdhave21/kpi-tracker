@@ -67,9 +67,11 @@ export const canSeeAllVersions = (doc: { created_by: string, client?: string | n
   canManageDoc(doc, c.role, c.email, c.clients || []) || c.isApprover
 
 // Is this person one of the people who must acknowledge?
-export function isReceiver(mode: string, selectedEmails: string[], me: string): boolean {
+// `audience` is set for a document that belongs to a client: then 'all' means everyone who
+// supports THAT client, not the whole company. null/undefined = a company-wide document.
+export function isReceiver(mode: string, selectedEmails: string[], me: string, audience?: string[] | null): boolean {
   if (!lc(me)) return false
-  if (mode === 'all') return true
+  if (mode === 'all') return audience ? audience.some(e => sameStaff(e, me)) : true
   return selectedEmails.some(e => sameStaff(e, me))
 }
 
@@ -181,4 +183,78 @@ export const cardHasContent = (c: Card) => !!(c.title.trim() || c.body.trim() ||
 // how. Never the screenshots, paths or notes.
 export function publicProof<T extends { approved_by_name: string, approved_by_role: string | null, approved_on: string, method: string }>(p: T) {
   return { approved_by_name: p.approved_by_name, approved_by_role: p.approved_by_role, approved_on: p.approved_on, method: p.method }
+}
+
+// ---- document numbers: CAMPAIGN-TYPE-MMDDYY (for example AR-SOP-100826) --------------
+
+export const DOC_NUMBER_FORMAT = 'CAMPAIGN-TYPE-MMDDYY'
+// SOP = the goal (what must be achieved, and the rules). LWI = the how (step by step).
+export const TYPE_EXPLAINER = { SOP: 'the goal: what must be achieved, and the rules', LWI: 'the how: the step-by-step instructions' }
+
+// Letters and digits only, upper case, at most 10 characters.
+export const cleanCampaign = (s: string) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10)
+
+// 2026-10-08 -> "100826". Null when the date is not a real date.
+export function mmddyy(ymd: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '')
+  if (!m) return null
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3])
+  const dt = new Date(y, mo - 1, d)
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null
+  return `${m[2]}${m[3]}${m[1].slice(2)}`
+}
+
+export function buildDocNumber(campaign: string, type: string, ymd: string): string | null {
+  const c = cleanCampaign(campaign), t = (type || '').toUpperCase(), d = mmddyy(ymd)
+  if (!c || !d || (t !== 'SOP' && t !== 'LWI')) return null
+  return `${c}-${t}-${d}`
+}
+
+// A standard number, optionally with a "-2" style suffix when several share a day. When
+// `type` is given the number's own type segment must match it.
+export function isStandardDocNumber(code: string, type?: string): boolean {
+  const m = /^([A-Z0-9]{1,10})-(SOP|LWI)-(\d{2})(\d{2})(\d{2})(-\d{1,3})?$/.exec((code || '').trim())
+  if (!m) return false
+  const mo = Number(m[3]), d = Number(m[4]), y = 2000 + Number(m[5])
+  const dt = new Date(y, mo - 1, d)
+  if (dt.getMonth() !== mo - 1 || dt.getDate() !== d) return false
+  return !type || m[2] === type
+}
+
+export const campaignOf = (code: string): string | null => /^([A-Z0-9]{1,10})-(SOP|LWI)-\d{6}/.exec((code || '').trim())?.[1] || null
+
+// First free number: AR-SOP-100826, then AR-SOP-100826-2, -3 ...
+export function nextFreeDocNumber(base: string, taken: string[]): string {
+  const used = new Set(taken.map(t => t.trim().toLowerCase()))
+  if (!used.has(base.toLowerCase())) return base
+  for (let n = 2; n < 1000; n++) if (!used.has(`${base}-${n}`.toLowerCase())) return `${base}-${n}`
+  return `${base}-${Date.now()}`
+}
+
+// ---- client scoping -------------------------------------------------------------------
+//   Admin / Super Admin : any client, or none (company-wide).
+//   Team Lead           : only a client they support, and one is required.
+// Returns the client spelled the way it is stored, or an error to show.
+export function clientCheck(role: string, myClients: string[], allClients: string[], client: string | null | undefined):
+  { ok: true, client: string | null } | { ok: false, error: string } {
+  const want = (client || '').trim()
+  const same = (a: string, b: string) => lc(a) === lc(b)
+  if (!canAuthor(role)) return { ok: false, error: 'Only Admins and Team Leads can set a client.' }
+  if (want === '') {
+    if (role === 'Team Lead') return { ok: false, error: myClients.length === 0 ? 'You are not assigned to a client yet, so ask an Admin to create this document.' : 'Choose the client this document is for.' }
+    return { ok: true, client: null }
+  }
+  const known = allClients.find(c => same(c, want))
+  if (!known) return { ok: false, error: `“${want}” is not a client in the portal.` }
+  if (role === 'Team Lead' && !myClients.some(c => same(c, known))) return { ok: false, error: `You can only use a client you support. ${known} is not one of yours.` }
+  return { ok: true, client: known }
+}
+
+export type EmpWithClients = { email: string, clients: string[] }
+// Who must acknowledge a client's document by default: everyone who supports that client.
+// Returns null for a document with no client (company-wide: everyone).
+export function audienceEmails(client: string | null | undefined, employees: EmpWithClients[]): string[] | null {
+  const c = lc(client)
+  if (!c) return null
+  return employees.filter(e => e.email && e.clients.some(x => lc(x) === c)).map(e => e.email)
 }
