@@ -38,24 +38,33 @@ export const isAdminRole = (role: string) => role === 'admin' || role === 'super
 export const canAuthor = (role: string) => isAdminRole(role) || role === 'Team Lead'
 export const canBeApprover = (role: string) => isAdminRole(role) || role === 'Team Lead'
 
-// Change a document (edit drafts, submit, new version, retire): any admin, or
-// the person who created it. Another Team Lead may not.
-export function canManageDoc(doc: { created_by: string }, role: string, meEmail: string): boolean {
+// Maintain a document (edit, record a change, add approval proof, publish):
+// any admin, the person who created it, or a Team Lead who supports the
+// document's client (live documentation is kept up by the people running the
+// account). A Team Lead with no matching client may not. Retiring is stricter:
+// see canRetireDoc.
+export function canManageDoc(doc: { created_by: string, client?: string | null }, role: string, meEmail: string, myClients: string[] = []): boolean {
   if (isAdminRole(role)) return true
-  return canAuthor(role) && sameStaff(doc.created_by, meEmail)
+  if (!canAuthor(role)) return false
+  if (sameStaff(doc.created_by, meEmail)) return true
+  const c = lc(doc.client)
+  return role === 'Team Lead' && c !== '' && myClients.map(lc).includes(c)
 }
+// Only an admin or the creator may retire a document.
+export const canRetireDoc = (doc: { created_by: string }, role: string, meEmail: string) =>
+  isAdminRole(role) || (canAuthor(role) && sameStaff(doc.created_by, meEmail))
 
-export type VisibilityCtx = { role: string, email: string, isApprover: boolean, isReceiver: boolean, hasCurrentVersion: boolean }
+export type VisibilityCtx = { role: string, email: string, clients?: string[], isApprover: boolean, isReceiver: boolean, hasCurrentVersion: boolean }
 // Can this person open the document at all?
-export function canSeeDoc(doc: { created_by: string, status: string }, c: VisibilityCtx): boolean {
-  if (canManageDoc(doc, c.role, c.email)) return true
+export function canSeeDoc(doc: { created_by: string, status: string, client?: string | null }, c: VisibilityCtx): boolean {
+  if (canManageDoc(doc, c.role, c.email, c.clients || [])) return true
   if (c.isApprover) return true
   if (doc.status === 'retired') return false
   return c.hasCurrentVersion && c.isReceiver
 }
 // May this person see a non-current version (drafts, history)?
-export const canSeeAllVersions = (doc: { created_by: string }, c: Pick<VisibilityCtx, 'role' | 'email' | 'isApprover'>) =>
-  canManageDoc(doc, c.role, c.email) || c.isApprover
+export const canSeeAllVersions = (doc: { created_by: string, client?: string | null }, c: Pick<VisibilityCtx, 'role' | 'email' | 'isApprover' | 'clients'>) =>
+  canManageDoc(doc, c.role, c.email, c.clients || []) || c.isApprover
 
 // Is this person one of the people who must acknowledge?
 export function isReceiver(mode: string, selectedEmails: string[], me: string): boolean {
@@ -136,3 +145,40 @@ export const cardPaths = (cards: Card[]) => cards.flatMap(c => c.attachments.map
 export const statusLabel = (s: string) => ({
   draft: 'Draft', pending_approval: 'Awaiting approval', approved: 'Approved', declined: 'Declined', superseded: 'Superseded', active: 'Active', retired: 'Retired',
 }[s] || s)
+
+// ---- approval proof, process changes, small edits -------------------------
+
+export const PROOF_METHODS = ['email', 'chat', 'call', 'meeting', 'other'] as const
+export const methodLabel = (m: string) => ({ email: 'Email', chat: 'Chat message', call: 'Phone / video call', meeting: 'Meeting', other: 'Other' } as Record<string, string>)[m] || m
+
+export type ProofInput = { approved_by_name: string, approved_on: string, method: string }
+// A proof entry needs who approved, when, and how. Returns a user-readable
+// problem, or null when it is complete.
+export function proofProblem(p: Partial<ProofInput>): string | null {
+  if (!(p.approved_by_name || '').trim()) return 'Enter who approved it (name).'
+  if (!p.approved_on || !/^\d{4}-\d{2}-\d{2}$/.test(p.approved_on)) return 'Enter the date it was approved.'
+  if (!(PROOF_METHODS as readonly string[]).includes(p.method || '')) return 'Choose how it was approved.'
+  return null
+}
+
+// An externally approved version should have screenshots on file; managers
+// see "proof missing" until at least one proof entry has a file.
+export function proofMissing(version: { approval_source: string } | null, proofs: { attachments: any[] | null }[]): boolean {
+  if (!version || version.approval_source !== 'external') return false
+  return !proofs.some(p => (p.attachments || []).length > 0)
+}
+
+// Did a small edit actually change anything? (ids and order count)
+export function cardsChanged(before: Card[], after: Card[]): boolean {
+  const norm = (cs: Card[]) => JSON.stringify(cs.map(c => [c.id, c.type, c.title, c.body, c.url, c.attachments.map(a => a.path)]))
+  return norm(before) !== norm(after)
+}
+
+// A card is worth publishing if it says or points to something.
+export const cardHasContent = (c: Card) => !!(c.title.trim() || c.body.trim() || c.url || c.attachments.length)
+
+// What readers (not managers) may learn about an approval proof: who, when and
+// how. Never the screenshots, paths or notes.
+export function publicProof<T extends { approved_by_name: string, approved_by_role: string | null, approved_on: string, method: string }>(p: T) {
+  return { approved_by_name: p.approved_by_name, approved_by_role: p.approved_by_role, approved_on: p.approved_on, method: p.method }
+}

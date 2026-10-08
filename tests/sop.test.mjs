@@ -1,6 +1,7 @@
 import {
   sameStaff, canAuthor, canBeApprover, canManageDoc, canSeeDoc, canSeeAllVersions, isReceiver, ackStats,
   approvalOutcome, approverProblem, nextVersionNo, validCode, reviewState, sanitizeCards, cardPaths,
+  canRetireDoc, proofProblem, proofMissing, cardsChanged, cardHasContent, publicProof, methodLabel,
 } from '../lib/sop.ts'
 let fail = 0
 const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`) }
@@ -91,6 +92,42 @@ eq('text card never carries a url or files', sanitizeCards([{ id: 'abcdefgh', ty
 eq('unknown type falls back to text', sanitizeCards([{ id: 'abcdefgh', type: 'script' }], [])[0].type, 'text')
 eq('duplicate ids are replaced', new Set(sanitizeCards([{ id: 'dup-id-1234' }, { id: 'dup-id-1234' }], []).map(c => c.id)).size, 2)
 eq('non-array input gives no cards', sanitizeCards('nope', []), [])
+
+// ---- client-scoped management (Team Leads maintain their own client's docs) ----
+const emmaDoc = { created_by: 'tl.one@x.com', client: 'EMMA', status: 'active' }
+eq('TL supporting the client can manage', canManageDoc(emmaDoc, 'Team Lead', 'tl.two@x.com', ['emma']), true)
+eq('TL on a different client cannot', canManageDoc(emmaDoc, 'Team Lead', 'tl.two@x.com', ['Harlan + Holden']), false)
+eq('TL with no clients cannot', canManageDoc(emmaDoc, 'Team Lead', 'tl.two@x.com', []), false)
+eq('company-wide doc (no client): other TL cannot', canManageDoc({ created_by: 'a@x.com', client: null }, 'Team Lead', 'tl.two@x.com', ['EMMA']), false)
+eq('an agent on that client still cannot', canManageDoc(emmaDoc, 'agent', 'ag@x.com', ['EMMA']), false)
+eq('client TL sees drafts (manager view)', canSeeAllVersions(emmaDoc, { role: 'Team Lead', email: 'tl.two@x.com', isApprover: false, clients: ['EMMA'] }), true)
+eq('client TL can open the doc', canSeeDoc({ ...emmaDoc, status: 'draft' }, { role: 'Team Lead', email: 'tl.two@x.com', clients: ['EMMA'], isApprover: false, isReceiver: false, hasCurrentVersion: false }), true)
+eq('retire: client TL may NOT', canRetireDoc(emmaDoc, 'Team Lead', 'tl.two@x.com'), false)
+eq('retire: creator may', canRetireDoc(emmaDoc, 'Team Lead', 'TL.ONE@y.com'), true)
+eq('retire: admin may', canRetireDoc(emmaDoc, 'admin', 'a@x.com'), true)
+
+// ---- approval proof ----
+eq('proof complete', proofProblem({ approved_by_name: 'Kyla', approved_on: '2026-10-08', method: 'chat' }), null)
+eq('proof needs a name', proofProblem({ approved_by_name: '  ', approved_on: '2026-10-08', method: 'chat' }) !== null, true)
+eq('proof needs a real date', proofProblem({ approved_by_name: 'K', approved_on: '10/08/2026', method: 'chat' }) !== null, true)
+eq('proof needs a known method', proofProblem({ approved_by_name: 'K', approved_on: '2026-10-08', method: 'carrier pigeon' }) !== null, true)
+eq('method label', methodLabel('call'), 'Phone / video call')
+eq('internal approval never "missing"', proofMissing({ approval_source: 'internal' }, []), false)
+eq('external with no proof rows = missing', proofMissing({ approval_source: 'external' }, []), true)
+eq('external with a row but no files = missing', proofMissing({ approval_source: 'external' }, [{ attachments: [] }]), true)
+eq('external with a file = not missing', proofMissing({ approval_source: 'external' }, [{ attachments: [{ path: 'p' }] }]), false)
+eq('readers get only who/when/how',
+  Object.keys(publicProof({ approved_by_name: 'K', approved_by_role: 'POC', approved_on: '2026-10-08', method: 'chat', attachments: [{ path: 'secret' }], note: 'private' })).sort(),
+  ['approved_by_name', 'approved_by_role', 'approved_on', 'method'])
+
+// ---- small edits ----
+const c1 = { id: 'aaaaaaaa', type: 'text', title: 'Step', body: 'one', url: '', attachments: [] }
+eq('identical cards = no change', cardsChanged([c1], [{ ...c1 }]), false)
+eq('text edit = change', cardsChanged([c1], [{ ...c1, body: 'two' }]), true)
+eq('reorder = change', cardsChanged([c1, { ...c1, id: 'bbbbbbbb' }], [{ ...c1, id: 'bbbbbbbb' }, c1]), true)
+eq('new attachment = change', cardsChanged([c1], [{ ...c1, attachments: [{ name: 'a', path: 'p', size: 1 }] }]), true)
+eq('empty card has no content', cardHasContent({ ...c1, title: '', body: '  ' }), false)
+eq('file-only card has content', cardHasContent({ ...c1, title: '', body: '', attachments: [{ name: 'a', path: 'p', size: 1 }] }), true)
 
 console.log(fail === 0 ? '\nALL PASSED' : `\n${fail} FAILED`)
 process.exit(fail === 0 ? 0 : 1)
