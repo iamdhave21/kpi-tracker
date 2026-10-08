@@ -58,7 +58,15 @@ async function handle(action: string, body: any, files: File[], staff: Staff, su
   const role = staff.role
 
   // ---------- small data helpers ----------
-  const ok = <T,>(res: { data: T, error: any }, msg = 'Database error'): T => { if (res.error) { console.error(msg, res.error); throw new UserError(msg, 500) } return res.data }
+  // Admins are told the real database reason (for example a table or column that the SQL
+  // has not created yet); everyone else gets the plain message. Staff-only tool, admin-only detail.
+  const ok = <T,>(res: { data: T, error: any }, msg = 'Database error'): T => {
+    if (res.error) {
+      console.error(msg, res.error)
+      throw new UserError(isAdminRole(role) && res.error.message ? `${msg}: ${res.error.message}` : msg, 500)
+    }
+    return res.data
+  }
 
   let empCache: { email: string, name: string }[] | null = null
   async function activeEmployees() {
