@@ -7,6 +7,7 @@ import ClientObservations from '@/components/ClientObservations'
 import ClientRequests from '@/components/ClientRequests'
 import SopRepository from '@/components/SopRepository'
 import { canSeeTicket, isMine, pocCategoriesFor, teamEmailsFor, localPart } from '@/lib/ticketScope'
+import { kpiEntryCoverage, averageApplicable } from '@/lib/tlScore'
 import { staffApi } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
@@ -10258,17 +10259,35 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
       .eq('created_by',tlEmail).gte('created_at',start).lte('created_at',end)
     const huddleScore = Math.min((huddleCount||0)/huddleTarget,1)*100
 
-    // 5. KPI entry compliance (target: 1 entry per month) -- must be scoped
-    // to this TL's own employee_id. Previously had no employee filter at
-    // all, so it counted ANY kpi_records row company-wide for the month,
-    // meaning every TL showed 100% the moment anyone's KPI was entered.
-    const { count: kpiCount } = await supabase.from('kpi_records').select('id',{count:'exact',head:true})
-      .eq('employee_id', selectedTL).eq('month_label',monthLabel)
-    const kpiScore = (kpiCount||0) > 0 ? 100 : 0
+    // 5. KPI entry compliance: what the Team Lead can actually do -- the share of her ACTIVE
+    // team members who have a KPI record this month (rules in lib/tlScore.ts, tested).
+    // History: it first counted ANY record company-wide (everyone read 100% the moment anyone
+    // was entered), then only a record about the TL herself -- which she cannot create, so
+    // entering her whole team's scores never moved it. Her own record still feeds Attendance.
+    const { data: ledTeamsK } = await supabase.from('teams').select('id').eq('team_lead_id', selectedTL).eq('active', true)
+    const kpiTeamIds = selectedTeamId === 'all' ? (ledTeamsK || []).map((t: any) => t.id) : [selectedTeamId]
+    let kpiMembers: { id: string, name: string }[] = []
+    if (kpiTeamIds.length > 0) {
+      const { data: tmK } = await supabase.from('team_members').select('employee_id').in('team_id', kpiTeamIds)
+      const memberIdsK = Array.from(new Set((tmK || []).map((m: any) => m.employee_id)))
+      if (memberIdsK.length > 0) {
+        const { data: empsK } = await supabase.from('employees').select('id,name,active').in('id', memberIdsK)
+        kpiMembers = (empsK || []).filter((e: any) => e.active).map((e: any) => ({ id: e.id, name: e.name }))
+      }
+    }
+    let recordedIds: string[] = []
+    if (kpiMembers.length > 0) {
+      const { data: recsK } = await supabase.from('kpi_records').select('employee_id').in('employee_id', kpiMembers.map(m => m.id)).eq('month_label', monthLabel)
+      recordedIds = (recsK || []).map((r: any) => r.employee_id)
+    }
+    const kpiCov = kpiEntryCoverage(kpiMembers, recordedIds, selectedTL)
+    const kpiScore = kpiCov.score
 
     const complianceSubScores = { cadenceScore, coachScore, obsScore, huddleScore, kpiScore }
-    const complianceParts = [cadenceScore, obsScore, huddleScore, kpiScore, ...(coachApplicable ? [coachScore] : [])]
-    const complianceScore = complianceParts.reduce((a, b) => a + b, 0) / complianceParts.length
+    const complianceScore = averageApplicable([
+      { score: cadenceScore, applicable: true }, { score: obsScore, applicable: true }, { score: huddleScore, applicable: true },
+      { score: kpiScore, applicable: kpiCov.applicable }, { score: coachScore, applicable: coachApplicable },
+    ])
 
     const tlPhoto = null
     const tlName = tlEmpInfo?.name || 'Unknown'
@@ -10318,7 +10337,7 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
       coachCount, coachTarget, coachApplicable, coachAgents,
       obsCount: obsCount||0, obsTarget,
       huddleCount: huddleCount||0, huddleTarget,
-      kpiCount: kpiCount||0,
+      kpiTotal: kpiCov.total, kpiDone: kpiCov.done, kpiApplicable: kpiCov.applicable, kpiMissing: kpiCov.missing,
     })
     setLoading(false)
   }
@@ -10558,7 +10577,18 @@ function TLScorecard({ currentUser, userRole, showToast, records }: { currentUse
           )}
           <SubItem label="Observations Logged" score={score.obsScore} count={score.obsCount} target={score.obsTarget} extra="observations" onClick={openObsDrilldown} />
           <SubItem label="Huddle Notes Posted" score={score.huddleScore} count={score.huddleCount} target={score.huddleTarget} extra="huddles" onClick={openHuddleDrilldown} />
-          <SubItem label="KPI Entry Compliance" score={score.kpiScore} extra={score.kpiCount > 0 ? 'Entry submitted this month' : 'No entry submitted yet'} />
+          {score.kpiApplicable ? (
+            <SubItem label="KPI Entry Compliance" score={score.kpiScore} count={score.kpiDone} target={score.kpiTotal}
+              extra={`team members have a KPI record for ${monthLabel}${score.kpiMissing.length ? ` (missing: ${score.kpiMissing.slice(0, 4).join(', ')}${score.kpiMissing.length > 4 ? ` +${score.kpiMissing.length - 4} more` : ''})` : ''}`} />
+          ) : (
+            <div className="flex items-center justify-between py-2 border-b border-gray-50">
+              <div>
+                <p className="text-sm font-medium text-gray-700">KPI Entry Compliance</p>
+                <p className="text-xs text-gray-400 mt-0.5">No active team members found for this Team Lead, so nothing to score</p>
+              </div>
+              <span className="text-xs text-gray-400">Not scored</span>
+            </div>
+          )}
         </div>
 
         {/* Team Performance */}
