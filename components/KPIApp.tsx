@@ -2505,7 +2505,7 @@ export default function KPIApp() {
             }} />}
             {view === 'tl-scorecard' && (effectiveRole === 'super_admin' || effectiveRole === 'admin' || effectiveRole === 'Team Lead') && <TLScorecard currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} records={records} />}
             {view === 'tl-scorecard' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
-            {view === 'hris-records' && <HRISRecords userRole={effectiveRole} currentUser={effectiveUser} showToast={showToast} />}
+            {view === 'hris-records' && <HRISRecords userRole={effectiveRole} currentUser={effectiveUser} showToast={showToast} onEmployeesChanged={() => loadData()} />}
             {view === 'hris-timetracker' && (effectiveRole === 'super_admin' || effectiveRole === 'admin') && <TimeTrackerPanel employees={employees} records={records} currentUser={effectiveUser} showToast={showToast} onApplied={() => loadData()} />}
             {view === 'hris-timetracker' && (effectiveRole === 'agent' || effectiveRole === 'Team Lead') && <div className="text-center py-20 text-gray-400"><AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30"/><p className="font-medium">Access Restricted</p><p className="text-sm mt-1">Time Tracker requires Manager access or higher</p></div>}
             {view === 'hris-invoice' && effectiveRole === 'super_admin' && (
@@ -12630,7 +12630,7 @@ function OpexPanel({ currentUser, showToast }: { currentUser: string | null, sho
   )
 }
 
-function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void }) {
+function HRISRecords({ userRole, currentUser, showToast, onEmployeesChanged }: { userRole: string, currentUser: string | null, showToast: (m: string, t?: 'success'|'error') => void, onEmployeesChanged?: () => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin'
   const isTL = userRole === 'Team Lead'
   const isViewer = userRole === 'agent'
@@ -12659,12 +12659,25 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
   )
 
   const [pulseSubmittedIds, setPulseSubmittedIds] = useState<Set<string>>(new Set())
+  // The hire date is ONE field on the employee record (employees.hire_date), shared with the
+  // Employees screen and the Bonus Review. Saving here updates every row of the same person (one
+  // row per client), is logged in the audit trail, and refreshes the Employees screen too.
+  async function saveHire(emp: any, d: string) {
+    if (!d) return
+    const key = (emp.name || '').trim().toLowerCase()
+    const ids = employees.filter(e => (e.name || '').trim().toLowerCase() === key).map(e => e.id)
+    const { error } = await supabase.from('employees').update({ hire_date: d }).in('id', ids)
+    if (error) { showToast(error.message, 'error'); return }
+    setEmployees(es => es.map(e => ids.includes(e.id) ? { ...e, hire_date: d } : e))
+    await writeAuditLog('EDIT_EMPLOYEE', currentUser || 'unknown', emp.name, '', 'Hire date', emp.hire_date || '', d)
+    onEmployeesChanged?.()
+  }
   async function loadData() {
     setLoading(true)
     const currentWeek = getWeekStart()
     const [{ data: docs }, { data: emps }, { data: pulses }] = await Promise.all([
       supabase.from('hris_documents').select('*').order('employee_name'),
-      supabase.from('employees').select('id, name, employee_id, email, active, client, clients_supported').order('name'),
+      supabase.from('employees').select('id, name, employee_id, email, active, client, clients_supported, hire_date').order('name'),
       // Weekly Pulse Check compliance -- RLS on pulse_surveys already scopes
       // this correctly per viewer (self / own team / everyone), so no extra
       // client-side filtering is needed here the way it is for hris_documents.
@@ -12911,6 +12924,7 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="text-left px-3 py-3 font-semibold text-gray-500 uppercase tracking-wide sticky left-0 bg-gray-50 min-w-40">Employee</th>
+                    <th className="text-left px-2 py-3 font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Hired</th>
                     {REQUIRED_DOCS.map(d => (
                       <th key={d} className="text-center px-2 py-3 font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{DOC_ICON[d] || '📄'}<br/>{d}</th>
                     ))}
@@ -12926,6 +12940,12 @@ function HRISRecords({ userRole, currentUser, showToast }: { userRole: string, c
                     return (
                       <tr key={emp.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2.5 font-medium text-gray-900 sticky left-0 bg-white">{emp.name}</td>
+                        <td className="px-2 py-2.5 whitespace-nowrap">
+                          {canManage
+                            ? <input type="date" value={emp.hire_date || ''} onChange={e => saveHire(emp, e.target.value)} className="border border-gray-200 rounded px-1 py-0.5 text-xs text-gray-900" aria-label={`Hire date for ${emp.name}`} title="Hire date. The same field as on the Employees screen." />
+                            : <span className="text-gray-600">{emp.hire_date ? new Date(emp.hire_date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>}
+                          {emp.hire_date && <div className="text-gray-400">{tenureText(emp.hire_date)}</div>}
+                        </td>
                         {REQUIRED_DOCS.map(d => {
                           const doc = docLookup[`${emp.id}::${d}`]
                           return (

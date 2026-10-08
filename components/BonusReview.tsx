@@ -53,6 +53,10 @@ export default function BonusReview({ showToast }: { showToast: Toast }) {
   const [showRuns, setShowRuns] = useState(false)
   const [busy, setBusy] = useState(false)
   const [adjusting, setAdjusting] = useState<Set<string>>(new Set())
+  const [fSearch, setFSearch] = useState('')
+  const [fStatus, setFStatus] = useState('all')
+  const [fTeam, setFTeam] = useState('all')
+  const [fTenure, setFTenure] = useState('all')
 
   const loadPeople = useCallback(async () => {
     const r = await call({ action: 'people' })
@@ -73,13 +77,28 @@ export default function BonusReview({ showToast }: { showToast: Toast }) {
     for (const p of people) {
       const n = p.name.toLowerCase()
       if (n.includes('latimer, azeliza') || n.includes('czareena')) next[p.key] = { exception: true, note: 'Included at the Director\'s decision.' }
+      // Norbert has a Notice to Explain: no add-on, and the Director set his tenure bonus to 6,000 (can still change).
+      if (n.includes('latupan, norbert')) next[p.key] = { tierAmount: 6000 }
     }
     if (Object.keys(next).length) setOv(next)
   }, [people, cfg.name]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const needsHire = cfg.tenure.on || cfg.tiers.length > 0
   const run = useMemo(() => people ? computeRun(people, cfg, ov) : null, [people, cfg, ov])
-  const rows = useMemo(() => (run?.rows || []).filter(r => showNoHire || !(needsHire && r.ev.status === 'no_hire')), [run, showNoHire, needsHire])
+  const rows = useMemo(() => (run?.rows || []).filter(r => showNoHire || fStatus === 'no_hire' || !(needsHire && r.ev.status === 'no_hire')), [run, showNoHire, needsHire, fStatus])
+  const teams = useMemo(() => Array.from(new Set((people || []).map(p => p.team).filter(Boolean) as string[])).sort(), [people])
+  const filtersActive = !!fSearch.trim() || fStatus !== 'all' || fTeam !== 'all' || fTenure !== 'all'
+  const shown = useMemo(() => rows.filter(r => {
+    if (fSearch.trim() && !r.person.name.toLowerCase().includes(fSearch.trim().toLowerCase())) return false
+    if (fTeam !== 'all' && (r.person.team || '') !== fTeam) return false
+    if (fTenure === '12' && !(r.ev.months !== null && r.ev.months >= 12)) return false
+    if (fTenure === 'under12' && !(r.ev.months !== null && r.ev.months < 12)) return false
+    if (fStatus === 'reward') return r.ev.eligible
+    if (fStatus !== 'all' && r.ev.status !== fStatus) return false
+    return true
+  }), [rows, fSearch, fStatus, fTeam, fTenure])
+  const shownSum = useMemo(() => ({ tier: shown.reduce((s, r) => s + r.ev.tier, 0), reward: shown.reduce((s, r) => s + r.ev.reward, 0), total: shown.reduce((s, r) => s + r.ev.total, 0) }), [shown])
+  const filterText = [fSearch.trim() && `name contains "${fSearch.trim()}"`, fStatus !== 'all' && `status: ${fStatus === 'reward' ? 'gets the reward' : STATUS[fStatus as Status]?.label}`, fTeam !== 'all' && `team: ${fTeam}`, fTenure !== 'all' && (fTenure === '12' ? '12 or more months' : 'under 12 months')].filter(Boolean).join(', ')
   const hiddenNoHire = (run?.rows || []).filter(r => needsHire && r.ev.status === 'no_hire').length
 
   const set = (patch: Partial<BonusConfig>) => setCfg(c => ({ ...c, ...patch }))
@@ -273,6 +292,21 @@ export default function BonusReview({ showToast }: { showToast: Toast }) {
           <ul className="text-sm text-gray-700 list-disc ml-5 space-y-1 mt-2">{describe(cfg).map((l, i) => <li key={i}>{l}</li>)}</ul>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">{tiles.map(t => <div key={t.l} className="bg-white border border-gray-200 rounded-xl p-3"><div className="text-lg font-bold text-gray-900">{t.v}</div><div className="text-xs text-gray-500">{t.l}</div></div>)}</div>
+        <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap items-end gap-3 no-print">
+          <label className="text-xs text-gray-600">Find a name<input value={fSearch} onChange={e => setFSearch(e.target.value)} placeholder="Type a name" className={`${inputCls} md:w-48`} /></label>
+          <label className="text-xs text-gray-600">Result
+            <select value={fStatus} onChange={e => setFStatus(e.target.value)} className={`${inputCls} md:w-44`}>
+              <option value="all">Everyone</option><option value="reward">Gets the reward</option><option value="pays">Qualifies</option><option value="exception">Exceptions</option>
+              <option value="gated">Notice to Explain gate</option><option value="not_met">Not met</option><option value="no_data">No data</option><option value="no_hire">No hire date</option><option value="excluded">Left out</option>
+            </select></label>
+          <label className="text-xs text-gray-600">Team or client
+            <select value={fTeam} onChange={e => setFTeam(e.target.value)} className={`${inputCls} md:w-44`}><option value="all">All</option>{teams.map(t => <option key={t} value={t}>{t}</option>)}</select></label>
+          <label className="text-xs text-gray-600">Tenure
+            <select value={fTenure} onChange={e => setFTenure(e.target.value)} className={`${inputCls} md:w-40`}><option value="all">All</option><option value="12">12 or more months</option><option value="under12">Under 12 months</option></select></label>
+          {filtersActive && <button onClick={() => { setFSearch(''); setFStatus('all'); setFTeam('all'); setFTenure('all') }} className="text-xs text-blue-600 hover:underline pb-2">Clear filters</button>}
+          <span className="text-xs text-gray-500 pb-2 ml-auto">Showing {shown.length} of {rows.length}</span>
+        </div>
+        {filtersActive && <p className="hidden print:block text-xs text-gray-600">Filtered list: {filterText}.</p>}
         {!people ? <div className="text-sm text-gray-500">Loading…</div> : (
           <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
             <table className="w-full text-sm">
@@ -281,7 +315,7 @@ export default function BonusReview({ showToast }: { showToast: Toast }) {
                 <th className="px-2 py-2 text-right">Attendance</th><th className="px-2 py-2 text-right">Performance</th><th className="px-2 py-2 text-right">NTEs</th><th className="px-2 py-2 text-right">Escalations</th>
                 <th className="px-2 py-2 no-print">Exception</th><th className="px-2 py-2">Status</th><th className="px-2 py-2 text-right">Reward</th><th className="px-2 py-2 text-right">Total</th><th className="px-2 py-2">Basis</th></tr></thead>
               <tbody>
-                {rows.map(({ person: p, ov: o, ev }) => (
+                {shown.map(({ person: p, ov: o, ev }) => (
                   <tr key={p.key} className={`border-t border-gray-100 align-top ${ev.status === 'excluded' ? 'opacity-50' : ''}`}>
                     <td className="px-2 py-2"><div className="font-medium text-gray-900">{p.name}</div><div className="text-xs text-gray-400">{p.team || ''}</div>
                       <label className="text-xs text-gray-400 no-print flex items-center gap-1"><input type="checkbox" checked={o.include !== false} onChange={e => setOvFor(p.key, { include: e.target.checked })} /> in this run</label></td>
@@ -302,7 +336,8 @@ export default function BonusReview({ showToast }: { showToast: Toast }) {
                     <td className="px-2 py-2 text-right whitespace-nowrap font-semibold text-gray-900">{peso(ev.total)}</td>
                     <td className="px-2 py-2 text-xs text-gray-500 max-w-[320px]">{ev.reasons.join(' ')}</td>
                   </tr>))}
-                {run && <tr className="border-t-2 border-gray-300 font-semibold"><td className="px-2 py-2" colSpan={3}>Total</td><td className="px-2 py-2 text-right">{peso(run.totals.tiers)}</td><td colSpan={6}></td><td className="px-2 py-2 text-right">{peso(run.totals.rewards)}</td><td className="px-2 py-2 text-right">{peso(run.totals.grand)}</td><td></td></tr>}
+                {run && filtersActive && <tr className="border-t-2 border-gray-300 font-semibold bg-blue-50/40"><td className="px-2 py-2" colSpan={3}>Shown ({shown.length} people)</td><td className="px-2 py-2 text-right">{peso(shownSum.tier)}</td><td colSpan={6}></td><td className="px-2 py-2 text-right">{peso(shownSum.reward)}</td><td className="px-2 py-2 text-right">{peso(shownSum.total)}</td><td></td></tr>}
+                {run && <tr className="border-t-2 border-gray-300 font-semibold"><td className="px-2 py-2" colSpan={3}>{filtersActive ? 'Whole run' : 'Total'}</td><td className="px-2 py-2 text-right">{peso(run.totals.tiers)}</td><td colSpan={6}></td><td className="px-2 py-2 text-right">{peso(run.totals.rewards)}</td><td className="px-2 py-2 text-right">{peso(run.totals.grand)}</td><td></td></tr>}
               </tbody>
             </table>
           </div>)}
