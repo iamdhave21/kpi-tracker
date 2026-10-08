@@ -52,6 +52,7 @@ export default function BonusReview({ showToast }: { showToast: Toast }) {
   const [showNoHire, setShowNoHire] = useState(false)
   const [showRuns, setShowRuns] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [adjusting, setAdjusting] = useState<Set<string>>(new Set())
 
   const loadPeople = useCallback(async () => {
     const r = await call({ action: 'people' })
@@ -286,7 +287,11 @@ export default function BonusReview({ showToast }: { showToast: Toast }) {
                       <label className="text-xs text-gray-400 no-print flex items-center gap-1"><input type="checkbox" checked={o.include !== false} onChange={e => setOvFor(p.key, { include: e.target.checked })} /> in this run</label></td>
                     <td className="px-2 py-2 whitespace-nowrap">{p.hire ? dateLabel(p.hire) : <span className="no-print"><input type="date" onChange={e => setHire(p, e.target.value)} className="border border-amber-300 rounded px-1 py-0.5 text-xs text-gray-900" aria-label={`Hire date for ${p.name}`} /></span>}</td>
                     <td className="px-2 py-2 text-right">{ev.months ?? '—'} {mark(ev.checks.tenure)}</td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap">{peso(ev.tier)}</td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">
+                      {(ev.status === 'gated' || o.tierAmount != null || adjusting.has(p.key)) ? (
+                        <><input type="number" min={0} value={o.tierAmount ?? ''} placeholder={String(ev.tier)} onChange={e => setOvFor(p.key, { tierAmount: e.target.value === '' ? null : Number(e.target.value) })} className="w-20 border border-gray-300 rounded px-1 py-0.5 text-xs text-right text-gray-900 no-print" aria-label={`Tenure bonus for ${p.name}`} /><span className="hidden print:inline">{peso(ev.tier)}</span></>
+                      ) : (<>{peso(ev.tier)} {ev.tier > 0 && <button onClick={() => setAdjusting(a => new Set(a).add(p.key))} className="text-xs text-blue-600 no-print">adjust</button>}</>)}
+                    </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">{ev.facts.attendance !== null ? ev.facts.attendance.toFixed(1) + '%' : '—'} {mark(ev.checks.attendance)}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">{ev.facts.performance !== null ? ev.facts.performance.toFixed(1) + '%' : '—'} {mark(ev.checks.performance)}</td>
                     <td className="px-2 py-2 text-right">{ev.facts.ntes} {mark(ev.checks.nte)}</td>

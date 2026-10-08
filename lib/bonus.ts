@@ -21,7 +21,7 @@ export type BonusConfig = {
 }
 export type MonthPoint = { ym: string, overall: number | null, attendance: number | null, unfinished: number }
 export type Person = { key: string, name: string, team: string | null, hire: string | null, months: MonthPoint[], nteDates: string[], escDates: string[], ids?: string[] }
-export type Override = { include?: boolean, exception?: boolean, note?: string, escalations?: number | null }
+export type Override = { include?: boolean, exception?: boolean, note?: string, escalations?: number | null, tierAmount?: number | null }
 export type Check = 'pass' | 'fail' | 'off' | 'nodata'
 export type Status = 'pays' | 'not_met' | 'no_data' | 'no_hire' | 'excluded' | 'gated' | 'exception'
 export type Eval = {
@@ -126,6 +126,10 @@ export function evaluate(p: Person, cfg: BonusConfig, ov: Override = {}): Eval {
   const nteGate = cfg.nte.on && ntes > cfg.nte.maxAllowed
   let tier = months !== null ? tierFor(cfg.tiers, months) : 0
   if (nteGate) tier = Math.round(tier * cfg.nte.tierPct / 100)
+  // The Director can set one person's tenure bonus by hand (for example after a Notice to Explain).
+  const fixed = ov.tierAmount
+  if (fixed !== null && fixed !== undefined && !Number.isNaN(fixed)) { tier = fixed; reasons.push(`Tenure bonus set by the Director to ₱${fixed.toLocaleString('en-PH')}.`) }
+  else if (nteGate && cfg.nte.tierPct >= 100 && tier > 0) reasons.push('Tenure bonus not yet decided after the Notice to Explain; shown in full.')
   const vals = Object.values(checks)
   const qualifies = vals.every(c => c === 'pass' || c === 'off')
   const exception = !!ov.exception && !nteGate
@@ -181,4 +185,14 @@ export function presetMonthly(month: string = lastFullMonth()): BonusConfig {
     nte: { on: true, maxAllowed: 0, tierPct: 100 }, escalations: { on: true, maxAllowed: 0 },
     reward: { mode: 'per_person', amount: 1000, budget: 0 },
   }
+}
+
+// "3 yr 9 mo" from a hire date, counted in whole months like the bonus rules (the day is ignored).
+export function tenureText(hire: string | null | undefined, now: Date = new Date()): string {
+  const m = /^(\d{4})-(\d{2})/.exec(hire || '')
+  if (!m) return ''
+  const months = (now.getFullYear() * 12 + now.getMonth() + 1) - (Number(m[1]) * 12 + Number(m[2]))
+  if (months < 0) return 'starts soon'
+  const yr = Math.floor(months / 12), mo = months % 12
+  return yr === 0 ? `${mo} mo` : mo ? `${yr} yr ${mo} mo` : `${yr} yr`
 }

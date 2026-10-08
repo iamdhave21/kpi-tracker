@@ -1,4 +1,4 @@
-import { parseMonthLabel, monthsBetween, tierFor, aggregateMonths, evaluate, computeRun, presetAnnual, presetMonthly, nextMonth, lastFullMonth } from '../lib/bonus.ts'
+import { tenureText, parseMonthLabel, monthsBetween, tierFor, aggregateMonths, evaluate, computeRun, presetAnnual, presetMonthly, nextMonth, lastFullMonth } from '../lib/bonus.ts'
 let fail = 0
 const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`) }
 
@@ -50,6 +50,22 @@ eq('an NTE withholds the reward', [nte.status, nte.eligible], ['gated', false])
 eq('...but keeps the tier at 100% by default', nte.tier, 8000)
 eq('tier can be reduced for NTE holders', evaluate(P('L', '2024-11-04', full(99, 100), 1), { ...A, nte: { on: true, maxAllowed: 0, tierPct: 50 } }).tier, 4000)
 eq('an exception cannot override an NTE', evaluate(P('L', '2024-11-04', full(50, 50), 1), A, { exception: true }).status, 'gated')
+
+// the Director sets one person's tenure bonus by hand (Norbert: 4,000 to 6,000)
+const lat = P('Latupan', '2024-11-04', full(99, 100), 1)
+eq('unset: shown in full but flagged as undecided', (e => [e.tier, e.reasons.some(r => r.includes('not yet decided'))])(evaluate(lat, A)), [8000, true])
+eq('set to 5000', (e => [e.tier, e.total, e.status])(evaluate(lat, A, { tierAmount: 5000 })), [5000, 6500, 'gated'])
+eq('the amount is recorded in the basis', evaluate(lat, A, { tierAmount: 5000 }).reasons.some(r => r.includes('₱5,000')), true)
+eq('a set amount stops the undecided flag', evaluate(lat, A, { tierAmount: 4000 }).reasons.some(r => r.includes('not yet decided')), false)
+eq('4000 to 6000 never earns the add-on', computeRun([lat], A, { Latupan: { tierAmount: 6000 } }).rows[0].ev.reward, 0)
+eq('a manual amount also works for someone with no NTE', evaluate(P('Z', '2024-01-10', full(100, 100)), A, { tierAmount: 7000 }).tier, 7000)
+eq('percentage still applies when no amount is set', evaluate(lat, { ...A, nte: { on: true, maxAllowed: 0, tierPct: 50 } }).tier, 4000)
+
+// tenure text for the Employees screen
+eq('whole months, day ignored: Dec 2022 to Oct 2026', tenureText('2022-12-28', new Date(2026, 9, 8)), '3 yr 10 mo')
+eq('whole years', tenureText('2024-10-18', new Date(2026, 9, 8)), '2 yr')
+eq('under a year: Jul to Oct is 3 months', tenureText('2026-07-29', new Date(2026, 9, 8)), '3 mo')
+eq('no date, no text', tenureText(null), '')
 
 // exceptions (Azeliza / Czareena style)
 const exc = evaluate(P('Azeliza', '2022-12-28', [pt('2026-01', null, 100, 1)]), A, { exception: true, note: 'Unfinished January entry.' })

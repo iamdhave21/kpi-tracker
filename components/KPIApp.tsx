@@ -9,6 +9,7 @@ import SopRepository from '@/components/SopRepository'
 import BonusReview from '@/components/BonusReview'
 import { canSeeTicket, isMine, pocCategoriesFor, teamEmailsFor, localPart } from '@/lib/ticketScope'
 import { kpiEntryCoverage, averageApplicable } from '@/lib/tlScore'
+import { tenureText } from '@/lib/bonus'
 import { staffApi } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
@@ -5220,6 +5221,8 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
   const [editDepartments, setEditDepartments] = useState<string[]>([])
   const [editEmpType, setEditEmpType] = useState('Agent')
   const [editContractType, setEditContractType] = useState('')
+  const [editHireDate, setEditHireDate] = useState('')
+  const [newHireDate, setNewHireDate] = useState('')
   const [editClients, setEditClients] = useState<string[]>([CLIENTS[0]])
   const [editPortalRole, setEditPortalRole] = useState<string>('agent')
   const [searchQ, setSearchQ] = useState('')
@@ -5285,6 +5288,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         'Department(s)': (e.departments || []).join(', '),
         'Work Email': e.email || '',
         'Status': e.active ? 'Active' : 'Inactive',
+        'Hire Date': e.hire_date || '',
       }))
     const ws = XLSX.utils.json_to_sheet(rows)
     ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 24 }, { wch: 32 }, { wch: 10 }]
@@ -5333,6 +5337,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
       departments: newDepartments.length ? newDepartments : null,
       employment_type: newEmpType,
       contract_type: newContractType,
+      hire_date: newHireDate||null,
       client: primaryClient,
       clients_supported: newClients.length ? newClients : null,
       active:true
@@ -5359,7 +5364,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           }
         }
       }
-      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType(''); setNewContractType(''); setNewClients([CLIENTS[0]]); setNewPortalRole(''); onChanged()
+      setNewName(''); setNewEmail(''); setNewEmpId(''); setNewDepartments([]); setNewEmpType(''); setNewContractType(''); setNewHireDate(''); setNewClients([CLIENTS[0]]); setNewPortalRole(''); onChanged()
     }
     setAdding(false)
   }
@@ -5369,8 +5374,15 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     const existingForPerson = employees.filter(e => e.name.trim().toLowerCase() === editName.trim().toLowerCase())
     const editPrimaryClient = editClients[0] || CLIENTS[0]
     const generatedDesig = generateDesignation(editEmpType, editPrimaryClient, existingForPerson, id)
-    const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,contract_type:editContractType||null,client:editPrimaryClient,clients_supported:editClients.length?editClients:null}).eq('id',id)
+    const {error} = await supabase.from('employees').update({name:editName,designation:generatedDesig,email:editEmail||null,employee_id:editEmpId||null,departments:editDepartments.length?editDepartments:null,employment_type:editEmpType,contract_type:editContractType||null,client:editPrimaryClient,clients_supported:editClients.length?editClients:null,hire_date:editHireDate||null}).eq('id',id)
     if (error) { showToast(error.message,'error'); return }
+    // One person can have a row per client: keep the hire date the same on all of them, and log
+    // the change in the audit trail (it is deliberately NOT part of the notification email).
+    if (editHireDate) {
+      const sameIds = existingForPerson.map(e => e.id).filter(x => x !== id)
+      if (sameIds.length) await supabase.from('employees').update({ hire_date: editHireDate }).in('id', sameIds)
+    }
+    if ((emp?.hire_date || '') !== editHireDate) await writeAuditLog('EDIT_EMPLOYEE', currentUser, editName, '', 'Hire date', emp?.hire_date || '', editHireDate || '')
     // Sync to app_users if a work email is present. If the email actually
     // changed, look up their EXISTING login by the OLD email first and
     // rename it -- otherwise this silently creates a duplicate orphaned
@@ -5511,6 +5523,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
             <option value="">Contract Type *</option>
             {CONTRACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
+          <label className="text-xs text-gray-500 flex flex-col gap-1">Hire date * <input type="date" value={newHireDate} onChange={e=>setNewHireDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="First day of work. Tenure and bonuses are counted from this date."/></label>
           <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Work email (@ab-businesssupport.com) *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900"/>
           {userRole === 'super_admin' && (
             <select value={newPortalRole} onChange={e=>setNewPortalRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Portal Role -- creates their login immediately if a work email is set">
@@ -5521,7 +5534,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
               <option value="super_admin">Portal: Super Admin</option>
             </select>
           )}
-          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length||!newClients.length||!newContractType||!newEmpType||(userRole==='super_admin'&&!newPortalRole)} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
+          <button onClick={addEmployee} disabled={adding||!newName.trim()||!newEmpId.trim()||!newEmail.trim()||!newDepartments.length||!newClients.length||!newContractType||!newEmpType||!newHireDate||(userRole==='super_admin'&&!newPortalRole)} className="bg-blue-900 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2 justify-center"><PlusCircle className="w-4 h-4"/>Add Employee</button>
         </div>
         <div className="mt-3">
           <p className="text-xs font-medium text-gray-500 mb-1.5">Client(s) Supported * — controls which clients this person's records are visible under</p>
@@ -5601,6 +5614,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                       {emps[0].employment_type && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${EMPLOYMENT_TYPE_COLORS[emps[0].employment_type] || 'bg-gray-100 text-gray-600'}`}>{emps[0].employment_type}</span>}
                       {emps[0].client && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[emps[0].client] || 'bg-gray-100 text-gray-600'}`}>{emps[0].client}</span>}
                       {emps[0].employee_id && <span className="text-xs font-mono bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{emps[0].employee_id}</span>}
+                      {emps[0].hire_date && <span className="text-xs text-gray-500" title="Hire date and time with the company">Hired {new Date(emps[0].hire_date+'T00:00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})} ({tenureText(emps[0].hire_date)})</span>}
                       {emps[0].departments && emps[0].departments.map(d => (
                         <span key={d} className={`text-xs px-1.5 py-0.5 rounded border ${DEPT_BADGE_COLORS[d] || 'bg-gray-50 text-gray-500 border-gray-200'}`}>{d}</span>
                       ))}
@@ -5615,7 +5629,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emps[0])} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${emps[0].active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emps[0].active?'Active':'Inactive'}</button>
-                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditContractType(emps[0].contract_type||'');setEditClients(emps[0].clients_supported&&emps[0].clients_supported.length?emps[0].clients_supported:(emps[0].client?[emps[0].client]:[CLIENTS[0]]));if(emps[0].email){const el=emps[0].email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emps[0].id?null:emps[0].id);setEditName(emps[0].name);setEditEmail(emps[0].email||'');setEditEmpId(emps[0].employee_id||'');setEditDepartments(emps[0].departments||[]);setEditEmpType(emps[0].employment_type||'Agent');setEditContractType(emps[0].contract_type||'');setEditHireDate(emps[0].hire_date||'');setEditClients(emps[0].clients_supported&&emps[0].clients_supported.length?emps[0].clients_supported:(emps[0].client?[emps[0].client]:[CLIENTS[0]]));if(emps[0].email){const el=emps[0].email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emps[0].id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emps[0].id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -5648,6 +5662,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Contract Type</label>
+                      <input type="date" value={editHireDate} onChange={e=>setEditHireDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Hire date: first day of work. Tenure and bonuses are counted from this date." aria-label="Hire date"/>
                       <select value={editContractType} onChange={e=>setEditContractType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Legal engagement type -- separate from Role, used on disciplinary notices and legal documents">
                         <option value="">Not set</option>
                         {CONTRACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -5710,6 +5725,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                       {emp.employment_type && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${EMPLOYMENT_TYPE_COLORS[emp.employment_type] || 'bg-gray-100 text-gray-600'}`}>{emp.employment_type}</span>}
                       {emp.client && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CLIENT_COLORS[emp.client] || 'bg-gray-100 text-gray-600'}`}>{emp.client}</span>}
                       {emp.employee_id && <span className="text-xs font-mono bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{emp.employee_id}</span>}
+                      {emp.hire_date && <span className="text-xs text-gray-500" title="Hire date and time with the company">Hired {new Date(emp.hire_date+'T00:00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})} ({tenureText(emp.hire_date)})</span>}
                       {emp.departments && emp.departments.map(d => (
                         <span key={d} className={`text-xs px-1.5 py-0.5 rounded border ${DEPT_BADGE_COLORS[d] || 'bg-gray-50 text-gray-500 border-gray-200'}`}>{d}</span>
                       ))}
@@ -5717,7 +5733,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                     {canEdit ? (
                       <>
                         <button onClick={()=>toggleActive(emp)} className={`text-xs px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex-shrink-0 ${emp.active?'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600':'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>{emp.active?'Active':'Inactive'}</button>
-                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditContractType(emp.contract_type||'');setEditClients(emp.clients_supported&&emp.clients_supported.length?emp.clients_supported:(emp.client?[emp.client]:[CLIENTS[0]]));if(emp.email){const el=emp.email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={async()=>{setEditId(editId===emp.id?null:emp.id);setEditName(emp.name);setEditEmail(emp.email||'');setEditEmpId(emp.employee_id||'');setEditDepartments(emp.departments||[]);setEditEmpType(emp.employment_type||'Agent');setEditContractType(emp.contract_type||'');setEditHireDate(emp.hire_date||'');setEditClients(emp.clients_supported&&emp.clients_supported.length?emp.clients_supported:(emp.client?[emp.client]:[CLIENTS[0]]));if(emp.email){const el=emp.email.toLowerCase();const{data}=await supabase.from('app_users').select('role').or(`email.eq.${el},username.eq.${el}`).single();setEditPortalRole(data?.role||'agent')}else{setEditPortalRole('agent')}}} className={`p-1 ${editId===emp.id?'text-blue-600':'text-gray-400 hover:text-blue-600'}`}><Edit2 className="w-4 h-4"/></button>
                         <button onClick={()=>deleteEmployee(emp.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4"/></button>
                       </>
                     ) : (
@@ -5736,7 +5752,8 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
                             {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select></div>
                         <div><label className="block text-xs font-medium text-gray-500 mb-1">Contract Type</label>
-                          <select value={editContractType} onChange={e=>setEditContractType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Legal engagement type -- separate from Role, used on disciplinary notices and legal documents">
+                          <input type="date" value={editHireDate} onChange={e=>setEditHireDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Hire date: first day of work. Tenure and bonuses are counted from this date." aria-label="Hire date"/>
+                      <select value={editContractType} onChange={e=>setEditContractType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" title="Legal engagement type -- separate from Role, used on disciplinary notices and legal documents">
                             <option value="">Not set</option>
                             {CONTRACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select></div>
