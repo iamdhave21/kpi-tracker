@@ -30,7 +30,8 @@ eq('a 20% month is flagged unfinished and not counted', [ag[1].overall, ag[1].un
 const pt = (ym, o, a, u = 0) => ({ ym, overall: o, attendance: a, unfinished: u })
 const full = (o, a) => ['2025-01', '2025-06', '2026-03', '2026-09'].map(ym => pt(ym, o, a))
 const P = (name, hire, months, ntes = 0, esc = 0) => ({ key: name, name, team: null, hire, months, nteDates: Array(ntes).fill('2026-03-10'), escDates: Array(esc).fill('2026-03-12') })
-const A = presetAnnual()
+// The earlier rule set (100% attendance, 2025 to 2026) is kept here so those rules stay tested.
+const A = { ...presetAnnual(), periodFrom: '2025-01', periodTo: '2026-09', attendance: { on: true, min: 100, mode: 'every' } }
 
 const canoy = evaluate(P('Canoy', '2025-12-04', full(100, 100)), A)
 eq('perfect record qualifies', canoy.status, 'pays')
@@ -105,6 +106,20 @@ eq('per-person cost over the budget is reported', capped.totals.overBudget, 500)
 eq('monthly preset: no tenure, no tiers', (c => [c.tenure.on, c.tiers.length, c.basket])(presetMonthly('2026-09')), [false, 0, 0])
 eq('monthly preset pays 1000 per qualifier', computeRun([P('M', null, [pt('2026-09', 99, 100)])], presetMonthly('2026-09')).rows[0].ev.total, 1000)
 eq('next month wraps the year', nextMonth('2026-12'), '2027-01'); eq('last full month in January', lastFullMonth(new Date(2027, 0, 15)), '2026-12')
+
+
+// the 2026 rule: 97% average only, no attendance bar
+const N = presetAnnual()
+eq('new annual preset measures 2026 only', [N.periodFrom, N.periodTo], ['2026-01', '2026-12'])
+eq('new annual preset has no attendance bar', N.attendance.on, false)
+const m26 = (o, a) => ['2026-01', '2026-03', '2026-06', '2026-09'].map(ym => pt(ym, o, a))
+eq('97% average reaches 8,500 even with weak attendance', (e => [e.status, e.reward])((r => ({ status: r.rows[0].ev.status, reward: r.rows[0].ev.reward }))(computeRun([P('Dandoy', '2025-08-11', m26(98, 90))], N))), ['pays', 500])
+eq('below 97% stays at the 8,000 base, no reward', (r => [r.rows[0].ev.tier, r.rows[0].ev.reward])(computeRun([P('X', '2024-01-10', m26(96, 100))], N)), [8000, 0])
+eq('2025 scores do not count in the 2026 rule', (r => r.rows[0].ev.status)(computeRun([P('Y', '2024-01-10', [pt('2025-05', 60, 60), ...m26(99, 100)])], N)), 'pays')
+eq('without the Notice to Explain the same record would reach 8,500', (r => [r.rows[0].ev.tier, r.rows[0].ev.reward])(computeRun([P('Latupan', '2024-11-04', m26(99, 100), 0)], N, {})), [8000, 500])
+const nteRun = computeRun([{ ...P('Latupan', '2024-11-04', m26(99, 100)), nteDates: ['2026-03-10'] }], N, { Latupan: { tierAmount: 6000 } })
+eq('Norbert with the Notice to Explain: 6,000, no add-on', [nteRun.rows[0].ev.tier, nteRun.rows[0].ev.reward, nteRun.rows[0].ev.status], [6000, 0, 'gated'])
+eq('an unfinished January entry is ignored, so she still qualifies', (r => r.rows[0].ev.status)(computeRun([P('Azeliza', '2022-12-28', [pt('2026-01', null, 100, 1), ...['2026-02', '2026-03', '2026-06'].map(ym => pt(ym, 100, 100))])], N)), 'pays')
 
 console.log(fail === 0 ? '\nALL PASSED' : `\n${fail} FAILED`)
 process.exit(fail === 0 ? 0 : 1)

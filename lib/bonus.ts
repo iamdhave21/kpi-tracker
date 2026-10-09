@@ -170,9 +170,11 @@ export const lastFullMonth = (now: Date = new Date()) => { const y = now.getFull
 // Starting points. The Director can change anything and save their own.
 export function presetAnnual(): BonusConfig {
   return {
-    name: 'Annual bonus', periodFrom: '2025-01', periodTo: '2026-09', payoutMonth: '2026-12',
+    // 2026 scores only. 12+ months starts at 8,000 and reaches 8,500 with a 97% average; there is no
+    // attendance bar in this preset (switch it on in the screen if it is wanted again).
+    name: 'Annual bonus', periodFrom: '2026-01', periodTo: '2026-12', payoutMonth: '2026-12',
     tenure: { on: true, minMonths: 12 }, tiers: [{ minMonths: 12, amount: 8000 }, { minMonths: 6, amount: 4000 }], basket: 1500,
-    attendance: { on: true, min: 100, mode: 'every' }, performance: { on: true, min: 97, ignoreUnfinished: true },
+    attendance: { on: false, min: 100, mode: 'every' }, performance: { on: true, min: 97, ignoreUnfinished: true },
     nte: { on: true, maxAllowed: 0, tierPct: 100 }, escalations: { on: true, maxAllowed: 0 },
     reward: { mode: 'per_person', amount: 500, budget: 0 },
   }
