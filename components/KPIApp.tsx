@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment, useMemo } from 'react'
 import { supabase, Employee, KpiRecord, NteRecord, AvScanSubmission } from '@/lib/supabase'
 import ClientPortalAdmin from '@/components/ClientPortalAdmin'
 import ToolsRepository from '@/components/ToolsRepository'
@@ -11,6 +11,7 @@ import { canSeeTicket, isMine, pocCategoriesFor, teamEmailsFor, localPart } from
 import { kpiEntryCoverage, averageApplicable } from '@/lib/tlScore'
 import { tenureText } from '@/lib/bonus'
 import { isExemptEmail, summarizePulse, uniqueFlagged, latestRequiredMonday } from '@/lib/pulse'
+import { breakdown as pulseBreakdown, scoreTone, Breakdown } from '@/lib/pulseBreakdown'
 import { staffApi } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
@@ -3486,6 +3487,82 @@ function pulseIsAtRisk(row: any): boolean {
   return (avg !== null && avg <= 2.5) || (typeof row.retention === 'number' && row.retention <= 2)
 }
 
+// -- "What is driving the score": category and question averages, with the change since the previous week.
+const TONE_CLS: Record<string, string> = { none: 'bg-gray-50 text-gray-400 border-gray-200', good: 'bg-emerald-50 text-emerald-700 border-emerald-200', watch: 'bg-amber-50 text-amber-700 border-amber-200', bad: 'bg-red-50 text-red-700 border-red-200' }
+function PulseSpark({ series }: { series: { week: string, avg: number | null }[] }) {
+  const W = 120, H = 30, n = series.length
+  const pts = series.map((s, i) => ({ x: n > 1 ? (i / (n - 1)) * W : W / 2, y: s.avg === null ? null : H - ((s.avg - 1) / 4) * H }))
+  let d = '', pen = false
+  pts.forEach(p => { if (p.y === null) { pen = false; return } d += `${pen ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)} `; pen = true })
+  const last = [...pts].reverse().find(p => p.y !== null)
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-8" role="img" aria-label="Trend over the last weeks">
+      <line x1="0" x2={W} y1={H - ((2.5 - 1) / 4) * H} y2={H - ((2.5 - 1) / 4) * H} stroke="#fca5a5" strokeDasharray="3 3" strokeWidth="1" />
+      <path d={d} fill="none" stroke="#1e3a8a" strokeWidth="1.6" />
+      {last && <circle cx={last.x} cy={last.y as number} r="2.4" fill="#1e3a8a" />}
+    </svg>
+  )
+}
+function PulseDelta({ v }: { v: number | null }) {
+  if (v === null) return <span className="text-[11px] text-gray-400">no earlier week</span>
+  const cls = v <= -0.1 ? 'text-red-600' : v >= 0.1 ? 'text-emerald-600' : 'text-gray-400'
+  return <span className={`text-[11px] font-medium ${cls}`}>{v <= -0.1 ? '▼' : v >= 0.1 ? '▲' : '▬'} {v > 0 ? '+' : ''}{v.toFixed(2)} vs last week</span>
+}
+function PulseBreakdownCard({ bd, showAll, setShowAll }: { bd: Breakdown, showAll: boolean, setShowAll: (v: boolean) => void }) {
+  const wk = new Date(bd.week + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  const fmt = (v: number | null) => v === null ? '—' : v.toFixed(2)
+  const summary: string[] = []
+  if (bd.weakest) summary.push(`Lowest area: ${bd.weakest.label} (${fmt(bd.weakest.current)}/5).`)
+  if (bd.biggestDrop) summary.push(`Biggest drop since the previous week: ${bd.biggestDrop.label} (${fmt(bd.biggestDrop.delta)}).`)
+  else if (bd.prevWeek) summary.push('No area dropped by 0.1 or more since the previous week.')
+  if (bd.lowestQuestion) summary.push(`Weakest single question: “${bd.lowestQuestion.text}” (${fmt(bd.lowestQuestion.current)}).`)
+  const tiles = [
+    ...bd.categories.map(c => ({ key: c.key, label: c.label, st: c as any, low: c.lowestQuestion })),
+    { key: 'retention', label: 'Retention likelihood', st: { ...bd.retention }, low: null },
+  ]
+  const allQ = bd.categories.flatMap(c => c.questions.map(q => ({ ...q, area: c.label }))).filter(q => q.current !== null).sort((a, b) => (a.current! - b.current!))
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold text-blue-900">What is driving the score</h3>
+        <p className="text-xs text-gray-400">Week of {wk} · {bd.responders} {bd.responders === 1 ? 'person' : 'people'} responded · averages out of 5, from those who responded</p>
+      </div>
+      {bd.responders === 0 ? <p className="text-sm text-gray-400">Nobody in this view has checked in for this week yet.</p> : (<>
+        <p className="text-sm text-gray-700">{summary.join(' ')}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {tiles.map(t => (
+            <div key={t.key} className="border border-gray-100 rounded-lg p-3">
+              <p className="text-xs font-semibold text-gray-600">{t.label}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-xl font-bold px-2 py-0.5 rounded-lg border ${TONE_CLS[scoreTone(t.st.current)]}`}>{fmt(t.st.current)}</span>
+                <span className="text-[11px] text-gray-400">/5</span>
+              </div>
+              <div className="mt-1"><PulseDelta v={t.st.delta} /></div>
+              <PulseSpark series={t.st.series} />
+              <p className="text-[11px] text-gray-500">Window average {fmt(t.st.windowAvg)}</p>
+              {t.low && <p className="text-[11px] text-gray-500 mt-1">Lowest: “{t.low.text}” ({fmt(t.low.current)})</p>}
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setShowAll(!showAll)} className="text-xs text-blue-600 hover:underline">{showAll ? 'Hide' : 'Show'} all {allQ.length} questions, lowest first</button>
+        {showAll && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 text-gray-500 text-left"><tr><th className="px-2 py-1.5">Question</th><th className="px-2 py-1.5">Area</th><th className="px-2 py-1.5 text-right">This week</th><th className="px-2 py-1.5 text-right">Last week</th><th className="px-2 py-1.5 text-right">Change</th><th className="px-2 py-1.5 text-right">Window avg</th></tr></thead>
+              <tbody>{allQ.map(q => (
+                <tr key={q.key} className="border-t border-gray-100"><td className="px-2 py-1.5 text-gray-800">{q.text}</td><td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{q.area}</td>
+                  <td className="px-2 py-1.5 text-right"><span className={`px-1.5 py-0.5 rounded border ${TONE_CLS[scoreTone(q.current)]}`}>{fmt(q.current)}</span></td>
+                  <td className="px-2 py-1.5 text-right text-gray-500">{fmt(q.prev)}</td>
+                  <td className="px-2 py-1.5 text-right"><PulseDelta v={q.delta} /></td><td className="px-2 py-1.5 text-right text-gray-500">{fmt(q.windowAvg)}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </>)}
+    </div>
+  )
+}
+
 function PulseRatingRow({ text, value, onChange, scaleLabels }: { text: string, value: number|undefined, onChange: (n: number) => void, scaleLabels: Record<number,string> }) {
   return (
     <div className="py-2">
@@ -3627,6 +3704,8 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   const [noteDrafts, setNoteDrafts] = useState<Record<string,string>>({})
   const [savingNote, setSavingNote] = useState<string|null>(null)
   const [trendData, setTrendData] = useState<{week: string, avg: number|null, flagged: number}[]>([])
+  const [trendRows, setTrendRows] = useState<any[]>([])
+  const [showAllQ, setShowAllQ] = useState(false)
   const [compareWeeks, setCompareWeeks] = useState<string[]>([])
   // Per-agent trend view: lets a manager pull up one specific person's own
   // multi-week history (same shape as what an agent sees for themselves
@@ -3673,6 +3752,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
       const weeks = [...recentWeeks].reverse()
       const { data } = await supabase.from('pulse_surveys').select('*').gte('week_start', weeks[0]).lte('week_start', weeks[weeks.length-1])
       const scoped = (data||[]).filter((r:any) => inScope(r.employee_id))
+      setTrendRows(scoped)
       const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
       setTrendData(weeks.map(w => {
         const rows = scoped.filter((r:any) => r.week_start === w)
@@ -3683,6 +3763,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
       }))
     })()
   }, [canManage, isTL, teamEmpIds, teamFilter])
+  const breakdownNow = useMemo(() => canManage && weekFilter ? pulseBreakdown(trendRows, PULSE_CATEGORIES, [...recentWeeks].reverse(), weekFilter) : null, [canManage, trendRows, recentWeeks, weekFilter])
 
   // Fetches (and caches) one employee's own last-12-week pulse history,
   // same "avg excludes retention, retention plotted separately" convention
@@ -3842,6 +3923,8 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
               </>
             )}
           </div>
+
+          {breakdownNow && trendRows.length > 0 && <PulseBreakdownCard bd={breakdownNow} showAll={showAllQ} setShowAll={setShowAllQ} />}
 
           {/* Trend across recent weeks */}
           {trendData.some(t => t.avg !== null) && (
