@@ -150,11 +150,16 @@ export type AttendanceOptions = {
 }
 export const DEFAULT_OPTIONS: AttendanceOptions = { countVacation: false, latePointsPer8h: 5 }
 
+// A day that explains the score: late, half day, leave, absence, blank...
+export type DayEvent = { date: string, kind: DayClass | 'short', hours: number | null, remark: string, lateHours: number }
 export type MonthAttendance = {
   person: string, name: string, month: string                  // 'YYYY-MM'
   scheduled: number, presentDays: number, halfdays: number, sl: number, el: number, absent: number, vl: number
   holidays: number, slide: number, lateDays: number, lateHours: number, undertimeHours: number, nodata: number, separated: number
   hours: number, lastDate: string
+  lost: number                                                  // absence days taken off (a half day counts 0.5)
+  deduction: number                                             // points taken off for late / short hours
+  events: DayEvent[]
   pct: number | null                                            // 0 to 100, null when there is nothing to measure
   flags: string[]
 }
@@ -166,7 +171,7 @@ export function aggregateAttendance(rows: (DayRow & { person: string })[], opts:
     const month = r.date.slice(0, 7), k = r.person + '|' + month
     const a = g.get(k) || {
       person: r.person, name: r.name, month, scheduled: 0, presentDays: 0, halfdays: 0, sl: 0, el: 0, absent: 0, vl: 0, holidays: 0, slide: 0,
-      lateDays: 0, lateHours: 0, undertimeHours: 0, nodata: 0, separated: 0, hours: 0, lastDate: r.date, pct: null, flags: [],
+      lateDays: 0, lateHours: 0, undertimeHours: 0, nodata: 0, separated: 0, hours: 0, lastDate: r.date, lost: 0, deduction: 0, events: [], pct: null, flags: [],
     }
     const c = classifyDay(r.hours, r.remark)
     if (r.date > a.lastDate) a.lastDate = r.date
@@ -185,6 +190,8 @@ export function aggregateAttendance(rows: (DayRow & { person: string })[], opts:
       case 'nodata': a.nodata++; break
     }
     a.undertimeHours += c.undertimeHours
+    const interesting = c.cls !== 'present' && c.cls !== 'holiday' && c.cls !== 'separated'
+    if (interesting || c.undertimeHours > 0) a.events.push({ date: r.date, kind: interesting ? c.cls : 'short', hours: typeof r.hours === 'number' ? r.hours : null, remark: r.remark === null || r.remark === undefined ? '' : String(r.remark).trim(), lateHours: c.lateHours })
     g.set(k, a)
   }
   const out = Array.from(g.values())
@@ -195,11 +202,14 @@ export function aggregateAttendance(rows: (DayRow & { person: string })[], opts:
     const lost = a.sl + a.el + a.absent + (opts.countVacation ? a.vl : 0) + 0.5 * a.halfdays
     const base = ((counted - lost) / counted) * 100
     const deduction = ((a.lateHours + a.undertimeHours) / 8) * opts.latePointsPer8h
+    a.lost = lost
+    a.deduction = Math.round(deduction * 100) / 100
     a.pct = Math.round(Math.max(0, Math.min(100, base - deduction)) * 100) / 100
     if (a.nodata > 0) a.flags.push(`${a.nodata} blank day${a.nodata === 1 ? '' : 's'} not counted`)
     if (counted < 5) a.flags.push('Only a few days recorded')
     if (a.separated > 0) a.flags.push('Left during this month')
   }
+  for (const a of out) a.events.sort((x, y) => x.date.localeCompare(y.date))
   return out.sort((x, y) => x.month.localeCompare(y.month) || x.name.localeCompare(y.name))
 }
 

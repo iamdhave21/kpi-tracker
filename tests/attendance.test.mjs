@@ -75,6 +75,19 @@ eq('score can never go below 0', att(days('z', [[1, 0, 'Absent'], [2, 0, 'Absent
 eq('few days recorded is flagged', att(days('t', [[1, 8, null], [2, 8, null]]))[0].flags, ['Only a few days recorded'])
 eq('month label matches the KPI convention', monthLabelOf('2026-09'), 'September 2026')
 
+// ---- the explanation behind each number (Molina, September: 21 present + 1 emergency leave)
+const mol = days('molina', [...Array.from({ length: 21 }, (_, i) => [i + 1, 8, null]), [22, 0, 'Emergency Leave']], '2026-09')
+const mo = att(mol)[0]
+eq('Molina: 22 scheduled, 1 lost, 95.45', [mo.scheduled, mo.lost, mo.pct], [22, 1, 95.45])
+eq('Molina: the one day that explains it', mo.events.map(e => `${e.date} ${e.kind} ${e.remark}`), ['2026-09-22 el Emergency Leave'])
+const lates = att(days('lt', [[3, 8, 0.5], [1, 8, null], [2, 8, 'Late'], [4, 8, 0.03]]))[0]
+eq('lates are listed in date order with their hours', lates.events.map(e => `${e.date.slice(8)}:${e.kind}:${e.lateHours}`), ['02:late:0', '03:late:0.5', '04:late:0.03'])
+eq('late count and hours', [lates.lateDays, Math.round(lates.lateHours * 100) / 100], [3, 0.53])
+eq('late points: 0.53 h of 8 = 0.33 points', lates.deduction, 0.33)
+eq('a clean month has no events', att(perfect)[0].events.length, 0)
+eq('a holiday is not an event', att([...perfect, D('p', '2026-04-03', 0, 'Holiday', 99)])[0].events.length, 0)
+eq('a short day is listed as short', att(days('sd', [[1, 8, null], [2, 6.85, null], [3, 8, null], [6, 8, null], [7, 8, null]]))[0].events.map(e => e.kind), ['short'])
+
 // ---- names (the real awkward ones)
 eq('accents and punctuation ignored', nameKey('Muñez,  Rose Ann.'), 'munez rose ann')
 eq('order does not matter', nameScore('Miking, Genefer Castro', 'Genefer Castro Miking'), 1)
