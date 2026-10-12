@@ -10,6 +10,7 @@ import BonusReview from '@/components/BonusReview'
 import { canSeeTicket, isMine, pocCategoriesFor, teamEmailsFor, localPart } from '@/lib/ticketScope'
 import { kpiEntryCoverage, averageApplicable } from '@/lib/tlScore'
 import { tenureText } from '@/lib/bonus'
+import { isExemptEmail, summarizePulse, uniqueFlagged, latestRequiredMonday } from '@/lib/pulse'
 import { staffApi } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
@@ -221,11 +222,11 @@ const PULSE_CHECK_REQUIRED_FROM = new Date('2026-08-31')
 // Weekly Pulse Check is not required from these specific accounts (by
 // explicit request, Sept 2026) -- they don't submit, aren't nagged for
 // missing it, and it's excluded from their own compliance denominator.
-// Matched by email, case-insensitive, same convention as everything else
-// identity-related in this app.
+// Matched by the PERSON (the part before the @, on either company domain), not the exact address:
+// the same person signs in as @ab-businesssupport.com or @ab-contactsolutions.com (rules in lib/pulse.ts).
 const PULSE_CHECK_EXEMPT_EMAILS = ['operations@ab-businesssupport.com', 'andrealiz@ab-businesssupport.com']
 function isPulseCheckExempt(email: string | null | undefined): boolean {
-  return !!email && PULSE_CHECK_EXEMPT_EMAILS.includes(email.toLowerCase())
+  return isExemptEmail(email, PULSE_CHECK_EXEMPT_EMAILS)
 }
 
 // Weekly Antivirus Scan Compliance -- same population and exemption rule
@@ -4080,7 +4081,7 @@ async function getAnnMonthDetail(scopedEmployees: Employee[], monthLabel: string
 // (so a manager can see e.g. "Work-Life Balance is the weak spot," not
 // just one blended number) plus the actual names of anyone flagged
 // at-risk that month, since that's the genuinely actionable part.
-async function getPulseMonthDetail(monthLabel: string, employeeIdFilter?: Set<string> | null): Promise<{ categoryAverages: {key: string, label: string, avg: number}[], flagged: {name: string, avg: number|null, retention: number}[] }> {
+async function getPulseMonthDetail(monthLabel: string, employeeIdFilter?: Set<string> | null): Promise<{ categoryAverages: {key: string, label: string, avg: number}[], flagged: {name: string, avg: number|null, retention: number|null, weeks: number}[] }> {
   const mIdx = monthIndex(monthLabel), yr = yearOf(monthLabel)
   // Local calendar month. Date columns (coaching_logs.date, pulse_surveys.week_start) compare against
   // start/end as dates; timestamp columns (created_at) compare against startTs/endTs, the exact
@@ -4095,7 +4096,8 @@ async function getPulseMonthDetail(monthLabel: string, employeeIdFilter?: Set<st
     const vals = rows.flatMap((r: any) => cat.questions.map(q => r[q.key]).filter((v: any) => typeof v === 'number'))
     return { key: cat.key, label: cat.label, avg: vals.length ? Math.round((vals.reduce((a: number,b: number) => a+b, 0) / vals.length) * 100) / 100 : 0 }
   })
-  const flagged = rows.filter((r: any) => pulseIsAtRisk(r)).map((r: any) => ({ name: r.employee_name, avg: pulseAverage(r), retention: r.retention }))
+  // One line per person (worst values), not one per flagged week.
+  const flagged = uniqueFlagged(rows.map((r: any) => ({ employeeId: r.employee_id, week: r.week_start, avg: pulseAverage(r), atRisk: pulseIsAtRisk(r), name: r.employee_name, retention: r.retention })))
   return { categoryAverages, flagged }
 }
 
@@ -4145,9 +4147,15 @@ type OpsMonthStats = {
   annRate: number | null
   annTotal: number
   annAcked: number
-  pulseAvg: number | null
-  pulseFlagged: number
-  pulseSubmitted: number
+  pulseAvg: number | null          // average per PERSON, from those who responded
+  pulseFlagged: number             // people flagged at-risk
+  pulseSubmitted: number           // submissions
+  pulsePeople: number              // distinct people who responded
+  pulseExpected: number | null     // everyone required (null until a required week has happened)
+  pulseRate: number | null
+  pulseWeek: string | null
+  pulseWeekResponded: number
+  pulseWeekExpected: number | null
   obsCount: number
   attendanceAvg: number | null
   accuracyAvg: number | null
@@ -4629,9 +4637,14 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
       supabase.from('kpi_records').select('employee_id, attendance, accuracy, efficiency').eq('month_label', monthLabel),
     ])
     const pulseRows = (pulseRes.data || []).filter((r: any) => scopedEmployeeIds.has(r.employee_id))
+    // Pulse: the SCORE comes from the people who responded; PARTICIPATION is out of everyone required
+    // (all active staff in scope, minus the exempt accounts). Rules and tests: lib/pulse.ts.
     const ratedKeys = PULSE_RATED_KEYS.filter(k => k !== 'retention')
-    const pulseAvg = pulseRows.length ? pulseRows.reduce((sum: number, r: any) => sum + ratedKeys.reduce((s, k) => s + (r[k] || 0), 0) / ratedKeys.length, 0) / pulseRows.length : null
-    const pulseFlagged = pulseRows.filter((r: any) => pulseIsAtRisk(r)).length
+    const rowAvg = (r: any): number | null => { const v = ratedKeys.map(k => r[k]).filter((x: any) => typeof x === 'number'); return v.length ? v.reduce((a: number, b: number) => a + b, 0) / v.length : null }
+    const latestWeek = latestRequiredMonday(start, end, ymdLocal(new Date()), '2026-08-31')
+    const pulseSum = summarizePulse(
+      pulseRows.map((r: any) => ({ employeeId: r.employee_id, week: r.week_start, avg: rowAvg(r), atRisk: pulseIsAtRisk(r), name: r.employee_name, retention: r.retention })),
+      Array.from(scopedEmployeeIds), latestWeek)
     const obsRows = (obsRes.data || []).filter((r: any) => scopedEmployeeIds.has(r.employee_id))
     const kpiRows = (kpiRes.data || []).filter((r: any) => scopedEmployeeIds.has(r.employee_id))
     const avgOfField = (field: 'attendance'|'accuracy'|'efficiency') => {
@@ -4642,7 +4655,9 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
       month: monthLabel,
       coachRate: coaching.rate, coachTotalScoped: coaching.totalScoped, coachCompliantCount: coaching.compliantCount,
       annRate: compliance.annTotal > 0 ? compliance.annAcked / compliance.annTotal : null, annTotal: compliance.annTotal, annAcked: compliance.annAcked,
-      pulseAvg: pulseAvg !== null ? Math.round(pulseAvg * 100) / 100 : null, pulseFlagged, pulseSubmitted: pulseRows.length,
+      pulseAvg: pulseSum.avgPerPerson !== null ? Math.round(pulseSum.avgPerPerson * 100) / 100 : null, pulseFlagged: pulseSum.flaggedPeople, pulseSubmitted: pulseSum.submissions,
+      pulsePeople: pulseSum.respondedPeople, pulseExpected: pulseSum.expectedPeople, pulseRate: pulseSum.responseRate,
+      pulseWeek: latestWeek, pulseWeekResponded: pulseSum.weekResponded, pulseWeekExpected: pulseSum.weekExpected,
       obsCount: obsRows.length,
       attendanceAvg: avgOfField('attendance'), accuracyAvg: avgOfField('accuracy'), efficiencyAvg: avgOfField('efficiency'),
       perfRecordCount: kpiRows.length,
@@ -4878,7 +4893,14 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
                 <p className="text-2xl font-bold text-blue-900 mt-1">{stats[2].pulseAvg !== null ? `${stats[2].pulseAvg.toFixed(2)}/5` : '—'}</p>
                 {deltaLabel(stats[2].pulseAvg, stats[1].pulseAvg, true)}
                 <div className="mt-2"><TrendMini data={stats} dataKey="pulseAvg" color="#059669" domain={[1,5]} /></div>
-                <p className="text-xs text-gray-400 mt-1">{stats[2].pulseSubmitted} submissions, {stats[2].pulseFlagged} flagged at-risk in {currentMonth}</p>
+                <p className="text-[11px] text-gray-400">Average per person, from those who responded</p>
+                {stats[2].pulseExpected !== null && stats[2].pulseRate !== null ? (
+                  <div className="mt-2 space-y-0.5">
+                    <p className="text-xs text-gray-700"><span className="font-semibold">Responded:</span> {stats[2].pulsePeople} of {stats[2].pulseExpected} people ({Math.round(stats[2].pulseRate * 100)}%) in {currentMonth}</p>
+                    {stats[2].pulseWeek && stats[2].pulseWeekExpected !== null && <p className="text-xs text-gray-500">Latest week ({new Date(stats[2].pulseWeek + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}): {stats[2].pulseWeekResponded} of {stats[2].pulseWeekExpected}</p>}
+                  </div>
+                ) : <p className="text-xs text-gray-400 mt-2">No required check-in has come due yet in {currentMonth}.</p>}
+                <p className="text-xs text-gray-400 mt-1">{stats[2].pulseSubmitted} submissions, {stats[2].pulseFlagged} {stats[2].pulseFlagged === 1 ? 'person' : 'people'} flagged at-risk</p>
               </div>
             )
 
@@ -5024,7 +5046,7 @@ function OpsDashboard({ employees, user }: { employees: Employee[], user: string
                     {pulseDetail.flagged.length === 0 ? <p className="text-sm text-gray-400">Nobody flagged this month.</p> : (
                       <div className="flex flex-wrap gap-2">
                         {pulseDetail.flagged.map((f,i) => (
-                          <span key={i} className="text-xs bg-red-50 border border-red-200 text-red-700 px-2.5 py-1 rounded-full">{f.name} · Avg {f.avg?.toFixed(1) ?? '—'} · Retention {f.retention}/5</span>
+                          <span key={i} className="text-xs bg-red-50 border border-red-200 text-red-700 px-2.5 py-1 rounded-full">{f.name} · Avg {f.avg?.toFixed(1) ?? '—'} · Retention {f.retention ?? '—'}/5{f.weeks > 1 ? ` · flagged ${f.weeks} weeks` : ''}</span>
                         ))}
                       </div>
                     )}
