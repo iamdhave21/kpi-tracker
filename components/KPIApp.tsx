@@ -12,6 +12,8 @@ import { kpiEntryCoverage, averageApplicable } from '@/lib/tlScore'
 import { tenureText } from '@/lib/bonus'
 import { isExemptEmail, summarizePulse, uniqueFlagged, latestRequiredMonday } from '@/lib/pulse'
 import { breakdown as pulseBreakdown, scoreTone, Breakdown } from '@/lib/pulseBreakdown'
+import { recomputeOverall } from '@/lib/attendance'
+import AttendanceUpload from '@/components/AttendanceUpload'
 import { staffApi } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
@@ -12137,7 +12139,9 @@ function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplie
     // 2. Apply to the matching KPI record for that month
     const existing = records.find(r => r.employee_id === row.employee_id && r.month_label === monthLabel)
     if (existing) {
-      const overall = attendancePct*0.2 + (existing.accuracy||0)*0.3 + (existing.efficiency||0)*0.3 + (existing.feedback||0)*0.15 + (existing.compliance_score||0)*0.05
+      // Only recompute when accuracy, efficiency and feedback are entered; missing parts used to count as zero and
+      // left an overall of exactly 20% of attendance (the "0.20" months). See lib/attendance.ts.
+      const overall = recomputeOverall(attendancePct, existing)
       const { error } = await supabase.from('kpi_records').update({ attendance: attendancePct, overall_score: overall, updated_at: new Date().toISOString() }).eq('id', existing.id)
       if (error) throw error
       await writeAuditLog('APPLY_TIME_TRACKER', currentUser || '', row.employee_name, monthLabel, 'Attendance', pct(existing.attendance), pct(attendancePct))
@@ -12174,8 +12178,12 @@ function TimeTrackerPanel({ employees, records, currentUser, showToast, onApplie
     <div className="space-y-6 max-w-[1600px] mx-auto">
       <div>
         <h2 className="text-xl font-bold text-blue-900 flex items-center gap-2"><Clock className="w-5 h-5"/>Time Tracker</h2>
-        <p className="text-sm text-gray-500">Paste a period summary from the time tracking system, matched by Employee ID</p>
+        <p className="text-sm text-gray-500">Upload the attendance workbook, or paste a period summary from the time tracking system</p>
       </div>
+
+      <AttendanceUpload employees={employees} records={records} currentUser={currentUser} showToast={showToast} onApplied={onApplied} writeAudit={writeAuditLog} />
+
+      <p className="text-sm font-semibold text-gray-700 -mb-3">Paste a table from the time tracking system (older method, matched by Employee ID)</p>
 
       <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
         <div className="flex items-center gap-3 flex-wrap">
