@@ -11,7 +11,9 @@ import { canSeeTicket, isMine, pocCategoriesFor, teamEmailsFor, localPart } from
 import { kpiEntryCoverage, averageApplicable } from '@/lib/tlScore'
 import { tenureText } from '@/lib/bonus'
 import { isExemptEmail, summarizePulse, uniqueFlagged, latestRequiredMonday } from '@/lib/pulse'
-import { breakdown as pulseBreakdown, scoreTone, Breakdown } from '@/lib/pulseBreakdown'
+import { breakdown as pulseBreakdown, scoreTone, Breakdown, personHistory } from '@/lib/pulseBreakdown'
+import { monthlyHistory } from '@/lib/agentHistory'
+import AgentHistoryCard from '@/components/AgentHistory'
 import { recomputeOverall } from '@/lib/attendance'
 import AttendanceUpload from '@/components/AttendanceUpload'
 import { staffApi } from '@/lib/staffFetch'
@@ -2720,6 +2722,7 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
     onEditRecord()
   }
   const [showPerfect, setShowPerfect] = useState(false)
+  const [selAgent, setSelAgent] = useState('')
   const CLIENT_COLORS: Record<string,string> = { 'EMMA': '#3b82f6', 'AB BSS': '#10b981', 'Harlan + Holden': '#f59e0b' }
 
   // Same client scoping as Directory Links: Admin/Super Admin see every
@@ -2739,6 +2742,20 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
     ? CLIENTS
     : (myEmployeeForClient?.clients_supported && myEmployeeForClient.clients_supported.length ? myEmployeeForClient.clients_supported : (myEmployeeForClient?.client ? [myEmployeeForClient.client] : []))
   const CLIENTS_FILTER = ['All', ...CLIENTS.filter(c => canSeeAllClients || myClients.includes(c))]
+  // "Check one agent": active people in this viewer's client scope, one entry per person (a person can have an
+  // employee row per client). History rules and tests: lib/agentHistory.ts.
+  const agentOptions = useMemo(() => {
+    const groups = new Map<string, Employee[]>()
+    for (const e of employees) {
+      if (!activeEmpIds.has(e.id)) continue
+      if (!canSeeAllClients && e.client && !myClients.includes(e.client)) continue
+      const k = (e.name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+      groups.set(k, [...(groups.get(k) || []), e])
+    }
+    return Array.from(groups.entries()).map(([key, es]) => ({ key, name: es[0].name, ids: es.map(x => x.id), emp: es[0] })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [employees, activeEmpIds, canSeeAllClients, myClients.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
+  const agent = agentOptions.find(a => a.key === selAgent) || null
+  const agentHist = useMemo(() => agent ? monthlyHistory(records, agent.ids) : [], [agent, records])
 
   const [myTeamEmpIds, setMyTeamEmpIds] = useState<Set<string> | null>(null)
 
@@ -2837,8 +2854,14 @@ function PerformanceDashboard({ records, employees, activeEmpIds, perfView, setP
           {(perfView === 'monthly' || perfView === 'weekly') && <select value={selMonth} onChange={e => setSelMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{MONTHS.map(m => <option key={m}>{m}</option>)}</select>}
           {perfView !== 'weekly' && <select value={selYear} onChange={e => setSelYear(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900">{YEARS.map(y => <option key={y}>{y}</option>)}</select>}
           <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search..." className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 w-36" /></div>
+          <select value={selAgent} onChange={e => setSelAgent(e.target.value)} aria-label="Check one agent" className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 max-w-[14rem]">
+            <option value="">Check one agent…</option>
+            {agentOptions.map(a => <option key={a.key} value={a.key}>{a.name}</option>)}
+          </select>
         </div>
       </div>
+
+      {agent && <AgentHistoryCard name={agent.name} designation={agent.emp.designation} client={agent.emp.client} hire={agent.emp.hire_date || null} history={agentHist} year={parseInt(selYear) || new Date().getFullYear()} onClose={() => setSelAgent('')} />}
 
       {/* Client filter tabs */}
       <div className="flex gap-2 flex-wrap items-center">
@@ -3565,6 +3588,95 @@ function PulseBreakdownCard({ bd, showAll, setShowAll }: { bd: Breakdown, showAl
   )
 }
 
+// -- One person's whole survey history, from the "View a person" dropdown on the Pulse management view.
+function PulsePersonHistory({ name, ids, onClose }: { name: string, ids: string[], onClose: () => void }) {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [err, setErr] = useState('')
+  const [openWeek, setOpenWeek] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    setRows(null); setErr(''); setOpenWeek(null)
+    supabase.from('pulse_surveys').select('*').in('employee_id', ids).order('week_start', { ascending: false }).then(({ data, error }) => {
+      if (!alive) return
+      if (error) setErr(error.message); else setRows(data || [])
+    })
+    return () => { alive = false }
+  }, [ids.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
+  const profiles = useMemo(() => rows ? personHistory(rows, PULSE_CATEGORIES) : [], [rows])
+  const byWeek = useMemo(() => new Map((rows || []).map(r => [r.week_start, r])), [rows])
+  const f = (v: number | null) => v === null ? '—' : v.toFixed(2)
+  const flagged = (rows || []).filter(r => pulseIsAtRisk(r)).length
+  const overalls = profiles.map(p => p.overall).filter((v): v is number => v !== null)
+  const avg = overalls.length ? overalls.reduce((a, b) => a + b, 0) / overalls.length : null
+  const latest = profiles.length ? profiles[profiles.length - 1] : null
+  const chart = profiles.map(p => ({ week: new Date(p.week + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), Overall: p.overall, Retention: p.retention }))
+  return (
+    <div className="bg-white rounded-xl border border-blue-200 p-4 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div><h3 className="text-base font-semibold text-blue-900">{name}: survey history</h3>
+          <p className="text-xs text-gray-500">Every weekly check-in on record, newest first. Scores are out of 5.</p></div>
+        <button onClick={onClose} className="text-xs text-blue-600 hover:underline">Close</button>
+      </div>
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      {!rows && !err && <p className="text-sm text-gray-400">Loading…</p>}
+      {rows && rows.length === 0 && <p className="text-sm text-gray-400">{name} has not submitted a check-in yet.</p>}
+      {rows && rows.length > 0 && (<>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="border border-gray-100 rounded-lg p-3"><p className="text-xs text-gray-500">Check-ins</p><p className="text-lg font-bold text-gray-900">{rows.length}</p></div>
+          <div className="border border-gray-100 rounded-lg p-3"><p className="text-xs text-gray-500">Average overall</p><p className={`inline-block mt-1 text-lg font-bold px-2 py-0.5 rounded-lg border ${TONE_CLS[scoreTone(avg)]}`}>{avg === null ? '—' : avg.toFixed(2)}</p></div>
+          <div className="border border-gray-100 rounded-lg p-3"><p className="text-xs text-gray-500">Latest overall / retention</p><p className="text-lg font-bold text-gray-900">{latest ? f(latest.overall) : '—'} <span className="text-sm font-normal text-gray-400">/ {latest && latest.retention !== null ? latest.retention : '—'}</span></p></div>
+          <div className="border border-gray-100 rounded-lg p-3"><p className="text-xs text-gray-500">Weeks flagged at-risk</p><p className={`text-lg font-bold ${flagged ? 'text-red-600' : 'text-emerald-600'}`}>{flagged}</p></div>
+        </div>
+        {chart.length > 1 && (
+          <div className="h-48" role="img" aria-label={`Overall and retention by week for ${name}`}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chart} margin={{ top: 8, right: 12, bottom: 0, left: -18 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="week" tick={{ fontSize: 11 }} /><YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v: any) => (typeof v === 'number' ? v.toFixed(2) : '—')} /><Legend wrapperStyle={{ fontSize: 12 }} />
+                <ReferenceLine y={2.5} stroke="#fca5a5" strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="Overall" stroke="#1e3a8a" strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
+                <Line type="monotone" dataKey="Retention" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 2 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>)}
+        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-500 text-left"><tr><th className="px-2 py-2">Week of</th><th className="px-2 py-2 text-right">Overall</th>{PULSE_CATEGORIES.map(c => <th key={c.key} className="px-2 py-2 text-right">{c.label}</th>)}<th className="px-2 py-2 text-right">Retention</th><th className="px-2 py-2">Flag</th><th className="px-2 py-2"></th></tr></thead>
+            <tbody>
+              {[...profiles].reverse().map(p => {
+                const row = byWeek.get(p.week), risk = row ? pulseIsAtRisk(row) : false, isOpen = openWeek === p.week
+                return (
+                  <Fragment key={p.week}>
+                    <tr className="border-t border-gray-100">
+                      <td className="px-2 py-1.5 font-medium text-gray-800 whitespace-nowrap">{new Date(p.week + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                      <td className="px-2 py-1.5 text-right"><span className={`px-1.5 py-0.5 rounded border font-semibold ${TONE_CLS[scoreTone(p.overall)]}`}>{f(p.overall)}</span></td>
+                      {p.categories.map(c => <td key={c.key} className="px-2 py-1.5 text-right"><span className={`px-1.5 py-0.5 rounded border ${TONE_CLS[scoreTone(c.avg)]}`}>{f(c.avg)}</span></td>)}
+                      <td className="px-2 py-1.5 text-right">{p.retention ?? '—'}</td>
+                      <td className="px-2 py-1.5">{risk ? <span className="px-1.5 py-0.5 rounded border bg-red-50 text-red-700 border-red-200">At risk</span> : <span className="text-gray-300">—</span>}</td>
+                      <td className="px-2 py-1.5 text-right"><button onClick={() => setOpenWeek(isOpen ? null : p.week)} className="text-blue-600 hover:underline">{isOpen ? 'Hide' : 'Answers'}</button></td>
+                    </tr>
+                    {isOpen && row && (
+                      <tr className="bg-gray-50"><td colSpan={PULSE_CATEGORIES.length + 5} className="px-3 py-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {PULSE_CATEGORIES.map(cat => (
+                            <div key={cat.key} className="bg-white border border-gray-200 rounded-lg p-3">
+                              <p className="text-xs font-semibold text-gray-500 mb-1.5">{cat.label}</p>
+                              {cat.questions.map(q => <p key={q.key} className="text-xs text-gray-600 flex justify-between py-0.5"><span className="pr-2">{q.text}</span><span className="font-medium text-gray-800 flex-shrink-0">{row[q.key] ?? '—'}</span></p>)}
+                            </div>))}
+                        </div>
+                        {row.feedback && <div className="bg-white border border-gray-200 rounded-lg p-3 mt-3"><p className="text-xs font-semibold text-gray-500 mb-1">Open feedback</p><p className="text-sm text-gray-700">{row.feedback}</p></div>}
+                        {row.tl_note && <div className="bg-white border border-gray-200 rounded-lg p-3 mt-3"><p className="text-xs font-semibold text-gray-500 mb-1">Management note (private)</p><p className="text-sm text-gray-700">{row.tl_note}</p></div>}
+                      </td></tr>)}
+                  </Fragment>)
+              })}
+            </tbody>
+          </table>
+        </div>
+      </>)}
+    </div>
+  )
+}
+
 function PulseRatingRow({ text, value, onChange, scaleLabels }: { text: string, value: number|undefined, onChange: (n: number) => void, scaleLabels: Record<number,string> }) {
   return (
     <div className="py-2">
@@ -3699,6 +3811,14 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
     return true
   }
 
+  const lookupGroups = new Map<string, Employee[]>()
+  if (canManage) for (const e of employees) {
+    if (!e.active || isPulseCheckExempt(e.email) || !inScope(e.id)) continue
+    const k = (e.name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+    lookupGroups.set(k, [...(lookupGroups.get(k) || []), e])
+  }
+  const lookupOptions = Array.from(lookupGroups.entries()).map(([key, es]) => ({ key, name: es[0].name, ids: es.map(x => x.id) })).sort((a, b) => a.name.localeCompare(b.name))
+  const lookup = lookupOptions.find(o => o.key === lookupKey) || null
   const [weekFilter, setWeekFilter] = useState(currentWeek)
   const [subs, setSubs] = useState<any[]>([])
   const [loadingSubs, setLoadingSubs] = useState(false)
@@ -3708,6 +3828,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   const [trendData, setTrendData] = useState<{week: string, avg: number|null, flagged: number}[]>([])
   const [trendRows, setTrendRows] = useState<any[]>([])
   const [showAllQ, setShowAllQ] = useState(false)
+  const [lookupKey, setLookupKey] = useState('')
   const [compareWeeks, setCompareWeeks] = useState<string[]>([])
   // Per-agent trend view: lets a manager pull up one specific person's own
   // multi-week history (same shape as what an agent sees for themselves
@@ -3915,6 +4036,11 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
               ))}
             </select>
             {weekFilter !== currentWeek && <button onClick={() => setWeekFilter(currentWeek)} className="text-xs text-blue-600 hover:underline">Back to current week</button>}
+            <label className="text-sm text-gray-600 ml-2">Person</label>
+            <select value={lookupKey} onChange={e => setLookupKey(e.target.value)} aria-label="View a person's survey history" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 max-w-[14rem]">
+              <option value="">View a person's history…</option>
+              {lookupOptions.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
+            </select>
             {visibleTeams.length > 1 && (
               <>
                 <label className="text-sm text-gray-600 ml-2">Team</label>
@@ -3925,6 +4051,8 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
               </>
             )}
           </div>
+
+          {lookup && <PulsePersonHistory name={lookup.name} ids={lookup.ids} onClose={() => setLookupKey('')} />}
 
           {breakdownNow && trendRows.length > 0 && <PulseBreakdownCard bd={breakdownNow} showAll={showAllQ} setShowAll={setShowAllQ} />}
 

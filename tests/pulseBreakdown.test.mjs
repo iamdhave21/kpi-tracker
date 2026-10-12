@@ -1,4 +1,4 @@
-import { breakdown, scoreTone } from '../lib/pulseBreakdown.ts'
+import { breakdown, scoreTone, weekProfile, personHistory } from '../lib/pulseBreakdown.ts'
 let fail = 0
 const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) fail++; console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`) }
 const cats = [
@@ -47,6 +47,16 @@ eq('missing answers are skipped, not zeros', breakdown([{ week_start: '2026-09-2
 
 // colours
 eq('2.5 or less is red', scoreTone(2.5), 'bad'); eq('3.4 is amber', scoreTone(3.4), 'watch'); eq('3.5 is green', scoreTone(3.5), 'good'); eq('no data is none', scoreTone(null), 'none')
+
+// ---- one person's history
+const wp = weekProfile({ week_start: '2026-09-28', wlb_1: 3, wlb_2: 5, client_1: 4, client_2: 4, retention: 2 }, cats)
+eq('category averages for one submission', wp.categories.map(c => c.avg), [4, 4])
+eq('overall is the mean of the rated questions (retention left out)', wp.overall, 4)
+eq('retention is reported on its own', wp.retention, 2)
+eq('a question not answered is skipped, not a zero', weekProfile({ week_start: 'w', wlb_1: 4 }, cats).categories.map(c => c.avg), [4, null])
+const ph = personHistory([{ week_start: '2026-09-28', wlb_1: 3 }, { week_start: '2026-09-14', wlb_1: 5 }, { week_start: '2026-09-21', wlb_1: 4 }], cats)
+eq('history is oldest to newest', ph.map(w => w.week), ['2026-09-14', '2026-09-21', '2026-09-28'])
+eq('no submissions, no history', personHistory([], cats), [])
 
 console.log(fail === 0 ? '\nALL PASSED' : `\n${fail} FAILED`)
 process.exit(fail === 0 ? 0 : 1)

@@ -56,3 +56,14 @@ export function breakdown(rows: any[], cats: PulseCat[], weeks: string[], select
 
 // green from 3.5, amber below that, red at or under the at-risk line (2.5)
 export const scoreTone = (v: number | null): 'none' | 'good' | 'watch' | 'bad' => v === null ? 'none' : v <= 2.5 ? 'bad' : v < 3.5 ? 'watch' : 'good'
+
+// ---- one person's history: each submitted week as category averages ----
+export type WeekProfile = { week: string, overall: number | null, retention: number | null, categories: { key: string, label: string, avg: number | null }[] }
+export function weekProfile(row: any, cats: PulseCat[], retentionKey = 'retention'): WeekProfile {
+  const catAvgs = cats.map(c => ({ key: c.key, label: c.label, avg: mean(nums([row], c.questions.map(q => q.key))) }))
+  const all = nums([row], cats.flatMap(c => c.questions.map(q => q.key)))
+  return { week: row.week_start, overall: mean(all), retention: typeof row[retentionKey] === 'number' ? row[retentionKey] : null, categories: catAvgs }
+}
+export function personHistory(rows: any[], cats: PulseCat[]): WeekProfile[] {
+  return [...rows].sort((a, b) => String(a.week_start).localeCompare(String(b.week_start))).map(r => weekProfile(r, cats))
+}
