@@ -4,3 +4,5 @@ node_modules/
 .env
 *.env
 .next/
+components/KPIApp.smoke.tmp.tsx
+tests/render/out.cjs

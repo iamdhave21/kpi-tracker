@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check:tdz": "eslint -c eslint.tdz.config.mjs components lib app"
+    "check:tdz": "eslint -c eslint.tdz.config.mjs components lib app",
+    "test:render": "bash tests/render/run.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
