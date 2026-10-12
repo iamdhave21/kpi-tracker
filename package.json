@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:tdz": "eslint -c eslint.tdz.config.mjs components lib app"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

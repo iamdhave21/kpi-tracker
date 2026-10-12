@@ -322,6 +322,9 @@ async function getComplianceBreakdown(employeeEmail: string | null | undefined, 
   }
 }
 
+// Defined up here: it is used by components above where it used to sit.
+const CONTRACT_TYPES = ['Employee', 'Contractual', 'Probationary', 'Intern'] as const
+
 async function writeAuditLog(action: string, performedBy: string, employeeName: string, monthLabel: string, fieldChanged: string, oldValue: string, newValue: string) {
   await supabase.from('audit_log').insert({ action, performed_by: performedBy, employee_name: employeeName, month_label: monthLabel, field_changed: fieldChanged, old_value: oldValue, new_value: newValue })
 }
@@ -3811,6 +3814,7 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
     return true
   }
 
+  const [lookupKey, setLookupKey] = useState('')   // declared BEFORE the line that reads it (reading a const before its declaration crashes the screen)
   const lookupGroups = new Map<string, Employee[]>()
   if (canManage) for (const e of employees) {
     if (!e.active || isPulseCheckExempt(e.email) || !inScope(e.id)) continue
@@ -3828,7 +3832,6 @@ function PulseCheckPanel({ employees, currentUser, userRole, showToast, isPrevie
   const [trendData, setTrendData] = useState<{week: string, avg: number|null, flagged: number}[]>([])
   const [trendRows, setTrendRows] = useState<any[]>([])
   const [showAllQ, setShowAllQ] = useState(false)
-  const [lookupKey, setLookupKey] = useState('')
   const [compareWeeks, setCompareWeeks] = useState<string[]>([])
   // Per-agent trend view: lets a manager pull up one specific person's own
   // multi-week history (same shape as what an agent sees for themselves
@@ -8969,7 +8972,6 @@ function nextNteLevel(level: string): typeof NTE_LEVELS[number] {
 // while existing employee records are still being backfilled, and even
 // then only for the two unambiguous cases -- everything else falls back
 // to the combined phrasing rather than guessing.
-const CONTRACT_TYPES = ['Employee', 'Contractual', 'Probationary', 'Intern'] as const
 function ntePartyTerm(contractType: string | null | undefined, employmentType: string | null | undefined): string {
   const c = (contractType || '').trim().toLowerCase()
   if (c === 'employee' || c === 'probationary') return 'Employee'
