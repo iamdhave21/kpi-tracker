@@ -4,6 +4,7 @@ import { supabase, Employee, KpiRecord, NteRecord, AvScanSubmission } from '@/li
 import ClientPortalAdmin from '@/components/ClientPortalAdmin'
 import ToolsRepository from '@/components/ToolsRepository'
 import ClientObservations from '@/components/ClientObservations'
+import RiskManagementPlan from '@/components/RiskManagementPlan'
 import ClientRequests from '@/components/ClientRequests'
 import SopRepository from '@/components/SopRepository'
 import BonusReview from '@/components/BonusReview'
@@ -7889,7 +7890,7 @@ const BCP_CATEGORY_COLORS: Record<string, string> = {
 
 function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
-  const [bcpTab, setBcpTab] = useState<'coverage'|'escalation'>('coverage')
+  const [bcpTab, setBcpTab] = useState<'coverage'|'escalation'|'risk'>('coverage')
   const [tasks, setTasks] = useState<BCPTask[]>([])
   const [coverage, setCoverage] = useState<Record<string, string[]>>({}) // task_id -> employee_ids[]
   const [loading, setLoading] = useState(true)
@@ -7986,6 +7987,7 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
       <div className="flex gap-2 border-b border-gray-200">
         <button onClick={() => setBcpTab('coverage')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bcpTab==='coverage' ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Coverage Matrix</button>
         <button onClick={() => setBcpTab('escalation')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bcpTab==='escalation' ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Escalation Matrix</button>
+        {canManage && <button onClick={() => setBcpTab('risk')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bcpTab==='risk' ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Risk Management Plan</button>}
       </div>
 
       {bcpTab === 'coverage' && (<>
@@ -8083,6 +8085,7 @@ function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: 
       </>)}
 
       {bcpTab === 'escalation' && <EscalationMatrixView />}
+      {bcpTab === 'risk' && canManage && <RiskManagementPlan />}
     </div>
   )
 }
