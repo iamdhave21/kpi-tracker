@@ -2498,7 +2498,7 @@ export default function KPIApp() {
             {view === 'org-chart' && effectiveRole !== 'agent' && <OrgChart employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} />}
             {view === 'org-chart' && effectiveRole === 'agent' && <NoAccessPage userRole={effectiveRole} onBack={() => setView('announcements')} />}
             {view === 'tickets' && <TicketsPanel currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
-            {view === 'bcp' && <BCPPanel employees={employees} currentUser={effectiveUser || ''} userRole={effectiveRole} showToast={showToast} />}
+            {view === 'bcp' && <BCPPanel userRole={effectiveRole} />}
             {view === 'tl-tools' && <TLToolsPanel employees={employees} currentUser={effectiveUser} userRole={effectiveRole} showToast={showToast} isPreviewing={!!previewTarget} onAckChange={async () => {
               // Mirrors the same scoping as the initial badge-count effect
               // above: agent -> own sessions, Team Lead -> own team only,
@@ -7863,229 +7863,34 @@ function getSLAStatus(ticket: Ticket): { label: string, color: string, urgent: b
   return { label: `${Math.round(diffHrs)}h left`, color: 'text-emerald-600', urgent: false }
 }
 
-// -- BCP (Business Continuity Planning): Task List + who's trained --------
-type BCPTask = {
-  id: string
-  title: string
-  category: string | null
-  description: string | null
-  created_by: string | null
-  created_at: string
-}
-
-// BCP is organised by department -- each one needs its own plan. These are
-// the five departments that need a BCP. Tasks saved under an older label
-// (Onboarding, Finance/AR/AP, IT/Systems, HR/Admin, Other) aren't deleted:
-// they show under an "Unassigned" filter with their old label until
-// someone moves them to a department.
-const BCP_CATEGORIES = ['Operations', 'Payroll', 'Recruitment', 'Client Management', 'IT']
-const BCP_CATEGORY_COLORS: Record<string, string> = {
-  Operations: 'bg-sky-50 text-sky-700 border-sky-200',
-  Payroll: 'bg-amber-50 text-amber-700 border-amber-200',
-  Recruitment: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
-  'Client Management': 'bg-blue-50 text-blue-700 border-blue-200',
-  IT: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  Other: 'bg-gray-100 text-gray-600 border-gray-200',
-}
-
-function BCPPanel({ employees, currentUser, userRole, showToast }: { employees: Employee[], currentUser: string, userRole: string, showToast: (m: string, t?: 'success'|'error') => void }) {
+// -- BCP (Business Continuity Planning) ------------------------------------
+// Two reference tabs: the Risk Management Plan (first; Admin / Super Admin /
+// Team Lead only) and the Escalation Matrix (everyone). The old Coverage Matrix
+// (who is trained on which task) was removed in Oct 2026; its tables
+// (bcp_tasks, bcp_task_coverage) are left in the database, unused.
+function BCPPanel({ userRole }: { userRole: string }) {
   const canManage = userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead'
-  const [bcpTab, setBcpTab] = useState<'coverage'|'escalation'|'risk'>('coverage')
-  const [tasks, setTasks] = useState<BCPTask[]>([])
-  const [coverage, setCoverage] = useState<Record<string, string[]>>({}) // task_id -> employee_ids[]
-  const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [posting, setPosting] = useState(false)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [searchQ, setSearchQ] = useState('')
-  const [filterCategory, setFilterCategory] = useState('All')
-  const [savingCoverage, setSavingCoverage] = useState<string | null>(null)
-  const [form, setForm] = useState({ title: '', category: BCP_CATEGORIES[0], description: '' })
-
-  async function loadData() {
-    setLoading(true)
-    const [{ data: t }, { data: c }] = await Promise.all([
-      supabase.from('bcp_tasks').select('*').order('category').order('title'),
-      supabase.from('bcp_task_coverage').select('task_id, employee_id'),
-    ])
-    setTasks((t || []) as BCPTask[])
-    const map: Record<string, string[]> = {}
-    ;(c || []).forEach((row: any) => {
-      if (!map[row.task_id]) map[row.task_id] = []
-      map[row.task_id].push(row.employee_id)
-    })
-    setCoverage(map)
-    setLoading(false)
-  }
-
-  useEffect(() => { loadData() }, [])
-
-  async function addTask() {
-    if (!form.title.trim()) { showToast('Please add a task title.', 'error'); return }
-    setPosting(true)
-    const { error } = await supabase.from('bcp_tasks').insert({
-      title: form.title.trim(),
-      category: form.category,
-      description: form.description.trim() || null,
-      created_by: currentUser,
-    })
-    setPosting(false)
-    if (error) { showToast(error.message, 'error'); return }
-    showToast('Task added!')
-    setForm({ title: '', category: BCP_CATEGORIES[0], description: '' })
-    setShowForm(false)
-    loadData()
-  }
-
-  async function deleteTask(id: string) {
-    if (!confirm('Delete this task and its coverage mapping?')) return
-    await supabase.from('bcp_tasks').delete().eq('id', id)
-    showToast('Task deleted')
-    loadData()
-  }
-
-  async function toggleCoverage(taskId: string, employeeId: string, currentlyTrained: boolean) {
-    setSavingCoverage(taskId + employeeId)
-    const { error } = currentlyTrained
-      ? await supabase.from('bcp_task_coverage').delete().eq('task_id', taskId).eq('employee_id', employeeId)
-      : await supabase.from('bcp_task_coverage').insert({ task_id: taskId, employee_id: employeeId })
-    if (error) { showToast('Failed to update coverage: ' + error.message, 'error'); setSavingCoverage(null); return }
-    await loadData()
-    setSavingCoverage(null)
-  }
-
-  // De-dupe employees by name (multi-role rows share a person) for the coverage picker
-  const uniqueEmployees = (() => {
-    const seen = new Set<string>()
-    const list: Employee[] = []
-    employees.filter(e => e.active).forEach(e => {
-      const key = e.name.trim().toLowerCase()
-      if (!seen.has(key)) { seen.add(key); list.push(e) }
-    })
-    return list.sort((a, b) => a.name.localeCompare(b.name))
-  })()
-
-  const filtered = tasks.filter(t =>
-    (filterCategory === 'All' || (filterCategory === 'Unassigned' ? !BCP_CATEGORIES.includes(t.category || '') : t.category === filterCategory)) &&
-    (!searchQ || t.title.toLowerCase().includes(searchQ.toLowerCase()))
+  const [bcpTab, setBcpTab] = useState<'risk'|'escalation'>(canManage ? 'risk' : 'escalation')
+  // View As can change the role mid-session; never show a tab the role can't open.
+  const tab = !canManage && bcpTab === 'risk' ? 'escalation' : bcpTab
+  const tabBtn = (id: 'risk'|'escalation', label: string) => (
+    <button onClick={() => setBcpTab(id)} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab===id ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>
   )
-
-  const tasksWithNoCoverage = tasks.filter(t => !coverage[t.id] || coverage[t.id].length === 0).length
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-blue-900">Business Continuity Plan</h2>
-          <p className="text-sm text-gray-500">{tasks.length} task{tasks.length !== 1 ? 's' : ''} tracked{tasksWithNoCoverage > 0 ? ` · ${tasksWithNoCoverage} with no one trained yet` : ''}</p>
-        </div>
-        {canManage && bcpTab === 'coverage' && (
-          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-blue-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-800 transition">{showForm ? 'Cancel' : '+ New Task'}</button>
-        )}
+      <div>
+        <h2 className="text-xl font-bold text-blue-900">Business Continuity Plan</h2>
+        <p className="text-sm text-gray-500">{canManage ? 'Risk Management Plan and Escalation Matrix' : 'Escalation Matrix'}</p>
       </div>
 
       <div className="flex gap-2 border-b border-gray-200">
-        <button onClick={() => setBcpTab('coverage')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bcpTab==='coverage' ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Coverage Matrix</button>
-        <button onClick={() => setBcpTab('escalation')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bcpTab==='escalation' ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Escalation Matrix</button>
-        {canManage && <button onClick={() => setBcpTab('risk')} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${bcpTab==='risk' ? 'border-blue-900 text-blue-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Risk Management Plan</button>}
+        {canManage && tabBtn('risk', 'Risk Management Plan')}
+        {tabBtn('escalation', 'Escalation Matrix')}
       </div>
 
-      {bcpTab === 'coverage' && (<>
-      {showForm && canManage && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-          <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Task name, e.g. 'Process payroll cutoff'" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
-          <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="What does this task involve? (optional)" rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 resize-none" />
-          <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900">
-            {BCP_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-          </select>
-          <div className="flex justify-end">
-            <button onClick={addTask} disabled={posting} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition">{posting ? 'Adding...' : 'Add Task'}</button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-          <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search tasks..." className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900 w-52"/>
-        </div>
-        {['All', ...BCP_CATEGORIES, ...(tasks.some(t => !BCP_CATEGORIES.includes(t.category || '')) ? ['Unassigned'] : [])].map(c => (
-          <button key={c} onClick={() => setFilterCategory(c)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${filterCategory === c ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{c}</button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="text-center py-8 text-gray-400 text-sm">Loading tasks...</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 text-sm">No tasks found. {canManage && 'Add the first one above.'}</div>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map(task => {
-            const trainedIds = new Set(coverage[task.id] || [])
-            const trainedEmps = uniqueEmployees.filter(e => trainedIds.has(e.id))
-            const isExpanded = expandedId === task.id
-            return (
-              <div key={task.id} className={`bg-white border rounded-xl overflow-hidden ${trainedEmps.length === 0 ? 'border-red-200' : 'border-gray-200'}`}>
-                <div className="flex items-center justify-between gap-2 p-4 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : task.id)}>
-                  <div className="flex items-center gap-2 flex-wrap min-w-0">
-                    {task.category && <span className={`text-xs px-2 py-0.5 rounded-full font-medium border flex-shrink-0 ${BCP_CATEGORY_COLORS[task.category] || BCP_CATEGORY_COLORS.Other}`}>{task.category}</span>}
-                    <h3 className="font-semibold text-gray-900 text-sm truncate">{task.title}</h3>
-                    {trainedEmps.length === 0 ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-600 flex-shrink-0">⚠ No one trained</span>
-                    ) : (
-                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 flex-shrink-0">{trainedEmps.length} trained</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {canManage && <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id) }} className="text-gray-300 hover:text-red-500 text-xs transition">×</button>}
-                    <span className="text-gray-400">{isExpanded ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}</span>
-                  </div>
-                </div>
-                {isExpanded && (
-                  <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-3">
-                    {task.description && <p className="text-sm text-gray-600">{task.description}</p>}
-                    {!canManage && (
-                      <div className="flex flex-wrap gap-2">
-                        {trainedEmps.length === 0 ? (
-                          <p className="text-xs text-gray-400">No one is trained on this task yet.</p>
-                        ) : trainedEmps.map(e => (
-                          <span key={e.id} className="flex items-center gap-1.5 text-xs bg-gray-50 border border-gray-200 rounded-full pl-1 pr-2.5 py-1">
-                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${avatarColor(e.name)}`}>{e.name.charAt(0).toUpperCase()}</span>
-                            {e.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {canManage && (
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 mb-2">Who can perform this task — click to toggle</p>
-                        <div className="flex flex-wrap gap-2 max-h-56 overflow-y-auto">
-                          {uniqueEmployees.map(e => {
-                            const isTrained = trainedIds.has(e.id)
-                            const isSaving = savingCoverage === task.id + e.id
-                            return (
-                              <button key={e.id} onClick={() => toggleCoverage(task.id, e.id, isTrained)} disabled={isSaving}
-                                className={`flex items-center gap-1.5 text-xs rounded-full pl-1 pr-2.5 py-1 border transition ${isTrained ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'} ${isSaving ? 'opacity-50' : ''}`}>
-                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${avatarColor(e.name)}`}>{e.name.charAt(0).toUpperCase()}</span>
-                                {e.name}
-                                {isTrained && <span className="text-emerald-500">✓</span>}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-      </>)}
-
-      {bcpTab === 'escalation' && <EscalationMatrixView />}
-      {bcpTab === 'risk' && canManage && <RiskManagementPlan />}
+      {tab === 'risk' && canManage && <RiskManagementPlan onOpenEscalation={() => setBcpTab('escalation')} />}
+      {tab === 'escalation' && <EscalationMatrixView />}
     </div>
   )
 }
