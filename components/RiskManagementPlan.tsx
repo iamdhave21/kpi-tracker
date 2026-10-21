@@ -40,29 +40,91 @@ const SECURITY_CONTROLS = [
   'Decommissioning of access when the relationship ends',
   'QRT device-retrieval escalation if the contractor is nonresponsive within one hour, to reduce data-breach exposure',
 ]
+// Technology and work-environment disruption. "Stated practice" = the guidance given
+// to staff, as described by the Director of Operations (Oct 2026); the written copy still
+// needs to be attached as evidence. "System control" = something the portal enforces today.
+const TECHNOLOGY: Row[] = [
+  ['Internet outage', 'Stated practice: staff are expected to keep a backup internet connection (postpaid or prepaid) and to report an outage.', 'Write the rule down and set how quickly an outage must be reported (to be confirmed).', 'Outage procedure and a recovery test'],
+  ['Power outage or severe weather (storm, flood)', 'Stated practice: staff tell AB BSS; AB BSS can arrange accommodation with reliable internet and power so work continues, and can help secure the safety of the person and their family.', 'Define who approves the arrangement and how it is recorded (to be confirmed).', 'Weather and Flood Procedure (not yet written)'],
+  ['Device failure or loss', 'Stated practice: staff report it; AB BSS can provide or lend a device so delivery is not disrupted.', 'A loaner-device log: who, when, returned.', 'Spare-device inventory and replacement lead time'],
+  ['Client system or platform downtime', 'To be confirmed. Service-impacting issues follow the Escalation Matrix.', 'Per-account downtime instructions: who to tell, what work can continue.', 'Client-system dependency inventory'],
+  ['Device security baseline', 'System control: staff submit antivirus scans in the portal (AV Scan, monthly, with an audit trail).', 'Apply the same baseline to loaner devices.', 'Device inventory'],
+]
+const GOV_ROWS: [string, string, string][] = [
+  ['Named plan owner', 'Assigned', 'Dhave Latimer, Director of Operations, is the accountable BCP owner (owner #1). Further owners can be added.'],
+  ['Approver and approval date', 'To be assigned', 'The plan stays a draft until it is approved.'],
+  ['Version control', 'Draft', 'Current version: Draft, Oct 8, 2026. A version number and change log are to be agreed.'],
+  ['Review cadence', 'To be assigned', 'Set the next review date when the plan is approved.'],
+  ['Staff awareness', 'Evidence to attach', 'Guidance on outages, severe weather and devices has been shared with staff (per the Director of Operations). Attach the written copy.'],
+  ['Drills and scenario tests', 'No schedule recorded', 'No test schedule exists yet. Scenarios to run are listed below.'],
+]
+const SCENARIOS = ['Agent absence', 'Resignation or contractor removal', 'Internet or power outage', 'Device failure', 'Client platform downtime', 'Peak-volume surge']
+const STATUS_DEFS: [string, string][] = [
+  ['Existing', 'Active, standardized, owned, and backed by current evidence.'],
+  ['Partial', 'Exists informally or inconsistently.'],
+  ['Gap', 'Absent or insufficient.'],
+  ['N/A', 'Does not apply, with a documented reason.'],
+]
+const REGISTER_FIELDS = ['Risk or control', 'Status', 'Evidence', 'Business or client impact', 'Current mitigation', 'Recommended action', 'Owner and approver', 'Priority and due date', 'Validation or closure']
+const AREAS: { sec: string, title: string, lines: string[] }[] = [
+  { sec: 'operations', title: 'Operations', lines: ['Attrition, capacity', 'Peak readiness', 'Business continuity', 'Escalations, errors'] },
+  { sec: 'payroll', title: 'Payroll, finance', lines: ['Absences and leave', 'Replacement costs', 'Refund controls', 'Side work'] },
+  { sec: 'hr', title: 'HR, workforce', lines: ['Attendance', 'Performance', 'Onboarding gaps', 'Early warning'] },
+  { sec: 'security', title: 'Security, access', lines: ['Access approvals', 'Access removal', 'Device retrieval', 'Breach prevention'] },
+  { sec: 'technology', title: 'Technology, work environment', lines: ['Internet and power outages', 'Severe weather', 'Device failure', 'Client system downtime'] },
+]
+
 const GAPS: { title: string, items: string }[] = [
   { title: 'Registers', items: 'Workforce, client and financial risk registers.' },
   { title: 'Standards', items: 'Adoption of AB-ESC-01 (eight decisions pending), capacity thresholds, a peak-readiness checklist and a standard access checklist.' },
   { title: 'Monitoring', items: 'Early-warning indicators, trend-based performance monitoring and recurring-risk analysis.' },
   { title: 'Testing and planning', items: 'Scenario-based BCP testing and predictive capacity planning.' },
   { title: 'Reviews', items: 'A formal access-risk review and standard RCA with action plans.' },
+  { title: 'Technology and work environment', items: 'Written outage, severe-weather and device procedures; a loaner-device log; a spare-device inventory; per-account client-downtime instructions.' },
+  { title: 'Governance', items: 'An approver, a review date, version control, and a drill schedule.' },
+  { title: 'Business impact', items: 'A list of critical processes per account with recovery priorities and target recovery times.' },
 ]
 
-// The overview diagram is a picture (1344x590 px). Each risk-area box on it is a
-// link to the section that holds the instructions for that area. Positions are the
-// measured edges of the boxes, stored as pixels and converted to percentages at
-// render so they stay aligned at any width.
-const OV_W = 1344, OV_H = 590
-const OV_TILES: { label: string, sec: string, box: [number, number, number, number] }[] = [
-  { label: 'Operations', sec: 'operations', box: [41, 232, 333, 418] },
-  { label: 'Payroll, finance', sec: 'payroll', box: [363, 232, 655, 418] },
-  { label: 'HR, workforce', sec: 'hr', box: [685, 232, 977, 418] },
-  { label: 'Security, access', sec: 'security', box: [1007, 232, 1298, 418] },
-  { label: 'Shared by all four: workforce continuity, issue management, escalation', sec: 'continuity', box: [41, 455, 1302, 535] },
-]
 const SECTION_NAMES: Record<string, string> = {
   operations: '1. Operations risks', payroll: '2. Payroll and financial-control risks', hr: '3. HR and workforce risks',
-  security: '4. Security and access risks', continuity: '5. Continuity, issue management and escalation',
+  security: '4. Security and access risks', technology: '5. Technology and work-environment disruption',
+  continuity: '6. Continuity, issue management and escalation', impact: '7. Critical processes and recovery priorities',
+  governance: '8. Plan ownership and governance', gaps: '9. Gaps to close',
+}
+
+// The overview diagram. Every box is a button that opens the section holding the
+// instructions for that area (and highlights it).
+function OverviewDiagram({ go }: { go: (sec: string) => void }) {
+  const tile = 'text-left bg-white border border-gray-300 rounded-xl px-3 py-3 transition hover:border-blue-600 hover:ring-2 hover:ring-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer'
+  const label = (t: string, sec: string) => ({ title: `Go to ${SECTION_NAMES[sec]}`, 'aria-label': `${t}: go to ${SECTION_NAMES[sec]}` })
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="mx-auto max-w-xs text-center bg-blue-50 border-2 border-blue-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-900">AB BSS Risk Management Plan</div>
+      <div className="mx-auto w-px h-3 bg-gray-300" />
+      <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+        {AREAS.map(a => (
+          <button key={a.sec} type="button" onClick={() => go(a.sec)} {...label(a.title, a.sec)} className={tile}>
+            <span className="block text-sm font-semibold text-gray-900 text-center">{a.title}</span>
+            {a.lines.map(l => <span key={l} className="block text-xs text-gray-600 text-center mt-0.5">{l}</span>)}
+          </button>
+        ))}
+      </div>
+      <button type="button" onClick={() => go('continuity')} {...label('Shared by all five: workforce continuity, issue management, escalation', 'continuity')}
+        className="w-full text-center bg-gray-100 border border-gray-300 rounded-xl px-3 py-3 text-sm text-gray-800 transition hover:border-blue-600 hover:ring-2 hover:ring-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer">
+        Shared by all five: workforce continuity, issue management, escalation
+      </button>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button type="button" onClick={() => go('impact')} {...label('Business impact and recovery priorities', 'impact')} className={tile}>
+          <span className="block text-sm font-semibold text-gray-900 text-center">Business impact and recovery priorities</span>
+          <span className="block text-xs text-gray-600 text-center mt-0.5">Critical processes per account</span>
+        </button>
+        <button type="button" onClick={() => go('governance')} {...label('Governance', 'governance')} className={tile}>
+          <span className="block text-sm font-semibold text-gray-900 text-center">Governance</span>
+          <span className="block text-xs text-gray-600 text-center mt-0.5">Owner, approval, review, drills</span>
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // A "where the instructions sit" strip: each button opens the section (or the
@@ -81,6 +143,30 @@ function Related({ items, go, openEscalation }: { items: Dest[], go: (sec: strin
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+function chip(status: string) {
+  if (/^(assigned|in place)/i.test(status)) return 'bg-emerald-50 text-emerald-800 border-emerald-200'
+  if (/^(draft|evidence)/i.test(status)) return 'bg-amber-50 text-amber-800 border-amber-200'
+  return 'bg-gray-100 text-gray-700 border-gray-200'
+}
+function GovTable({ rows }: { rows: [string, string, string][] }) {
+  return (
+    <div className="overflow-x-auto mt-3">
+      <table className="w-full min-w-[560px] text-xs border border-gray-200 rounded-lg overflow-hidden">
+        <thead className="bg-blue-50"><tr>{['Control', 'Status', 'Notes'].map(h => <th key={h} className="text-left font-semibold text-blue-900 px-3 py-2 border-b border-gray-200">{h}</th>)}</tr></thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r[0]} className="align-top border-b border-gray-100 last:border-0">
+              <td className="px-3 py-2 font-medium text-gray-900 w-1/4">{r[0]}</td>
+              <td className="px-3 py-2"><span className={`inline-block border rounded-full px-2 py-0.5 font-medium ${chip(r[1])}`}>{r[1]}</span></td>
+              <td className="px-3 py-2 text-gray-700">{r[2]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -164,27 +250,14 @@ export default function RiskManagementPlan({ onOpenEscalation }: { onOpenEscalat
         <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
         <div>
           <p className="text-sm font-medium text-amber-800">Draft — pending approval</p>
-          <p className="text-xs text-amber-700 mt-0.5">AB BSS Risk Management Plan, Oct 8, 2026, prepared by Dhave Latimer. It sits inside the wider AB Operations Framework prepared for the CEO's infrastructure review. Owners and due dates for the gaps below are not yet assigned.</p>
+          <p className="text-xs text-amber-700 mt-0.5">AB BSS Risk Management Plan, Oct 8, 2026, prepared by Dhave Latimer, who is the accountable plan owner (owner #1). It sits inside the wider AB Operations Framework prepared for the CEO's infrastructure review. Owners and due dates for the gaps below are not yet assigned.</p>
         </div>
       </div>
 
-      {S('overview', '🗺️ Overview — Four risk areas, three shared processes', <>
-        <p>This plan sets out how AB BSS identifies, controls and escalates operational, payroll-related, HR, security and financial risks. It is built from controls already agreed and in use, not a generic register. For each area it records the existing control, what needs standardizing, and the gap to close.</p>
+      {S('overview', '🗺️ Overview — Five risk areas, three shared processes', <>
+        <p>This plan sets out how AB BSS identifies, controls and escalates operational, payroll-related, HR, security, technology and financial risks. It is built from controls already agreed and in use, not a generic register. For each area it records the existing control, what needs standardizing, and the gap to close.</p>
         <p className="text-xs text-gray-500 pt-1">Click a box on the diagram to jump to the instructions for that area.</p>
-        <div className="overflow-x-auto">
-          <div className="relative min-w-[640px] mt-1">
-            <img src="/risk-plan/overview.png" alt="Four risk areas (Operations, Payroll and finance, HR and workforce, Security and access) share one set of continuity, issue and escalation processes" className="block w-full rounded-lg border border-gray-100" />
-            {OV_TILES.map(t => {
-              const [x1, y1, x2, y2] = t.box
-              return (
-                <button key={t.sec} type="button" onClick={() => goTo(t.sec)}
-                  title={`Go to ${SECTION_NAMES[t.sec]}`} aria-label={`${t.label}: go to ${SECTION_NAMES[t.sec]}`}
-                  style={{ left: `${(x1 / OV_W) * 100}%`, top: `${(y1 / OV_H) * 100}%`, width: `${((x2 - x1) / OV_W) * 100}%`, height: `${((y2 - y1) / OV_H) * 100}%` }}
-                  className="absolute rounded-lg cursor-pointer transition hover:bg-blue-500/10 hover:ring-2 hover:ring-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600" />
-              )
-            })}
-          </div>
-        </div>
+        <OverviewDiagram go={goTo} />
         <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide pt-2">The review it supports asks four questions</p>
         <ul className="list-disc pl-5 text-sm space-y-1">
           <li>What do we already have and actually use?</li>
@@ -242,7 +315,22 @@ export default function RiskManagementPlan({ onOpenEscalation }: { onOpenEscalat
         ]} />
       </>)}
 
-      {S('continuity', '5. Continuity, issue management and escalation', <>
+      {S('technology', '5. Technology and work-environment disruption', <>
+        <p>An internet or power outage, severe weather, or a broken device can stop service. The aim is that nobody goes dark without AB BSS knowing, and that delivery continues through a backup connection, an arranged place to work, or a loaned device.</p>
+        <RiskTable rows={TECHNOLOGY} />
+        <div className="mt-3 bg-white border border-gray-200 rounded-lg px-3 py-2.5">
+          <p className="text-xs font-semibold text-blue-900 mb-1">Controls already enforced in the portal</p>
+          <p className="text-xs text-gray-700">The Go-Live Readiness checklist (Client Onboarding, section D, Hardware and Security) requires for every new account: <span className="font-medium">devices issued and configured</span>, <span className="font-medium">security baseline met</span>, and <span className="font-medium">connectivity and power continuity</span> (backup internet and power, or an agreed work-from-home contingency). Connectivity and power continuity is a Critical item.</p>
+        </div>
+        <Note title="Evidence to attach:">The guidance on outages, severe weather and devices has been given to staff, but the written copy is not attached to this plan yet. Attach it so these rows can show evidence instead of a stated practice.</Note>
+        <Related go={goTo} openEscalation={onOpenEscalation} items={[
+          { label: 'Escalation Matrix (AB-ESC-01)', escalation: true },
+          { label: 'Workforce continuity steps', sec: 'continuity', anchor: 'continuity-workforce' },
+          { label: 'Issue management steps', sec: 'continuity', anchor: 'continuity-issue' },
+        ]} />
+      </>)}
+
+      {S('continuity', '6. Continuity, issue management and escalation', <>
         <p>Three standard processes run through every category above.</p>
 
         <Sub id="continuity-workforce">Workforce continuity</Sub>
@@ -264,7 +352,32 @@ export default function RiskManagementPlan({ onOpenEscalation }: { onOpenEscalat
         <Note title="To confirm:">Urgent leave or leave extensions need prior approval except in genuine emergencies; the dashed box shows the fallback so the situation is still documented and assessed. These two rules are not yet in AB-ESC-01. Decide whether they move into the matrix or stay in this plan.</Note>
       </>)}
 
-      {S('gaps', '6. Gaps to close', <>
+      {S('impact', '7. Critical processes and recovery priorities', <>
+        <p>For each account, list the processes that must not stop, what happens if they do, how quickly they must be back, and who covers meanwhile. This is the basis for deciding what to recover first. It is not filled in yet.</p>
+        <div className="overflow-x-auto mt-3">
+          <table className="w-full min-w-[640px] text-xs border border-gray-200 rounded-lg overflow-hidden">
+            <thead className="bg-blue-50"><tr>{['Account', 'Critical process', 'Impact if it stops', 'Recovery priority and target time', 'Fallback or backup', 'Owner'].map(h => <th key={h} className="text-left font-semibold text-blue-900 px-3 py-2 border-b border-gray-200">{h}</th>)}</tr></thead>
+            <tbody><tr>{Array.from({ length: 6 }).map((_, i) => <td key={i} className="px-3 py-3 text-gray-400 italic">{i === 0 ? 'To be completed per account' : '—'}</td>)}</tr></tbody>
+          </table>
+        </div>
+        <p className="text-xs text-gray-600 pt-2">A recovery time target is enough here. Because AB BSS works inside client systems, a separate data-recovery-point target is not needed.</p>
+      </>)}
+
+      {S('governance', '8. Plan ownership and governance', <>
+        <p>Who owns this plan, how it is approved and versioned, and how it is kept alive.</p>
+        <div className="mt-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
+          <p className="text-xs font-semibold text-blue-900">Plan owners</p>
+          <p className="text-sm text-gray-900 mt-0.5"><span className="font-semibold">1. Dhave Latimer</span>, Director of Operations (accountable BCP owner)</p>
+        </div>
+        <GovTable rows={GOV_ROWS} />
+        <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide pt-3">Scenarios to test</p>
+        <div className="flex flex-wrap gap-2 pt-1">
+          {SCENARIOS.map(sc => <span key={sc} className="text-xs bg-blue-50 text-blue-900 border border-blue-100 px-2.5 py-1 rounded-full font-medium">{sc}</span>)}
+        </div>
+        <p className="text-xs text-gray-600 pt-2">Each test should record what was tested, who took part, the result, where it failed, and the corrective actions.</p>
+      </>)}
+
+      {S('gaps', '9. Gaps to close', <>
         <p>The plan's next step is to turn the future controls above into registers, with an owner and due date for each. Owners and dates are not yet assigned.</p>
         <div className="grid sm:grid-cols-2 gap-3 pt-2">
           {GAPS.map(g => (
@@ -273,6 +386,16 @@ export default function RiskManagementPlan({ onOpenEscalation }: { onOpenEscalat
               <p className="text-sm text-gray-700 mt-1">{g.items}</p>
             </div>
           ))}
+        </div>
+        <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide pt-4">How each gap will be tracked</p>
+        <p className="text-xs text-gray-600">Each risk or control gets one register entry with these fields. Nothing is marked Existing on the strength of a discussion or intention; it needs current evidence.</p>
+        <div className="grid sm:grid-cols-2 gap-2 pt-2">
+          {STATUS_DEFS.map(([k, v]) => (
+            <div key={k} className="border border-gray-200 rounded-lg px-3 py-2"><span className="text-xs font-semibold text-blue-900">{k}</span><span className="text-xs text-gray-700"> — {v}</span></div>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 pt-3">
+          {REGISTER_FIELDS.map(f => <span key={f} className="text-xs bg-gray-50 text-gray-800 border border-gray-200 px-2.5 py-1 rounded-full">{f}</span>)}
         </div>
       </>)}
     </div>
