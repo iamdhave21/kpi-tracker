@@ -10375,8 +10375,9 @@ async function getTLCoachingProgress(tlId: string, tlEmail: string, startD: stri
   if (agents.length === 0) return []
   const perAgent: Record<string, { n: number, last: string | null }> = {}
   if (tlEmail) {
+    // Finalized sessions only: a draft has not happened yet (decided Oct 2026).
     const { data: sessions } = await supabase.from('coaching_logs').select('employee_email,date')
-      .ilike('coached_by', tlEmail.replace(/[\\%_]/g, '\\$&')).gte('date', startD).lte('date', endD)
+      .ilike('coached_by', tlEmail.replace(/[\\%_]/g, '\\$&')).eq('status', 'Final').gte('date', startD).lte('date', endD)
     ;(sessions || []).forEach((r: any) => {
       const k = (r.employee_email || '').toLowerCase()
       const cur = perAgent[k] || { n: 0, last: null }
