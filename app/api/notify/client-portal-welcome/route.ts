@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
+import { requireStaff, ADMIN_ROLES } from '@/lib/staffAuth'
+import { getServiceSupabase } from '@/lib/clientPortalAuth'
+import { esc } from '@/lib/serverMail'
 
 // Sent once, right when a Staff member adds a new Client Contact. Unlike
 // request-link, this doesn't include a login token itself -- it just
@@ -8,11 +11,23 @@ import nodemailer from 'nodemailer'
 // if it sits unread for a few days (a token would go stale).
 export async function POST(req: NextRequest) {
   try {
-    const { to, name, client } = await req.json()
+    const gate = await requireStaff(req, ADMIN_ROLES)
+    if ('error' in gate) return gate.error
+    const { to } = await req.json()
     if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
       return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
     }
-    if (!to || !name) return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    if (!to || typeof to !== 'string') return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+
+    // Only a real, active client contact can be mailed, and the name/client in
+    // the email come from that record -- never from the request -- so this
+    // can't be used to send arbitrary text to arbitrary addresses.
+    const supabase = getServiceSupabase()
+    const likeEsc = (v: string) => v.replace(/[\\%_]/g, '\\$&')
+    const { data: contact } = await supabase.from('client_contacts').select('name, email, client')
+      .ilike('email', likeEsc(to.trim())).eq('active', true).maybeSingle()
+    if (!contact) return NextResponse.json({ error: 'Not an active client contact' }, { status: 403 })
+    const name = contact.name, client = contact.client
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://abbss-ops-portal.vercel.app'
     const transporter = nodemailer.createTransport({
@@ -22,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     await transporter.sendMail({
       from: `"AB BSS Client Portal" <${process.env.GMAIL_USER}>`,
-      to,
+      to: contact.email,
       subject: 'Welcome to the AB BSS Client Portal',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto;">
@@ -31,8 +46,8 @@ export async function POST(req: NextRequest) {
             <p style="color: #93c5fd; margin: 4px 0 0; font-size: 13px;">Client Portal</p>
           </div>
           <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 12px 12px;">
-            <p style="font-size: 14px; color: #111827;">Hi ${name},</p>
-            <p style="font-size: 14px; color: #374151;">Welcome! You've been set up with access to the AB BSS Client Portal for <strong>${client}</strong>. From there you can track your onboarding checklist, send us requests and messages, upload documents, and see progress in real time -- no password needed.</p>
+            <p style="font-size: 14px; color: #111827;">Hi ${esc(name)},</p>
+            <p style="font-size: 14px; color: #374151;">Welcome! You've been set up with access to the AB BSS Client Portal for <strong>${esc(client)}</strong>. From there you can track your onboarding checklist, send us requests and messages, upload documents, and see progress in real time -- no password needed.</p>
             <a href="${baseUrl}/client-portal" style="display: inline-block; background: #1e3a5f; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; margin: 16px 0;">Open Client Portal</a>
             <p style="font-size: 13px; color: #374151;">Enter your email there any time and we'll send you a secure sign-in link.</p>
           </div>

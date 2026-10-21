@@ -1,26 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceSupabase } from '@/lib/clientPortalAuth'
+import { requireStaff, ADMIN_ROLES } from '@/lib/staffAuth'
 
-// Honest note on this route's security level: this app's internal staff
-// auth has no server-verifiable session at all (checked directly --
-// login state lives client-side only, same as every other internal API
-// route in this codebase; see AUDIT.md C2). Rather than silently
-// inheriting that same gap here, this route requires the caller's
-// claimed staff email and checks it's a real, active app_users account
-// before issuing a signed URL -- stricter than most existing routes in
-// this app, though still not a full server session. A genuine fix would
-// mean adding real server-verifiable staff sessions app-wide, which is
-// the existing RLS-hardening pending item, not something to bolt on
-// ad hoc for just this one feature.
+// Issues a 5-minute signed link to a file a client uploaded in the portal.
+// Caller identity comes from the real Google session token (verified by
+// Supabase Auth in lib/staffAuth.ts), NOT from an email typed into the request.
+// Client Onboarding is an Admin / Super Admin screen, so only those roles may
+// open client uploads.
 export async function POST(req: NextRequest) {
-  const { submission_id, staff_email } = await req.json()
-  if (!submission_id || !staff_email) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+  const gate = await requireStaff(req, ADMIN_ROLES)
+  if ('error' in gate) return gate.error
+
+  const { submission_id } = await req.json().catch(() => ({}))
+  if (!submission_id) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
   const supabase = getServiceSupabase()
-
-  const { data: staffUser } = await supabase.from('app_users').select('id, active').ilike('email', staff_email).eq('active', true).maybeSingle()
-  if (!staffUser) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-
   const { data: submission } = await supabase.from('handover_pack_submissions').select('file_path').eq('id', submission_id).single()
   if (!submission || !submission.file_path) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 

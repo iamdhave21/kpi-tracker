@@ -5,8 +5,8 @@ import nodemailer from 'nodemailer'
 export const PORTAL_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://abbss-ops-portal.vercel.app'
 export const FALLBACK_ALERT_EMAIL = process.env.CLIENT_PORTAL_NOTIFY_EMAIL || 'operations@ab-businesssupport.com'
 
-export const esc = (s: string | null | undefined) =>
-  (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+export const esc = (s: unknown) =>
+  (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 export function emailShell(heading: string, bodyHtml: string, button?: { label: string, url: string }) {
   return `

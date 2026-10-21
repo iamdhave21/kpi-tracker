@@ -16,3 +16,11 @@ export async function staffApi(body: Record<string, any> | FormData, url: string
   const data = await res.json().catch(() => ({}))
   return { ok: res.ok, status: res.status, data }
 }
+
+// Like fetch(), but adds the signed-in person's Google session token so the
+// server can verify who is calling (used for the /api/notify/* email routes).
+export async function staffFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  let token: string | undefined
+  try { token = (await supabase.auth.getSession()).data.session?.access_token } catch {}
+  return fetch(url, { ...init, headers: { ...(init.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
+}

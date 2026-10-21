@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifySession, getServiceSupabase, SESSION_COOKIE } from '@/lib/clientPortalAuth'
+import { esc, emailShell, sendMail, FALLBACK_ALERT_EMAIL } from '@/lib/serverMail'
+import { safeHttpUrl } from '@/lib/mailRules'
 
 // Vercel rejects request bodies over roughly 4.5 MB before this code ever runs,
 // so a higher limit here could never be reached and the client would just see
@@ -89,14 +91,20 @@ export async function POST(req: NextRequest) {
   }, { onConflict: 'pack_record_id,item_id' })
   if (upsertError) return NextResponse.json({ error: upsertError.message }, { status: 500 })
 
-  // Best-effort Ops notification -- a failure here shouldn't fail the
-  // submission itself, which is the part that actually matters.
+  // Best-effort Ops notification, sent straight from the server (not through a
+  // public endpoint). A failure here must not fail the submission itself.
   try {
     const { data: itemDetail } = await supabase.from('handover_pack_items').select('label').eq('id', itemId).single()
-    await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://abbss-ops-portal.vercel.app'}/api/notify/client-portal-submission`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientName: contact.client, contactName: contact.name, itemLabel: itemDetail?.label || itemId, fileName, driveLink }),
-    })
+    const link = safeHttpUrl(driveLink)
+    const body = `
+      <p style="margin:0 0 10px;"><strong>${esc(contact.name)}</strong> at <strong>${esc(contact.client)}</strong> just submitted an item on their onboarding checklist.</p>
+      <table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;">
+        <tr><td style="padding:6px 0;color:#6b7280;width:120px;">Item</td><td style="padding:6px 0;color:#111827;font-weight:600;">${esc(itemDetail?.label || itemId)}</td></tr>
+        ${fileName ? `<tr><td style="padding:6px 0;color:#6b7280;">File</td><td style="padding:6px 0;color:#111827;">${esc(fileName)}</td></tr>` : ''}
+        ${driveLink ? `<tr><td style="padding:6px 0;color:#6b7280;">Link</td><td style="padding:6px 0;color:#111827;">${link ? `<a href="${esc(link)}">${esc(link)}</a>` : esc(driveLink)}</td></tr>` : ''}
+      </table>
+      <p style="font-size:13px;color:#6b7280;">Open the Client Portal management screen in the Ops Portal to review it.</p>`
+    await sendMail([FALLBACK_ALERT_EMAIL], `Client Portal: ${contact.client} submitted "${itemDetail?.label || itemId}"`, emailShell('Client Portal Update', body))
   } catch {}
 
   return NextResponse.json({ success: true })

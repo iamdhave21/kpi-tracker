@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getServiceSupabase } from '@/lib/clientPortalAuth'
 
 // Server-side identity check for staff, using the REAL Google sign-in the
@@ -39,4 +39,16 @@ export async function verifyStaff(req: NextRequest): Promise<Staff | null> {
   const clients: string[] = emp ? (emp.clients_supported?.length ? emp.clients_supported : (emp.client ? [emp.client] : [])) : []
 
   return { email: (user.email || email).toLowerCase(), role: user.role, name: emp?.name || user.display_name || user.username || email, clients }
+}
+
+export const ADMIN_ROLES = ['admin', 'super_admin']
+
+// One-line gate for API routes: verified Google session, active app_users row,
+// and (optionally) one of the allowed roles. Returns either the verified staff
+// member or a ready-made 401/403 response to return as-is.
+export async function requireStaff(req: NextRequest, roles?: string[]): Promise<{ staff: Staff } | { error: NextResponse }> {
+  const staff = await verifyStaff(req)
+  if (!staff) return { error: NextResponse.json({ error: 'Please sign in with Google to do this.' }, { status: 401 }) }
+  if (roles && !roles.includes(staff.role)) return { error: NextResponse.json({ error: 'Not authorized' }, { status: 403 }) }
+  return { staff }
 }

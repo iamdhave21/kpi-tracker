@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { staffApi, staffFetch } from '@/lib/staffFetch'
 
 type Contact = { id: string, name: string, email: string, client: string, active: boolean, created_at: string }
 type PackItem = { id: string, section: string, label: string, description: string | null, sort_order: number, retired_at: string | null }
@@ -71,9 +72,9 @@ function ContactsTab({ currentUser, showToast }: { currentUser: string | null, s
     if (error) { showToast(error.message, 'error'); setSaving(false); return }
     // Best-effort welcome email -- the contact is created either way.
     try {
-      await fetch('/api/notify/client-portal-welcome', {
+      await staffFetch('/api/notify/client-portal-welcome', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: form.email.trim(), name: form.name.trim(), client: form.client.trim() }),
+        body: JSON.stringify({ to: form.email.trim().toLowerCase() }),
       })
     } catch {}
     showToast('Client contact added, welcome email sent!')
@@ -337,11 +338,7 @@ function PackDetail({ packId, currentUser, showToast, onBack }: { packId: string
 
   async function viewFile(sub: Submission) {
     if (!sub.file_path || !currentUser) return
-    const res = await fetch('/api/client-portal/staff-file', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submission_id: sub.id, staff_email: currentUser }),
-    })
-    const data = await res.json()
+    const { data } = await staffApi({ submission_id: sub.id }, '/api/client-portal/staff-file')
     if (data.url) window.open(data.url, '_blank')
     else showToast(data.error || 'Could not open file', 'error')
   }

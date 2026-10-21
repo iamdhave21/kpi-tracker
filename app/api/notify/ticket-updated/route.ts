@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireStaff, ADMIN_ROLES } from '@/lib/staffAuth'
+import { vetRecipients } from '@/lib/mailGuard'
+import { esc } from '@/lib/serverMail'
 import nodemailer from 'nodemailer'
 
 export async function POST(req: NextRequest) {
   try {
-    const { ticketId, title, submitterEmail, updateType, updatedBy, detail } = await req.json()
+    const gate = await requireStaff(req)
+    if ('error' in gate) return gate.error
+    const { ticketId, title, submitterEmail, updateType, detail } = await req.json()
+    const updatedBy = gate.staff.email
 
     if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
       return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
@@ -12,9 +18,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'No submitter email' })
     }
     // Don't email people about their own updates
-    if (submitterEmail === updatedBy) {
+    if (String(submitterEmail).trim().toLowerCase() === updatedBy.toLowerCase()) {
       return NextResponse.json({ success: true, message: 'Self-update, skipped' })
     }
+
+    const { allowed } = await vetRecipients([submitterEmail])
+    if (allowed.length === 0) return NextResponse.json({ success: true, message: 'Submitter is not a portal user' })
 
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -32,22 +41,22 @@ export async function POST(req: NextRequest) {
 
     await transporter.sendMail({
       from: `"AB BSS Operations Portal" <${process.env.GMAIL_USER}>`,
-      to: submitterEmail,
+      to: allowed.join(', '),
       subject: `🎫 ${subjectLabel}: ${title}`,
       html: `
         <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
           <div style="background: #1e3a8a; padding: 24px; border-radius: 12px 12px 0 0;">
-            <h2 style="color: white; margin: 0; font-size: 18px;">🎫 ${subjectLabel}</h2>
+            <h2 style="color: white; margin: 0; font-size: 18px;">🎫 ${esc(subjectLabel)}</h2>
             <p style="color: #93c5fd; margin: 4px 0 0; font-size: 13px;">Your ticket has a new update</p>
           </div>
           <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 12px 12px;">
-            <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px;">${title}</p>
+            <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px;">${esc(title)}</p>
             <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
               <tr style="border-bottom: 1px solid #f3f4f6;">
                 <td style="padding: 10px; color: #6b7280; font-size: 13px; width: 120px;">Updated by</td>
-                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${(updatedBy || '').split('@')[0]}</td>
+                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${esc(updatedBy.split('@')[0])}</td>
               </tr>
-              ${detail ? `<tr><td style="padding: 10px; color: #6b7280; font-size: 13px;">Detail</td><td style="padding: 10px; color: #111827; font-size: 13px;">${detail}</td></tr>` : ''}
+              ${detail ? `<tr><td style="padding: 10px; color: #6b7280; font-size: 13px;">Detail</td><td style="padding: 10px; color: #111827; font-size: 13px;">${esc(detail)}</td></tr>` : ''}
             </table>
             <a href="${appUrl}" style="display: inline-block; background: #1e3a8a; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 600;">View Ticket →</a>
             <p style="color: #6b7280; font-size: 12px; margin-top: 20px;">This is an automated notification from the AB BSS Operations Portal.</p>

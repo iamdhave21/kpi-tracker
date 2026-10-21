@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireStaff, ADMIN_ROLES } from '@/lib/staffAuth'
+import { vetRecipients } from '@/lib/mailGuard'
+import { esc } from '@/lib/serverMail'
 import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
 
@@ -11,7 +14,10 @@ function getSupabase() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { newUsername, newRole, addedBy } = await req.json()
+    const gate = await requireStaff(req, ADMIN_ROLES)
+    if ('error' in gate) return gate.error
+    const { newUsername, newRole } = await req.json()
+    const addedBy = gate.staff.email
 
     if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
       return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
@@ -62,15 +68,15 @@ export async function POST(req: NextRequest) {
             <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
               <tr style="border-bottom: 1px solid #f3f4f6;">
                 <td style="padding: 10px; color: #6b7280; font-size: 13px; width: 120px;">Email</td>
-                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${newUsername}</td>
+                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${esc(newUsername)}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f3f4f6;">
                 <td style="padding: 10px; color: #6b7280; font-size: 13px;">Role</td>
-                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${roleLabels[newRole] || newRole}</td>
+                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${esc(roleLabels[newRole] || newRole)}</td>
               </tr>
               <tr>
                 <td style="padding: 10px; color: #6b7280; font-size: 13px;">Added by</td>
-                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${addedBy}</td>
+                <td style="padding: 10px; color: #111827; font-size: 13px; font-weight: 600;">${esc(addedBy)}</td>
               </tr>
             </table>
             <p style="color: #6b7280; font-size: 12px; margin-top: 20px;">This is an automated notification from the AB BSS Operations Portal.</p>

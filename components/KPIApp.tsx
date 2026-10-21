@@ -16,7 +16,7 @@ import { monthlyHistory } from '@/lib/agentHistory'
 import AgentHistoryCard from '@/components/AgentHistory'
 import { recomputeOverall } from '@/lib/attendance'
 import AttendanceUpload from '@/components/AttendanceUpload'
-import { staffApi } from '@/lib/staffFetch'
+import { staffApi, staffFetch } from '@/lib/staffFetch'
 import { LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList } from 'recharts'
 import { Bell, Gamepad2, Users, BarChart2, PlusCircle, LogOut, Search, Edit2, Trash2, Save, X, CheckCircle, AlertCircle, TrendingUp, Award, UserPlus, Menu, ChevronDown, ChevronUp, ChevronRight, FileText, Shield, Key, FileSpreadsheet, Star, Clock, Upload, Eye, Globe, Link2 } from 'lucide-react'
 
@@ -1200,6 +1200,16 @@ function ForcedPasswordChange({ username, onDone }: { username: string, onDone: 
   const [confirmPass, setConfirmPass] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [tempPass, setTempPass] = useState('')
+  // Someone signed in with Google is verified by the server through that session.
+  // Someone on the Admin password fallback has no Google session, so they must
+  // type the temporary password they were given to prove who they are.
+  const [hasGoogle, setHasGoogle] = useState<boolean | null>(null)
+  useEffect(() => {
+    let alive = true
+    supabase.auth.getSession().then(({ data }) => { if (alive) setHasGoogle(!!data.session) }).catch(() => { if (alive) setHasGoogle(false) })
+    return () => { alive = false }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -1208,9 +1218,9 @@ function ForcedPasswordChange({ username, onDone }: { username: string, onDone: 
     if (newPass !== confirmPass) { setError('Passwords do not match'); return }
     setSaving(true)
     try {
-      const res = await fetch('/api/auth/change-password', {
+      const res = await staffFetch('/api/auth/change-password', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, newPassword: newPass, adminReset: true })
+        body: JSON.stringify({ username, oldPassword: tempPass || undefined, newPassword: newPass })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to update password')
@@ -1230,6 +1240,12 @@ function ForcedPasswordChange({ username, onDone }: { username: string, onDone: 
           <p className="text-gray-500 text-sm mt-1">For your security, please choose your own password before continuing.</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {hasGoogle === false && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Temporary password</label>
+              <input type="password" value={tempPass} onChange={e=>setTempPass(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
             <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} required minLength={6} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900" />
@@ -5598,7 +5614,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
           if (acctErr) { showToast(`Employee added, but login creation failed: ${acctErr.message}`, 'error') }
           else {
             showToast(`Login created for ${emailTrimmed.split('@')[0]} — temp password: ${tempPassword}`, 'success')
-            fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailTrimmed, newRole: newPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
+            staffFetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailTrimmed, newRole: newPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
           }
         }
       }
@@ -5644,7 +5660,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         // creating a second account.
         await supabase.from('app_users').update({ username: emailLower, email: emailLower, ...(editPortalRole ? { role: editPortalRole } : {}) }).eq('id', existingUser.id)
         showToast(`Login email corrected to ${emailLower} (was ${existingUser.email}). They'll log in with the new address going forward.`, 'success')
-        fetch('/api/notify/role-changed', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: emailLower, oldRole: existingUser.role, newRole: existingUser.role, changedBy: currentUser || 'admin' }) }).catch(() => {})
+        staffFetch('/api/notify/role-changed', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: emailLower, oldRole: existingUser.role, newRole: existingUser.role, changedBy: currentUser || 'admin' }) }).catch(() => {})
       } else if (!existingUser) {
         const tempPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 100)
         const { error: acctErr } = await supabase.from('app_users').insert({
@@ -5655,12 +5671,12 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
         if (acctErr) { showToast(`Login creation failed: ${acctErr.message}`, 'error') }
         else {
           showToast(`Login created for ${emailLower.split('@')[0]} — temp password: ${tempPassword}`, 'success')
-          fetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailLower, newRole: editPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
+          staffFetch('/api/notify/user-added', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newUsername: emailLower, newRole: editPortalRole || 'agent', addedBy: currentUser || 'admin' }) }).catch(() => {})
         }
       } else if (existingUser.role !== editPortalRole && userRole === 'super_admin') {
         await supabase.from('app_users').update({ role: editPortalRole }).eq('id', existingUser.id)
         showToast(`Portal role updated to ${editPortalRole} for ${emailLower.split('@')[0]}`, 'success')
-        fetch('/api/notify/role-changed', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: emailLower, oldRole: existingUser.role, newRole: editPortalRole, changedBy: currentUser || 'admin' }) }).catch(() => {})
+        staffFetch('/api/notify/role-changed', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: emailLower, oldRole: existingUser.role, newRole: editPortalRole, changedBy: currentUser || 'admin' }) }).catch(() => {})
       }
     }
     await writeAuditLog('EDIT_EMPLOYEE',currentUser,editName,'','Role/Client',emp?.designation||'',generatedDesig)
@@ -5677,7 +5693,7 @@ function EmployeeManager({ employees, onChanged, showToast, currentUser, userRol
     const notifyEmail = editEmail?.trim() || emp?.email
     if (changes.length > 0 && notifyEmail) {
       try {
-        const res = await fetch('/api/notify/employee-updated', {
+        const res = await staffFetch('/api/notify/employee-updated', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ employeeName: editName, employeeEmail: notifyEmail, changes, changedBy: currentUser || 'admin' })
         })
@@ -6093,7 +6109,7 @@ function TeamManager({ employees, showToast, userRole }:
   async function notifyTeamChange(action: 'added'|'removed', employeeName: string, employeeEmail: string|null, teamName: string, leadEmail: string|null) {
     if (!employeeEmail) return
     try {
-      const res = await fetch('/api/notify/team-change', {
+      const res = await staffFetch('/api/notify/team-change', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, employeeName, employeeEmail, teamName, leadEmail })
       })
@@ -6229,15 +6245,15 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
     setSaving(true)
     const tempPass = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 900 + 100)
     try {
-      const res = await fetch('/api/auth/change-password', {
+      const res = await staffFetch('/api/auth/change-password', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ username: u.username, newPassword: tempPass, adminReset: true })
+        body: JSON.stringify({ username: u.username, newPassword: tempPass })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
       await supabase.from('app_users').update({ must_change_password: true }).eq('id', u.id)
       // Send email notification to the user
-      fetch('/api/notify/password-reset', {
+      staffFetch('/api/notify/password-reset', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ username: u.username, tempPassword: tempPass, resetBy: currentUser })
       }).catch(() => {})
@@ -6254,7 +6270,7 @@ function UserManager({ showToast, currentUserRole, currentUser }: { showToast: (
     if (error) { showToast(error.message, 'error'); return }
     showToast(`Role updated for ${u.username.split('@')[0]}`, 'success')
     loadUsers()
-    fetch('/api/notify/role-changed', {
+    staffFetch('/api/notify/role-changed', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ username: u.username, oldRole: u.role, newRole, changedBy: currentUser || 'admin' })
     }).catch(() => {})
@@ -6525,7 +6541,7 @@ function HuddleNotes({ currentUser, userRole, showToast }: { currentUser: string
       )
 
       // Email notifications
-      fetch('/api/notify/huddle-created', {
+      staffFetch('/api/notify/huddle-created', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -8512,7 +8528,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
   function notifySubmitter(ticket: Ticket, updateType: 'comment'|'status'|'edit', detail?: string) {
     const submitterEmail = ticket.requested_by || ticket.created_by
     if (!submitterEmail) return
-    fetch('/api/notify/ticket-updated', {
+    staffFetch('/api/notify/ticket-updated', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ticketId: ticket.id, title: ticket.title, submitterEmail, updateType, updatedBy: currentUser, detail })
     }).catch(() => {})
@@ -8563,7 +8579,7 @@ function TicketsPanel({ currentUser, userRole, showToast }: { currentUser: strin
     // Everyone responsible hears about it: the category POCs and the override person.
     const notifyEmails = [...pocs, ...(override ? [override] : [])].filter((e, i, a) => a.findIndex(x => localPart(x) === localPart(e)) === i)
     if (notifyEmails.length > 0) {
-      fetch('/api/notify/ticket-created', {
+      staffFetch('/api/notify/ticket-created', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticketId: data?.id, title: form.title.trim(), category: form.category, priority: form.priority, createdBy: currentUser, ownerEmails: notifyEmails })
       }).catch(() => {})
@@ -9183,7 +9199,7 @@ function NTEPanel({ employees, currentUser, userRole, showToast }:
     if (!emp?.email) { showToast('This employee has no email on file', 'error'); return }
     setSending(true)
     try {
-      const res = await fetch('/api/notify/nte-issued', {
+      const res = await staffFetch('/api/notify/nte-issued', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to: emp.email, cc: currentUser, record }),
       })
