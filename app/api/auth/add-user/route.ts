@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import bcrypt from 'bcryptjs'
+import { requireStaff, ADMIN_ROLES } from '@/lib/staffAuth'
 
 
 
@@ -15,7 +16,16 @@ function getSupabase() {
 
 export async function POST(req: NextRequest) {
   try {
+    // Previously unauthenticated: anyone could create an account with any role
+    // (including super_admin) and then use the Admin password fallback. Now only a
+    // verified Admin/Super Admin may add users, and only a Super Admin may create
+    // another Admin or Super Admin.
+    const gate = await requireStaff(req, ADMIN_ROLES)
+    if ('error' in gate) return gate.error
     const { username, password, role } = await req.json()
+    if (ADMIN_ROLES.includes(role) && gate.staff.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Only a Super Admin can create an Admin or Super Admin account' }, { status: 403 })
+    }
     if (!username || !password) return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
     if (password.length < 6) return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
 
