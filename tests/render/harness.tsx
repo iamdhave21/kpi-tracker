@@ -126,8 +126,8 @@ async function main() {
     check('BCP: no Coverage Matrix anywhere', !/Coverage Matrix|\+ New Task/.test(text(container)))
     check('BCP: opens on the Risk Management Plan', /Four risk areas|Overview/.test(text(container)) && /Click a box on the diagram/.test(text(container)))
     const tiles = Array.from(container.querySelectorAll('button[aria-label]')).map(b => b.getAttribute('aria-label') || '')
-    check('BCP: all eight diagram tiles are clickable', tiles.length === 8 && tiles.some(t => t.startsWith('Operations:')) && tiles.some(t => t.startsWith('Technology, work environment:')), String(tiles.length))
-    for (const [tile, expect] of [['Operations:', /Operational risk centers/], ['Payroll, finance:', /Payroll exposure comes from/], ['HR, workforce:', /act on warning signs/], ['Security, access:', /main exposure is data breach/], ['Technology, work environment:', /Internet outage[\s\S]*Power outage or severe weather[\s\S]*Device failure or loss/], ['Shared by all five', /Three standard processes/], ['Business impact and recovery priorities:', /To be completed per account/], ['Governance:', /accountable BCP owner[\s\S]*Dhave Latimer/]] as const) {
+    check('BCP: all nine diagram tiles are clickable', tiles.length === 9 && tiles.some(t => t.startsWith('Operations:')) && tiles.some(t => t.startsWith('Technology, work environment:')), String(tiles.length))
+    for (const [tile, expect] of [['Operations:', /Operational risk centers/], ['Payroll, finance:', /Payroll exposure comes from/], ['HR, workforce:', /act on warning signs/], ['Security, access:', /main exposure is data breach/], ['Technology, work environment:', /Internet outage[\s\S]*Power outage or severe weather[\s\S]*Device failure or loss/], ['Shared by all five', /Three standard processes/], ['Business impact and recovery priorities:', /CoWorth[\s\S]*Payment Matching[\s\S]*AR B2B[\s\S]*HYBRID/], ['Risk assessment matrix:', /Likelihood[\s\S]*Impact[\s\S]*Not rated yet/], ['Governance:', /accountable BCP owner[\s\S]*Dhave Latimer/]] as const) {
       await click(btn(container, b => /Back to the diagram/.test(b.textContent || '')))   // reopen the diagram (no-op the first time)
       await click(btn(container, b => (b.getAttribute('aria-label') || '').startsWith(tile)))
       check(`BCP: clicking the "${tile.replace(':', '')}" tile opens its section`, expect.test(text(container)))
@@ -140,6 +140,7 @@ async function main() {
     await click(btn(container, b => /Back to the diagram/.test(b.textContent || '')))
     await click(btn(container, b => (b.getAttribute('aria-label') || '').startsWith('Technology, work environment:')))
     check('BCP: technology section marks stated practice and cites the portal control', /Stated practice/.test(text(container)) && /Connectivity and power continuity/.test(text(container)) && /Evidence to attach/.test(text(container)))
+    check('BCP: risk-sheet controls are labelled Planned, with owners and frequencies', /Planned control \(risk sheet\)/.test(text(container)) && /Cybersecurity threats/.test(text(container)) && /System, tool or platform downtime/.test(text(container)))
     check('BCP: no unsupported claims (no invented numbers of minutes/hours in the technology rows)', !/\b\d+\s*(minutes|hours|hrs)\b/i.test(text(container.querySelector('#risk-technology') as Element)))
     await click(btn(container, b => /Back to the diagram/.test(b.textContent || '')))
     await click(btn(container, b => (b.getAttribute('aria-label') || '').startsWith('Operations:')))

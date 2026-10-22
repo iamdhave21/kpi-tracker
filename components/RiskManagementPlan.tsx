@@ -29,6 +29,7 @@ const HR: Row[] = [
   ['Employee attrition', 'BCP and replacement planning', 'Formalize triggers', 'Workforce risk register'],
   ['Attendance', 'Leave approval and monitoring', 'Consistent escalation', 'Early-warning indicators'],
   ['Performance / productivity', 'Coaching and observations', 'Standard RCA and action plans', 'Trend-based risk monitoring'],
+  ['Health risk (illness or wellbeing affecting availability)', 'To be confirmed. Absence and leave follow the leave approval and escalation rules in this plan.', 'Define the health-related contingency: cover when someone is unwell, and any support for staff wellbeing (to be confirmed).', 'Health-risk mitigation plan (the source risk sheet identifies the risk but lists no actions yet)'],
   ['Training and onboarding gaps', 'Replacement training step in the continuity framework', 'Validate independent performance before transition', 'Onboarding readiness check'],
 ]
 const HR_SIGNALS = ['Attendance', 'Responsiveness', 'Engagement', 'Performance', 'Communication', 'Escalation behavior']
@@ -47,7 +48,8 @@ const TECHNOLOGY: Row[] = [
   ['Internet outage', 'Stated practice: staff are expected to keep a backup internet connection (postpaid or prepaid) and to report an outage.', 'Write the rule down and set how quickly an outage must be reported (to be confirmed).', 'Outage procedure and a recovery test'],
   ['Power outage or severe weather (storm, flood)', 'Stated practice: staff tell AB BSS; AB BSS can arrange accommodation with reliable internet and power so work continues, and can help secure the safety of the person and their family.', 'Define who approves the arrangement and how it is recorded (to be confirmed).', 'Weather and Flood Procedure (not yet written)'],
   ['Device failure or loss', 'Stated practice: staff report it; AB BSS can provide or lend a device so delivery is not disrupted.', 'A loaner-device log: who, when, returned.', 'Spare-device inventory and replacement lead time'],
-  ['Client system or platform downtime', 'To be confirmed. Service-impacting issues follow the Escalation Matrix.', 'Per-account downtime instructions: who to tell, what work can continue.', 'Client-system dependency inventory'],
+  ['System, tool or platform downtime (client or internal)', 'Planned control (risk sheet): alternative communication methods such as VoIP, messaging apps or phone lines with contractors and the client contact (owners: Management and Team Lead, immediate); regular data backups (owner: contractor, weekly). Service-impacting issues follow the Escalation Matrix.', 'Per-account downtime instructions: who to tell and what work can continue. Confirm who owns backups of client data, the client or AB BSS (to be confirmed).', 'System dependency inventory and a downtime test'],
+  ['Cybersecurity threats (loss of sensitive or confidential information)', 'Planned control (risk sheet): regular security audits and assessments (Team Lead and contractor, weekly); access control and monitoring of data-access logs (Team Lead, weekly); data loss prevention tools (Management, immediate).', 'Confirm which of these run today and attach evidence. The risk sheet gives owners and frequencies, not status.', 'Evidence of audits and access reviews; a decision on data loss prevention tooling'],
   ['Device security baseline', 'System control: staff submit antivirus scans in the portal (AV Scan, monthly, with an audit trail).', 'Apply the same baseline to loaner devices.', 'Device inventory'],
 ]
 const GOV_ROWS: [string, string, string][] = [
@@ -56,8 +58,30 @@ const GOV_ROWS: [string, string, string][] = [
   ['Version control', 'Draft', 'Current version: Draft, Oct 8, 2026. A version number and change log are to be agreed.'],
   ['Review cadence', 'To be assigned', 'Set the next review date when the plan is approved.'],
   ['Staff awareness', 'Evidence to attach', 'Guidance on outages, severe weather and devices has been shared with staff (per the Director of Operations). Attach the written copy.'],
+  ['Funding for risk activities', 'To be assigned', 'Accommodation arrangements, loaned devices and any security tooling need a budget line or an approval route.'],
   ['Drills and scenario tests', 'No schedule recorded', 'No test schedule exists yet. Scenarios to run are listed below.'],
 ]
+// The eight components of a risk management plan (from the existing risk sheet) and where each stands here.
+const COMPONENTS: [string, string, string][] = [
+  ['1. Methodology', 'Partial', 'Review questions (overview) and status definitions (gaps). A stated method for assessing and analysing risks is now added in section 8.'],
+  ['2. Risk register', 'Not started', 'Fields and statuses are defined in section 10. The register itself is a later phase.'],
+  ['3. Risk breakdown structure', 'Covered', 'The five risk areas on the overview diagram are the categories.'],
+  ['4. Risk assessment matrix', 'Added', 'Likelihood by impact matrix in section 8, on a proposed default scale. No risks are rated yet.'],
+  ['5. Risk response plan', 'Partial', 'Control tables per area, plus the continuity, issue-management and escalation flows.'],
+  ['6. Roles and responsibilities', 'Partial', 'Plan owner named. Risk owners are named by role below; people are to be assigned.'],
+  ['7. Funding', 'Not covered', 'No budget line yet (see the Funding row above).'],
+  ['8. Time frame', 'Partial', 'Review date to be assigned. No timeline yet for closing gaps.'],
+]
+const ROLES: [string, string, string][] = [
+  ['Contractor', 'Planned', 'Regular data backups (weekly); takes part in security audits (weekly).'],
+  ['Team Lead', 'Planned', 'Security audits and assessments (weekly); access control and monitoring (weekly); alternative communication with contractors and the client contact (immediate).'],
+  ['Management', 'Planned', 'Data loss prevention tools (immediate); alternative communication with contractors and the client contact (immediate).'],
+]
+// Critical-process rows: the six projects named in the existing risk sheet.
+const SHEET_PROJECTS = ['CoWorth', 'FSCM / OCR', 'Travel and Expense', 'Payment Matching', 'AR B2B', 'HYBRID']
+// Likelihood x impact, 1-3 each. Proposed default scale; adjust as needed.
+const LIKELIHOOD: [string, string][] = [['Low', 'Not expected; no history here.'], ['Medium', 'Has happened, or could happen occasionally.'], ['High', 'Expected, or happens regularly.']]
+const IMPACT: [string, string][] = [['Low', 'Absorbed by the team; the client does not notice.'], ['Medium', 'A client-visible delay, or a workaround is needed.'], ['High', 'Missed service levels, data exposure, or financial, legal or reputational consequences.']]
 const SCENARIOS = ['Agent absence', 'Resignation or contractor removal', 'Internet or power outage', 'Device failure', 'Client platform downtime', 'Peak-volume surge']
 const STATUS_DEFS: [string, string][] = [
   ['Existing', 'Active, standardized, owned, and backed by current evidence.'],
@@ -82,6 +106,8 @@ const GAPS: { title: string, items: string }[] = [
   { title: 'Reviews', items: 'A formal access-risk review and standard RCA with action plans.' },
   { title: 'Technology and work environment', items: 'Written outage, severe-weather and device procedures; a loaner-device log; a spare-device inventory; per-account client-downtime instructions.' },
   { title: 'Governance', items: 'An approver, a review date, version control, and a drill schedule.' },
+  { title: 'Health risk', items: 'A health-risk mitigation plan: the risk is identified but no actions are listed yet.' },
+  { title: 'Cybersecurity and system downtime', items: 'Evidence that the planned audits, access monitoring, backups, data loss prevention and alternative communication are running.' },
   { title: 'Business impact', items: 'A list of critical processes per account with recovery priorities and target recovery times.' },
 ]
 
@@ -89,7 +115,7 @@ const SECTION_NAMES: Record<string, string> = {
   operations: '1. Operations risks', payroll: '2. Payroll and financial-control risks', hr: '3. HR and workforce risks',
   security: '4. Security and access risks', technology: '5. Technology and work-environment disruption',
   continuity: '6. Continuity, issue management and escalation', impact: '7. Critical processes and recovery priorities',
-  governance: '8. Plan ownership and governance', gaps: '9. Gaps to close',
+  matrix: '8. Risk assessment matrix', governance: '9. Plan ownership and governance', gaps: '10. Gaps to close',
 }
 
 // The overview diagram. Every box is a button that opens the section holding the
@@ -113,10 +139,14 @@ function OverviewDiagram({ go }: { go: (sec: string) => void }) {
         className="w-full text-center bg-gray-100 border border-gray-300 rounded-xl px-3 py-3 text-sm text-gray-800 transition hover:border-blue-600 hover:ring-2 hover:ring-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer">
         Shared by all five: workforce continuity, issue management, escalation
       </button>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         <button type="button" onClick={() => go('impact')} {...label('Business impact and recovery priorities', 'impact')} className={tile}>
           <span className="block text-sm font-semibold text-gray-900 text-center">Business impact and recovery priorities</span>
           <span className="block text-xs text-gray-600 text-center mt-0.5">Critical processes per account</span>
+        </button>
+        <button type="button" onClick={() => go('matrix')} {...label('Risk assessment matrix', 'matrix')} className={tile}>
+          <span className="block text-sm font-semibold text-gray-900 text-center">Risk assessment matrix</span>
+          <span className="block text-xs text-gray-600 text-center mt-0.5">Likelihood by impact</span>
         </button>
         <button type="button" onClick={() => go('governance')} {...label('Governance', 'governance')} className={tile}>
           <span className="block text-sm font-semibold text-gray-900 text-center">Governance</span>
@@ -148,15 +178,15 @@ function Related({ items, go, openEscalation }: { items: Dest[], go: (sec: strin
 }
 
 function chip(status: string) {
-  if (/^(assigned|in place)/i.test(status)) return 'bg-emerald-50 text-emerald-800 border-emerald-200'
-  if (/^(draft|evidence)/i.test(status)) return 'bg-amber-50 text-amber-800 border-amber-200'
+  if (/^(assigned|in place|covered|added)/i.test(status)) return 'bg-emerald-50 text-emerald-800 border-emerald-200'
+  if (/^(draft|evidence|partial|planned)/i.test(status)) return 'bg-amber-50 text-amber-800 border-amber-200'
   return 'bg-gray-100 text-gray-700 border-gray-200'
 }
-function GovTable({ rows }: { rows: [string, string, string][] }) {
+function GovTable({ rows, heads = ['Control', 'Status', 'Notes'] }: { rows: [string, string, string][], heads?: string[] }) {
   return (
     <div className="overflow-x-auto mt-3">
       <table className="w-full min-w-[560px] text-xs border border-gray-200 rounded-lg overflow-hidden">
-        <thead className="bg-blue-50"><tr>{['Control', 'Status', 'Notes'].map(h => <th key={h} className="text-left font-semibold text-blue-900 px-3 py-2 border-b border-gray-200">{h}</th>)}</tr></thead>
+        <thead className="bg-blue-50"><tr>{heads.map(h => <th key={h} className="text-left font-semibold text-blue-900 px-3 py-2 border-b border-gray-200">{h}</th>)}</tr></thead>
         <tbody>
           {rows.map(r => (
             <tr key={r[0]} className="align-top border-b border-gray-100 last:border-0">
@@ -317,6 +347,7 @@ export default function RiskManagementPlan({ onOpenEscalation }: { onOpenEscalat
 
       {S('technology', '5. Technology and work-environment disruption', <>
         <p>An internet or power outage, severe weather, or a broken device can stop service. The aim is that nobody goes dark without AB BSS knowing, and that delivery continues through a backup connection, an arranged place to work, or a loaned device.</p>
+        <p className="text-xs text-gray-600">From the existing risk sheet: system downtime can affect any part of the IT environment (servers, applications, databases, network connections), and a cybersecurity incident can mean loss of sensitive or confidential information, with financial, legal and reputational consequences. "Planned" below means the sheet lists it with an owner and frequency; it is not yet shown as running.</p>
         <RiskTable rows={TECHNOLOGY} />
         <div className="mt-3 bg-white border border-gray-200 rounded-lg px-3 py-2.5">
           <p className="text-xs font-semibold text-blue-900 mb-1">Controls already enforced in the portal</p>
@@ -353,23 +384,79 @@ export default function RiskManagementPlan({ onOpenEscalation }: { onOpenEscalat
       </>)}
 
       {S('impact', '7. Critical processes and recovery priorities', <>
-        <p>For each account, list the processes that must not stop, what happens if they do, how quickly they must be back, and who covers meanwhile. This is the basis for deciding what to recover first. It is not filled in yet.</p>
+        <p>For each account, list the processes that must not stop, what happens if they do, how quickly they must be back, and who covers meanwhile. This is the basis for deciding what to recover first. The six projects below come from the existing risk sheet; the other columns are not filled in yet.</p>
         <div className="overflow-x-auto mt-3">
           <table className="w-full min-w-[640px] text-xs border border-gray-200 rounded-lg overflow-hidden">
-            <thead className="bg-blue-50"><tr>{['Account', 'Critical process', 'Impact if it stops', 'Recovery priority and target time', 'Fallback or backup', 'Owner'].map(h => <th key={h} className="text-left font-semibold text-blue-900 px-3 py-2 border-b border-gray-200">{h}</th>)}</tr></thead>
-            <tbody><tr>{Array.from({ length: 6 }).map((_, i) => <td key={i} className="px-3 py-3 text-gray-400 italic">{i === 0 ? 'To be completed per account' : '—'}</td>)}</tr></tbody>
+            <thead className="bg-blue-50"><tr>{['Project', 'Account', 'Impact if it stops', 'Recovery priority and target time', 'Fallback or backup', 'Owner'].map(h => <th key={h} className="text-left font-semibold text-blue-900 px-3 py-2 border-b border-gray-200">{h}</th>)}</tr></thead>
+            <tbody>
+              {SHEET_PROJECTS.map(pn => (
+                <tr key={pn} className="border-b border-gray-100 last:border-0">
+                  <td className="px-3 py-2 font-medium text-gray-900">{pn}</td>
+                  <td className="px-3 py-2 text-gray-400 italic">To be confirmed</td>
+                  {[0, 1, 2, 3].map(i => <td key={i} className="px-3 py-2 text-gray-400 italic">To be completed</td>)}
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
+        <Note title="Next step:">In the risk sheet every project carries the same risks. The useful work is to say, project by project, what cannot wait (for example, what is deadline-driven) so recovery can be ordered.</Note>
         <p className="text-xs text-gray-600 pt-2">A recovery time target is enough here. Because AB BSS works inside client systems, a separate data-recovery-point target is not needed.</p>
       </>)}
 
-      {S('governance', '8. Plan ownership and governance', <>
+      {S('matrix', '8. Risk assessment matrix', <>
+        <p>Rates a risk <span className="font-medium">before</span> it happens, so the biggest ones get attention first. Score = likelihood × impact, each on a 1 to 3 scale. This is a proposed default scale, easy to change. It is separate from the S1 to S4 levels in the Escalation Matrix, which rate an incident that <span className="font-medium">has</span> happened.</p>
+        <div className="grid sm:grid-cols-2 gap-3 pt-2">
+          <div className="border border-gray-200 rounded-lg px-3 py-2.5">
+            <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide">Likelihood</p>
+            {LIKELIHOOD.map(([k, v], i) => <p key={k} className="text-xs text-gray-700 mt-1"><span className="font-semibold">{k} ({i + 1})</span> — {v}</p>)}
+          </div>
+          <div className="border border-gray-200 rounded-lg px-3 py-2.5">
+            <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide">Impact</p>
+            {IMPACT.map(([k, v], i) => <p key={k} className="text-xs text-gray-700 mt-1"><span className="font-semibold">{k} ({i + 1})</span> — {v}</p>)}
+          </div>
+        </div>
+        <div className="overflow-x-auto mt-3">
+          <table className="text-xs border-separate border-spacing-1 min-w-[360px]">
+            <thead><tr><th className="px-2 py-1 text-left text-gray-500 font-medium">Impact ↓ / Likelihood →</th>{LIKELIHOOD.map(([k]) => <th key={k} className="px-3 py-1 text-center text-blue-900 font-semibold">{k}</th>)}</tr></thead>
+            <tbody>
+              {[3, 2, 1].map(imp => (
+                <tr key={imp}>
+                  <th className="px-2 py-1 text-left text-blue-900 font-semibold">{IMPACT[imp - 1][0]}</th>
+                  {[1, 2, 3].map(lik => {
+                    const sc = lik * imp
+                    const rating = sc >= 6 ? 'High' : sc >= 3 ? 'Medium' : 'Low'
+                    const cls = rating === 'High' ? 'bg-red-100 text-red-900' : rating === 'Medium' ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'
+                    return <td key={lik} className={`px-3 py-2 text-center rounded font-medium ${cls}`}>{rating} ({sc})</td>
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide pt-3">What each rating means (proposed)</p>
+        <ul className="list-disc pl-5 text-sm space-y-1">
+          <li><span className="font-semibold">Low (1 to 2):</span> record it and keep an eye on it.</li>
+          <li><span className="font-semibold">Medium (3 to 4):</span> a named owner and an action with a due date.</li>
+          <li><span className="font-semibold">High (6 to 9):</span> reviewed by the Director of Operations; if it turns into an incident, follow the escalation levels.</li>
+        </ul>
+        <Note title="Not rated yet:">No risk in this plan has been given a likelihood or impact score. The owner of each risk rates it when the register is built.</Note>
+        <Related go={goTo} openEscalation={onOpenEscalation} items={[
+          { label: 'Escalation Matrix (incident levels S1 to S4)', escalation: true },
+          { label: 'Gaps to close and register fields', sec: 'gaps' },
+        ]} />
+      </>)}
+
+      {S('governance', '9. Plan ownership and governance', <>
         <p>Who owns this plan, how it is approved and versioned, and how it is kept alive.</p>
         <div className="mt-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
           <p className="text-xs font-semibold text-blue-900">Plan owners</p>
           <p className="text-sm text-gray-900 mt-0.5"><span className="font-semibold">1. Dhave Latimer</span>, Director of Operations (accountable BCP owner)</p>
         </div>
         <GovTable rows={GOV_ROWS} />
+        <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide pt-3">Risk owners by role (from the existing risk sheet)</p>
+        <GovTable rows={ROLES} heads={['Role', 'Status', 'Responsibilities']} />
+        <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide pt-3">Is every part of a risk management plan here?</p>
+        <GovTable rows={COMPONENTS} heads={['Component', 'Status', 'Where it stands']} />
         <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide pt-3">Scenarios to test</p>
         <div className="flex flex-wrap gap-2 pt-1">
           {SCENARIOS.map(sc => <span key={sc} className="text-xs bg-blue-50 text-blue-900 border border-blue-100 px-2.5 py-1 rounded-full font-medium">{sc}</span>)}
@@ -377,7 +464,7 @@ export default function RiskManagementPlan({ onOpenEscalation }: { onOpenEscalat
         <p className="text-xs text-gray-600 pt-2">Each test should record what was tested, who took part, the result, where it failed, and the corrective actions.</p>
       </>)}
 
-      {S('gaps', '9. Gaps to close', <>
+      {S('gaps', '10. Gaps to close', <>
         <p>The plan's next step is to turn the future controls above into registers, with an owner and due date for each. Owners and dates are not yet assigned.</p>
         <div className="grid sm:grid-cols-2 gap-3 pt-2">
           {GAPS.map(g => (
