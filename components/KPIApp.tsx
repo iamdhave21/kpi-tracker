@@ -53,6 +53,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'opex', label: 'Operational Expense' },
   { id: 'hris-invoice', label: 'Invoice' },
   { id: 'client-portal-admin', label: 'Client Onboarding' },
+  { id: 'output-tracking', label: 'Output Tracking and Invoicing', external: 'https://abbss-output-tracking-invoicing.vercel.app/dashboard' },   // Admin/Super Admin only: filtered in the search below
   { id: 'tools-repository', label: 'Access and Tools Repository' },
   { id: 'client-observations', label: 'Client Observations' },
   { id: 'client-requests', label: 'Client Requests' },
@@ -1591,7 +1592,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
   })
   const [searchQuery, setSearchQuery] = useState('')
   const searchResults = searchQuery.trim()
-    ? SEARCHABLE_NAV_ITEMS.filter(i => (i.id !== 'bonus-review' || userRole === 'super_admin') && i.label.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    ? SEARCHABLE_NAV_ITEMS.filter(i => (i.id !== 'bonus-review' || userRole === 'super_admin') && (!['output-tracking', 'hris-referral'].includes(i.id) || userRole === 'super_admin' || userRole === 'admin') && i.label.toLowerCase().includes(searchQuery.trim().toLowerCase()))
     : []
   function goToSearchResult(item: { id: string, label: string, external?: string }) {
     if (item.external) window.open(item.external, '_blank')
@@ -1881,6 +1882,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
             <NavItem id="client-observations" label="Client Observations" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>
             {(userRole === 'super_admin' || userRole === 'admin' || userRole === 'Team Lead') && <NavItem id="client-requests" label="Client Requests" icon={<Bell className="w-4 h-4 flex-shrink-0"/>} badge={pendingRequestCount} badgeColor="bg-blue-600" dotColor="bg-indigo-400"/>}
             {(userRole === 'super_admin' || userRole === 'admin') && <NavItem id="client-portal-admin" label="Client Onboarding" icon={<Globe className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-indigo-400"/>}
+            {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Output Tracking and Invoicing" icon={<FileSpreadsheet className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-output-tracking-invoicing.vercel.app/dashboard" dotColor="bg-indigo-400"/>}
           </div>
         )}
       </>
