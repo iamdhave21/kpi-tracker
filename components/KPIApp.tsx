@@ -46,7 +46,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'bcp', label: 'Escalation Matrix' },
   { id: 'links', label: 'Links' },
   { id: 'resources', label: 'Resources' },
-  { id: 'hris-referral', label: 'Hiring Pipeline', external: 'https://abbss-hiring-pipeline.vercel.app/' },
+  { id: 'hris-referral', label: 'Hiring Pipeline', external: 'https://abbss-hiring.vercel.app/' },
   { id: 'project-management', label: 'Project Management Tool', external: 'https://abbss-project-task-management.vercel.app/board?board=cmtb3hxe2000cih04k2noqoaf' },
   { id: 'hris-records', label: 'Employee Records' },
   { id: 'nte', label: 'Notice to Explain' },
@@ -1968,7 +1968,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
       <SectionHeader sectionKey="hris" label="HRIS" hasActive={['hris-records','hris-timetracker','nte'].includes(view)} />
       {!collapsed.hris && (
         <div className="px-2 pb-1 space-y-0.5">
-          {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring-pipeline.vercel.app/" dotColor="bg-pink-400"/>}
+          {(userRole === 'super_admin' || userRole === 'admin') && <ExternalNavItem label="Hiring Pipeline" icon={<UserPlus className="w-4 h-4 flex-shrink-0"/>} url="https://abbss-hiring.vercel.app/" dotColor="bg-pink-400"/>}
           <NavItem id="hris-records" label="Employee Records" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
           <NavItem id="nte" label="Notice to Explain" icon={<AlertCircle className="w-4 h-4 flex-shrink-0"/>} badge={pendingNteCount} badgeColor="bg-red-500" dotColor="bg-pink-400"/>
           <NavItem id="hris-timetracker" label="Time Tracker" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-pink-400"/>
