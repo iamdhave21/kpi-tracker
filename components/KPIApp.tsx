@@ -41,6 +41,7 @@ const SEARCHABLE_NAV_ITEMS: { id: string, label: string, external?: string }[] =
   { id: 'tickets', label: 'Tickets' },
   { id: 'sop-repository', label: 'SOP and LWI Repository' },
   { id: 'bonus-review', label: 'Bonus Review' },   // Super Admin only: hidden from everyone else in the search below
+  { id: 'leavetrack', label: 'LeaveTrack', external: 'https://ab-bss-leavetrack.vercel.app/' },   // visible to all roles; the app itself controls access
   { id: 'bcp', label: 'BCP / Business Continuity Plan' },
   { id: 'bcp', label: 'Escalation Matrix' },
   { id: 'links', label: 'Links' },
@@ -1848,6 +1849,7 @@ function CollapsibleSidebar({ view, setView, setMobileMenuOpen, pendingCoachingC
           <NavItem id="bcp" label="BCP" icon={<Shield className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
           <NavItem id="sop-repository" label="SOP and LWI" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>
           {userRole === 'super_admin' && <NavItem id="bonus-review" label="Bonus Review" icon={<FileText className="w-4 h-4 flex-shrink-0"/>} dotColor="bg-orange-400"/>}
+          <ExternalNavItem label="LeaveTrack" icon={<Clock className="w-4 h-4 flex-shrink-0"/>} url="https://ab-bss-leavetrack.vercel.app/" dotColor="bg-orange-400"/>
         </div>
       )}
 
